@@ -6,7 +6,7 @@ moment.locale('th')
 
 const masterConfig = {
   year:       { dataKey: 'year',       title: 'ปี พ.ศ.',         pk: 'year_id',    columns: ['year_value'],          headers: ['ปี พ.ศ.'] },
-  results:    { dataKey: 'results',    title: 'ผลการพิจารณา',     pk: 'results_id', columns: ['results_detail'],       headers: ['รายละเอียด'] },
+  results:    { dataKey: 'results',    title: 'ผลการพิจารณา',     pk: 'results_id', columns: ['results_detail', 'results_etc'], headers: ['ผลการพิจารณา', 'นิยาม/คำอธิบาย'] },
   agency:     { dataKey: 'agency',     title: 'ผู้รับผิดชอบ',     pk: 'ag_id',      columns: ['ag_name'],              headers: ['ชื่อ'] },
   categories: { dataKey: 'categories', title: 'หมวดหมู่',          pk: 'cat_id',     columns: ['cat_name'],             headers: ['ชื่อ'] },
   mkk:        { dataKey: 'mati_kk',   title: 'มติ ก.ก.',          pk: 'mkk_id',     columns: ['mkk_name','mkk_date'],  headers: ['ชื่อมติ','วันที่'] },
@@ -32,19 +32,50 @@ export default function MasterDataSection({ type, allData, onReload }) {
     return v
   }
 
-  const openModal = async (id = null, currentVal = '') => {
-    const { value } = await Swal.fire({
-      title: id ? `แก้ไขข้อมูล: ${conf.title}` : `เพิ่มข้อมูล: ${conf.title}`,
-      input: 'text', inputValue: currentVal,
-      inputPlaceholder: 'กรอกข้อมูล...',
-      showCancelButton: true,
-      confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
-      inputValidator: (v) => { if (!v) return 'กรุณากรอกข้อมูล!' },
-    })
-    if (!value) return
+  const openModal = async (id = null, item = null) => {
+    let resultValue = ''
+    let resultValue2 = ''
+
+    if (type === 'results') {
+      const { value } = await Swal.fire({
+        title: id ? `แก้ไขข้อมูล: ${conf.title}` : `เพิ่มข้อมูล: ${conf.title}`,
+        html: `
+          <div class="text-start">
+            <label class="form-label fw-semibold">ผลการพิจารณา</label>
+            <input id="swal-input1" class="form-control mb-3" placeholder="เช่น นำมาปรับใช้" value="${item?.results_detail || ''}">
+            <label class="form-label fw-semibold">นิยาม/คำอธิบาย</label>
+            <textarea id="swal-input2" class="form-control" rows="4" placeholder="ระบุรายละเอียด...">${item?.results_etc && item.results_etc !== '-' ? item.results_etc : ''}</textarea>
+          </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+        preConfirm: () => {
+          const v1 = document.getElementById('swal-input1').value
+          const v2 = document.getElementById('swal-input2').value
+          if (!v1) return Swal.showValidationMessage('กรุณากรอกผลการพิจารณา!')
+          return [v1, v2]
+        }
+      })
+      if (!value) return
+      resultValue = value[0]
+      resultValue2 = value[1]
+    } else {
+      const { value } = await Swal.fire({
+        title: id ? `แก้ไขข้อมูล: ${conf.title}` : `เพิ่มข้อมูล: ${conf.title}`,
+        input: 'text', inputValue: item ? item[conf.columns[0]] : '',
+        inputPlaceholder: 'กรอกข้อมูล...',
+        showCancelButton: true,
+        confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+        inputValidator: (v) => { if (!v) return 'กรุณากรอกข้อมูล!' },
+      })
+      if (!value) return
+      resultValue = value
+    }
+
     try {
       const action = id ? 'update' : 'create'
-      const data = await adminApi.masterAction(action, type, id, value)
+      const data = await adminApi.masterAction(action, type, id, resultValue, resultValue2)
       if (data.status) {
         Swal.fire({ icon: 'success', text: data.message, timer: 1500, showConfirmButton: false })
         onReload()
@@ -110,7 +141,7 @@ export default function MasterDataSection({ type, allData, onReload }) {
                   {conf.columns.map(col => <td key={col}>{formatCell(item, col)}</td>)}
                   <td>
                     <button className="btn btn-sm btn-warning me-1"
-                      onClick={() => openModal(item[conf.pk], item[conf.columns[0]] || '')}>
+                      onClick={() => openModal(item[conf.pk], item)}>
                       <i className='bx bx-edit'></i>
                     </button>
                     <button className="btn btn-sm btn-danger"

@@ -19,6 +19,15 @@
   font-family: 'SaoChingcha', 'Sao Chingcha', 'Sarabun', sans-serif !important;
 }
 
+.hover-bg-light:hover {
+  background-color: rgba(67, 97, 238, 0.05);
+}
+
+.hover-bg-red-light:hover {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
 :root {
   --primary: #065f46;
   --secondary: #044e3a;

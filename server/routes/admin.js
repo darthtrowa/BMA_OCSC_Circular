@@ -78,6 +78,77 @@ router.post('/auth/login', async (req, res) => {
 })
 
 // ─────────────────────────────────────────────────────────────
+// USER MANAGEMENT (admin table)
+// ─────────────────────────────────────────────────────────────
+
+/** 1. ดึงรายชื่อผู้ใช้ทั้งหมด */
+router.get('/users', requireSuperAdmin, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT a_id, a_name, a_username, a_permiss, a_status, a_agency, a_last_login, created_at 
+      FROM admin 
+      ORDER BY a_id DESC
+    `)
+    return res.json(ok(rows))
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json(err('โหลดข้อมูลผู้ใช้ไม่ได้'))
+  }
+})
+
+/** 2. เพิ่มผู้ใช้ใหม่ */
+router.post('/users', requireSuperAdmin, async (req, res) => {
+  const { a_name, a_username, a_password, a_permiss, a_status, a_agency } = req.body
+  try {
+    await db.query(`
+      INSERT INTO admin (a_name, a_username, a_password, a_permiss, a_status, a_agency, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+    `, [a_name, a_username, a_password, a_permiss || 'user', a_status || '1', a_agency])
+    return res.json(ok(null, 'เพิ่มผู้ใช้สำเร็จ'))
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json(err('ไม่สามารถเพิ่มผู้ใช้ได้'))
+  }
+})
+
+/** 3. แก้ไขผู้ใช้ */
+router.put('/users/:id', requireSuperAdmin, async (req, res) => {
+  const { id } = req.params
+  const { a_name, a_username, a_password, a_permiss, a_status, a_agency } = req.body
+  try {
+    if (a_password) {
+      await db.query(`
+        UPDATE admin 
+        SET a_name=$1, a_username=$2, a_password=$3, a_permiss=$4, a_status=$5, a_agency=$6, updated_at=NOW()
+        WHERE a_id=$7
+      `, [a_name, a_username, a_password, a_permiss, a_status, a_agency, id])
+    } else {
+      await db.query(`
+        UPDATE admin 
+        SET a_name=$1, a_username=$2, a_permiss=$3, a_status=$4, a_agency=$5, updated_at=NOW()
+        WHERE a_id=$6
+      `, [a_name, a_username, a_permiss, a_status, a_agency, id])
+    }
+    return res.json(ok(null, 'แก้ไขข้อมูลสำเร็จ'))
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json(err('ไม่สามารถแก้ไขข้อมูลผู้ใช้ได้'))
+  }
+})
+
+/** 4. ลบผู้ใช้ */
+router.delete('/users/:id', requireSuperAdmin, async (req, res) => {
+  const { id } = req.params
+  try {
+    await db.query('DELETE FROM admin WHERE a_id = $1', [id])
+    return res.json(ok(null, 'ลบผู้ใช้สำเร็จ'))
+  } catch (e) {
+    console.error(e)
+    return res.status(500).json(err('ไม่สามารถลบผู้ใช้ได้'))
+  }
+})
+
+// ─────────────────────────────────────────────────────────────
 // GET /admin/dashboard  → stats + all master data + circular list
 // ─────────────────────────────────────────────────────────────
 router.get('/dashboard', requireSuperAdmin, async (req, res) => {
@@ -90,7 +161,7 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,'|#|',c_mati_work.mw_name,'|#|',c_mati_work.mw_date), ',') AS mati_work,
-        STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color), ',') AS results,
+        STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color,'|#|',c_results.results_etc), ',') AS results,
         STRING_AGG(DISTINCT CONCAT(c_year.year_id,'|#|',c_year.year_value), ',')                               AS year,
         STRING_AGG(DISTINCT CONCAT(c_status.status_id,'|#|',c_status.status_value), ',')                      AS status_a,
         STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,'|#|',c_categories.cat_name), ',')                     AS categories,
@@ -116,7 +187,7 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
       ...r,
       mati_kk:         parseFirst(r.mati_kk,   ['mkk_id','mkk_name','mkk_date']),
       mati_work:       parseFirst(r.mati_work,  ['mw_id','mw_name','mw_date']),
-      results:         parseFirst(r.results,    ['results_id','results_detail','results_color']),
+      results:         parseFirst(r.results,    ['results_id','results_detail','results_color','results_etc']),
       year:            parseFirst(r.year,        ['year_id','year_value']),
       status_a:        parseFirst(r.status_a,    ['status_id','status_value']),
       categories:      parseList(r.categories,    s => { const [cat_id,cat_name]=s.split('|#|'); return cat_id?{cat_id,cat_name}:null }),
@@ -127,7 +198,7 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
     // Master data
     const [year, results, mati_work, mati_kk, agency, categories, status] = await Promise.all([
       db.query('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
-      db.query('SELECT results_id, results_detail FROM c_results ORDER BY results_ordering ASC'),
+      db.query('SELECT results_id, results_detail, results_etc FROM c_results ORDER BY results_ordering ASC'),
       db.query('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
       db.query('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
       db.query('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
@@ -378,15 +449,31 @@ router.post('/master/action', requireSuperAdmin, async (req, res) => {
 
     if (action === 'create') {
       const { rows: [{ max_val }] } = await db.query(`SELECT MAX(${conf.order}) AS max_val FROM ${conf.table}`)
-      await db.query(
-        `INSERT INTO ${conf.table} (${conf.val},${conf.order},created_at,updated_at) VALUES ($1,$2,NOW(),NOW())`,
-        [value, (max_val ?? 0) + 1]
-      )
+      const { value2 } = req.body
+      if (type === 'results') {
+        await db.query(
+          `INSERT INTO ${conf.table} (${conf.val}, results_etc, ${conf.order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+          [value, value2 || '-', (max_val ?? 0) + 1]
+        )
+      } else {
+        await db.query(
+          `INSERT INTO ${conf.table} (${conf.val},${conf.order},created_at,updated_at) VALUES ($1,$2,NOW(),NOW())`,
+          [value, (max_val ?? 0) + 1]
+        )
+      }
       return res.json(ok('success', 'เพิ่มข้อมูลสำเร็จ'))
     }
     if (action === 'update') {
       if (!id) return res.status(400).json(err('ID Required'))
-      await db.query(`UPDATE ${conf.table} SET ${conf.val}=$1,updated_at=NOW() WHERE ${conf.pk}=$2`, [value, id])
+      const { value2 } = req.body
+      if (type === 'results') {
+        await db.query(
+          `UPDATE ${conf.table} SET ${conf.val}=$1, results_etc=$2, updated_at=NOW() WHERE ${conf.pk}=$3`,
+          [value, value2 || '-', id]
+        )
+      } else {
+        await db.query(`UPDATE ${conf.table} SET ${conf.val}=$1,updated_at=NOW() WHERE ${conf.pk}=$2`, [value, id])
+      }
       return res.json(ok('success', 'แก้ไขสำเร็จ'))
     }
     if (action === 'delete') {
@@ -405,5 +492,6 @@ router.post('/master/action', requireSuperAdmin, async (req, res) => {
     return res.status(500).json(err('Server Error'))
   }
 })
+
 
 module.exports = router

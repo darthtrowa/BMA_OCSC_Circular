@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react'
-import { adminApi, publicApi } from '../../api/apiService'
+import { adminApi } from '../../api/apiService'
 import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
 moment.locale('th')
 
-export default function UserSection() {
+export default function UserManagementSection() {
   const [users, setUsers] = useState([])
-  const [agencies, setAgencies] = useState([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   
@@ -17,23 +15,12 @@ export default function UserSection() {
     a_username: '',
     a_password: '',
     a_permiss: 'user',
-    a_status: '1',
-    a_agency: ''
+    a_status: '1'
   })
 
   useEffect(() => {
     loadUsers()
-    loadAgencies()
   }, [])
-
-  const loadAgencies = async () => {
-    try {
-      const filters = await publicApi.getFilters()
-      setAgencies(filters.agency || [])
-    } catch (err) {
-      console.error('Error loading agencies:', err)
-    }
-  }
 
   const loadUsers = async () => {
     setLoading(true)
@@ -56,8 +43,7 @@ export default function UserSection() {
         a_username: user.a_username || '',
         a_password: '', // ไม่แสดงรหัสเดิม
         a_permiss: user.a_permiss || 'user',
-        a_status: user.a_status || '1',
-        a_agency: user.a_agency || ''
+        a_status: user.a_status || '1'
       })
     } else {
       setEditingUser(null)
@@ -66,8 +52,7 @@ export default function UserSection() {
         a_username: '',
         a_password: '',
         a_permiss: 'user',
-        a_status: '1',
-        a_agency: ''
+        a_status: '1'
       })
     }
     setShowModal(true)
@@ -84,30 +69,23 @@ export default function UserSection() {
       return Swal.fire('แจ้งเตือน', 'กรุณากรอกรหัสผ่านสำหรับผู้ใช้ใหม่', 'warning')
     }
 
-    setSaving(true)
     try {
       if (editingUser) {
         await adminApi.updateUser(editingUser.a_id, formData)
-        Swal.fire({ title: 'สำเร็จ', text: 'แก้ไขข้อมูลผู้ใช้เรียบร้อยแล้ว', icon: 'success', timer: 1500 })
+        Swal.fire('สำเร็จ', 'แก้ไขข้อมูลผู้ใช้เรียบร้อยแล้ว', 'success')
       } else {
         await adminApi.createUser(formData)
-        Swal.fire({ title: 'สำเร็จ', text: 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว', icon: 'success', timer: 1500 })
+        Swal.fire('สำเร็จ', 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว', 'success')
       }
       setShowModal(false)
-      await loadUsers() // รอให้โหลดข้อมูลใหม่เสร็จก่อน
+      loadUsers()
     } catch (err) {
       console.error(err)
       Swal.fire('Error', 'บันทึกข้อมูลไม่สำเร็จ', 'error')
-    } finally {
-      setSaving(false)
     }
   }
 
   const handleDelete = (user) => {
-    if (user.a_permiss === 'superadmin') {
-      return Swal.fire('แจ้งเตือน', 'ไม่สามารถลบ Super Admin ได้', 'error')
-    }
-
     Swal.fire({
       title: 'ยืนยันการลบ?',
       text: `ต้องการลบผู้ใช้งาน ${user.a_name} ใช่หรือไม่?`,
@@ -142,14 +120,13 @@ export default function UserSection() {
         </button>
       </div>
       
-      <div className="card-body p-0">
+      <div className="card-body">
         <div className="table-responsive">
-          <table className="table table-hover align-middle mb-0">
+          <table className="table table-hover align-middle">
             <thead className="table-light">
               <tr>
                 <th style={{ width: 60 }}>#</th>
                 <th>ชื่อ-นามสกุล</th>
-                <th>สังกัด</th>
                 <th>Username</th>
                 <th>สิทธิ์</th>
                 <th>สถานะ</th>
@@ -159,39 +136,36 @@ export default function UserSection() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" className="text-center py-5"><span className="spinner-border text-primary" /></td></tr>
+                <tr><td colSpan="7" className="text-center py-4">กำลังโหลด...</td></tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan="7" className="text-center py-4 text-muted">ไม่พบข้อมูลผู้ใช้งาน</td></tr>
               ) : (
                 users.map((u, i) => (
                   <tr key={u.a_id}>
-                    <td>{i + 1}</td>
+                    <td>{u.a_id}</td>
                     <td><span className="fw-semibold">{u.a_name}</span></td>
-                    <td>{u.a_agency || <span className="text-muted small">-</span>}</td>
                     <td><code>{u.a_username}</code></td>
                     <td>
-                      <span className={`badge ${u.a_permiss === 'superadmin' || u.a_permiss === 'admin' ? 'bg-danger' : 'bg-info'}`}>
-                        {u.a_permiss === 'superadmin' ? 'SuperAdmin' : u.a_permiss === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่'}
+                      <span className={`badge ${u.a_permiss === 'admin' ? 'bg-danger' : 'bg-info'}`}>
+                        {u.a_permiss === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่'}
                       </span>
                     </td>
                     <td>
-                      {u.a_status === '1' || u.a_status === 'true' ? 
-                        <span className="text-success small fw-bold"><i className='bx bxs-check-circle me-1'></i>ปกติ</span> : 
-                        <span className="text-danger small fw-bold"><i className='bx bxs-x-circle me-1'></i>ระงับ</span>
+                      {u.a_status === '1' ? 
+                        <span className="text-success"><i className='bx bxs-check-circle me-1'></i>ปกติ</span> : 
+                        <span className="text-danger"><i className='bx bxs-x-circle me-1'></i>ระงับ</span>
                       }
                     </td>
                     <td className="small text-muted">
-                      {u.a_last_login ? moment(u.a_last_login).locale('th').add(543, 'year').format('DD MMM YY HH:mm') : '-'}
+                      {u.a_last_login ? moment(u.a_last_login).add(543, 'year').format('DD MMM YY HH:mm') : '-'}
                     </td>
                     <td className="text-center">
-                      <button className="btn btn-sm btn-icon btn-outline-warning me-1" title="แก้ไข" onClick={() => handleOpenModal(u)}>
+                      <button className="btn btn-sm btn-outline-warning me-1" onClick={() => handleOpenModal(u)}>
                         <i className='bx bx-edit-alt'></i>
                       </button>
-                      {u.a_permiss !== 'superadmin' && (
-                        <button className="btn btn-sm btn-icon btn-outline-danger" title="ลบ" onClick={() => handleDelete(u)}>
-                          <i className='bx bx-trash'></i>
-                        </button>
-                      )}
+                      <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(u)}>
+                        <i className='bx bx-trash'></i>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -203,10 +177,10 @@ export default function UserSection() {
 
       {/* Modal เพิ่ม/แก้ไข */}
       {showModal && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1060 }}>
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg animate__animated animate__zoomIn animate__faster">
-              <div className="modal-header bg-light">
+            <div className="modal-content border-0 shadow">
+              <div className="modal-header">
                 <h5 className="modal-title fw-bold">
                   {editingUser ? 'แก้ไขข้อมูลผู้ใช้' : 'เพิ่มผู้ใช้งานใหม่'}
                 </h5>
@@ -215,33 +189,22 @@ export default function UserSection() {
               <form onSubmit={handleSubmit}>
                 <div className="modal-body">
                   <div className="mb-3">
-                    <label className="form-label small fw-bold text-muted">ชื่อ-นามสกุล</label>
+                    <label className="form-label small fw-bold">ชื่อ-นามสกุล</label>
                     <input type="text" className="form-control" 
                       value={formData.a_name} 
                       onChange={e => setFormData({...formData, a_name: e.target.value})}
-                      required placeholder="เช่น นายสมชาย ใจดี" />
+                      required />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label small fw-bold text-muted">ชื่อผู้ใช้ (Username)</label>
+                    <label className="form-label small fw-bold">ชื่อผู้ใช้ (Username)</label>
                     <input type="text" className="form-control" 
                       value={formData.a_username} 
                       onChange={e => setFormData({...formData, a_username: e.target.value})}
-                      required placeholder="username" />
+                      required />
                   </div>
                   <div className="mb-3">
-                    <label className="form-label small fw-bold text-muted">สังกัด / หน่วยงาน</label>
-                    <select className="form-select" 
-                      value={formData.a_agency} 
-                      onChange={e => setFormData({...formData, a_agency: e.target.value})}>
-                      <option value="">-- ไม่ระบุ --</option>
-                      {agencies.map(ag => (
-                        <option key={ag.ag_id} value={ag.ag_name}>{ag.ag_name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label small fw-bold text-muted">
-                      รหัสผ่าน {editingUser && <span className="text-primary fs-tiny">(ปล่อยว่างถ้าไม่ต้องการเปลี่ยน)</span>}
+                    <label className="form-label small fw-bold">
+                      รหัสผ่าน {editingUser && <span className="text-muted">(ปล่อยว่างถ้าไม่ต้องการเปลี่ยน)</span>}
                     </label>
                     <input type="password" name="new-password" placeholder="••••••••" className="form-control" 
                       value={formData.a_password} 
@@ -250,17 +213,16 @@ export default function UserSection() {
                   </div>
                   <div className="row">
                     <div className="col-md-6 mb-3">
-                      <label className="form-label small fw-bold text-muted">สิทธิ์การใช้งาน</label>
+                      <label className="form-label small fw-bold">สิทธิ์การใช้งาน</label>
                       <select className="form-select" 
                         value={formData.a_permiss}
                         onChange={e => setFormData({...formData, a_permiss: e.target.value})}>
                         <option value="user">เจ้าหน้าที่ (User)</option>
                         <option value="admin">ผู้ดูแลระบบ (Admin)</option>
-                        <option value="superadmin">ผู้ดูแลระบบสูงสุด (Superadmin)</option>
                       </select>
                     </div>
                     <div className="col-md-6 mb-3">
-                      <label className="form-label small fw-bold text-muted">สถานะ</label>
+                      <label className="form-label small fw-bold">สถานะ</label>
                       <select className="form-select" 
                         value={formData.a_status}
                         onChange={e => setFormData({...formData, a_status: e.target.value})}>
@@ -271,10 +233,8 @@ export default function UserSection() {
                   </div>
                 </div>
                 <div className="modal-footer bg-light border-0">
-                  <button type="button" className="btn btn-outline-secondary" onClick={() => setShowModal(false)}>ยกเลิก</button>
-                  <button type="submit" className="btn btn-primary px-4">
-                    <i className='bx bx-save me-1'></i>บันทึกข้อมูล
-                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>ยกเลิก</button>
+                  <button type="submit" className="btn btn-primary px-4">บันทึกข้อมูล</button>
                 </div>
               </form>
             </div>

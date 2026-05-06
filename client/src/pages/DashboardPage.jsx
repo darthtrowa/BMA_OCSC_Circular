@@ -20,9 +20,7 @@ export default function DashboardPage() {
   const [activeResultId, setActiveResultId]   = useState('all')
   const [baseFilteredData, setBaseFilteredData] = useState(null)  // ข้อมูลกรองจาก CircularSection
   const [allData, setAllData]                 = useState(null)
-  const [users, setUsers]                     = useState([])
   const [loading, setLoading]                 = useState(true)
-  const [usersLoading, setUsersLoading]       = useState(false)
   const profileRef  = useRef()
   const passwordRef = useRef()
 
@@ -45,14 +43,6 @@ export default function DashboardPage() {
         data.mati_work = sortList(data.mati_work, 'mw_name');
       }
       setAllData(data)
-      
-      // ถ้าเป็น superadmin ให้โหลดข้อมูลผู้ใช้งานด้วย
-      if (admin?.permiss === 'superadmin') {
-        setUsersLoading(true)
-        const userData = await adminApi.getUsers()
-        if (userData.status) setUsers(userData.response)
-        setUsersLoading(false)
-      }
     } catch {
       Swal.fire('Error', 'โหลดข้อมูลไม่สำเร็จ', 'error')
     } finally {
@@ -152,11 +142,7 @@ export default function DashboardPage() {
           </nav>
           <div className="content-wrapper">
             <div className="container-xxl flex-grow-1 container-p-y">
-              {activeSection === 'sec-users' ? (
-                <div className="mt-4">
-                  <UserStats users={users} loading={usersLoading} />
-                </div>
-              ) : (
+              {activeSection !== 'sec-users' && (
                 <div className="mt-5">
                   <DashboardStats
                     allData={allData}
@@ -185,7 +171,7 @@ export default function DashboardPage() {
                 />
               )}
               {activeSection === 'sec-users' && (
-                <UserSection users={users} loading={usersLoading} />
+                <UserSection />
               )}
             </div>
           </div>

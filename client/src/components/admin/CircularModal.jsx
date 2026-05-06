@@ -171,6 +171,12 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
                   <option value="">-- เลือกผล --</option>
                   {(allData?.results||[]).map(r=><option key={r.results_id} value={r.results_id}>{r.results_detail}</option>)}
                 </select>
+                {form.in_results_id && (
+                  <div className="small text-muted mt-1 fst-italic px-1">
+                    <i className='bx bx-info-circle me-1'></i>
+                    {allData?.results?.find(r => String(r.results_id) === String(form.in_results_id))?.results_etc}
+                  </div>
+                )}
               </div>
               <div className="col-md-6">
                 <label className="form-label fw-semibold">สถานะ <span className="text-danger">*</span></label>

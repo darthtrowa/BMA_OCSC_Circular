@@ -52,14 +52,6 @@ export default function LoginPage() {
             <div className="card-body p-5">
               <h5 className="text-center mb-4 text-muted">เข้าสู่ระบบผู้ดูแล</h5>
 
-              {/* Demo mode notice */}
-              {(import.meta.env.VITE_API_MODE || 'mock') === 'mock' && (
-                <div className="alert alert-info py-2 mb-3 small">
-                  <i className='bx bx-info-circle me-1'></i>
-                  <strong>Demo Mode:</strong> ใช้ <code>admin / admin</code> เข้าสู่ระบบ
-                </div>
-              )}
-
               <form onSubmit={handleSubmit}>
                 <div className="form-floating mb-3">
                   <input

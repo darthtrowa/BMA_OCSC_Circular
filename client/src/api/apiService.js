@@ -55,6 +55,13 @@ export const publicApi = {
     return data.response?.circular_kp ?? []
   },
 
+  /** ดูข้อมูลหนังสือเวียนแบบเจาะจง */
+  getCircular: async (id) => {
+    const { data } = await http.get(`/api/circular/${id}`)
+    if (!data.status) throw new Error(data.message)
+    return data.response
+  },
+
   /** Chat AI */
   chat: async (message, sessionKey) => {
     const { data } = await http.post('/api/chat', { message, sessionKey })
@@ -104,10 +111,16 @@ export const adminApi = {
   },
 
   /** จัดการ Master Data (CRUD) */
-  masterAction: async (action, type, id, value) => {
-    const { data } = await http.post('/admin/master/action', { action, type, id, value })
+  masterAction: async (action, type, id, value, value2) => {
+    const { data } = await http.post('/admin/master/action', { action, type, id, value, value2 })
     return data
   },
+
+  /** จัดการผู้ใช้งาน */
+  getUsers: () => http.get('/admin/users').then(res => res.data.response),
+  createUser: (payload) => http.post('/admin/users', payload).then(res => res.data),
+  updateUser: (id, payload) => http.put(`/admin/users/${id}`, payload).then(res => res.data),
+  deleteUser: (id) => http.delete(`/admin/users/${id}`).then(res => res.data),
 
   /** โหลดโปรไฟล์ */
   getProfile: async () => {
@@ -124,12 +137,6 @@ export const adminApi = {
   /** เปลี่ยนรหัสผ่าน */
   changePassword: async (payload) => {
     const { data } = await http.post('/admin/profile/change-password', payload)
-    return data
-  },
-
-  /** ดึงข้อมูลผู้ใช้งานทั้งหมด */
-  getUsers: async () => {
-    const { data } = await http.get('/admin/users')
     return data
   },
 }
