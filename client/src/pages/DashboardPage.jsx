@@ -32,6 +32,18 @@ export default function DashboardPage() {
     setLoading(true)
     try {
       const data = await adminApi.getDashboardData()
+      if (data) {
+        const lastItems = ["ไม่ระบุ", "*ไม่พิจารณา", "ไม่พิจารณา"];
+        const sortList = (list, key) => {
+          if (!list) return [];
+          const top = list.filter(i => !lastItems.some(last => (i[key] || '').includes(last)));
+          const bottom = list.filter(i => lastItems.some(last => (i[key] || '').includes(last)));
+          return [...top, ...bottom];
+        };
+        data.results = sortList(data.results, 'results_detail');
+        data.mati_kk = sortList(data.mati_kk, 'mkk_name');
+        data.mati_work = sortList(data.mati_work, 'mw_name');
+      }
       setAllData(data)
       
       // ถ้าเป็น superadmin ให้โหลดข้อมูลผู้ใช้งานด้วย
@@ -96,10 +108,13 @@ export default function DashboardPage() {
         <div className="layout-page">
           <nav className="layout-navbar container-xxl navbar navbar-expand-xl navbar-detached align-items-center bg-navbar-theme">
             <div className="navbar-nav-right d-flex align-items-center w-100" id="navbar-collapse">
-              {/* Right Side Only: Move Welcome Text here and attach Dropdown */}
               <ul className="navbar-nav flex-row align-items-center ms-auto">
                 <li className={`nav-item navbar-dropdown dropdown-user dropdown ${dropdownOpen ? 'show' : ''}`}>
-                  <a className="nav-link dropdown-toggle hide-arrow p-0 d-flex align-items-center" href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDropdownOpen(!dropdownOpen) }}>
+                  <a 
+                    className="nav-link dropdown-toggle hide-arrow d-flex align-items-center" 
+                    href="#" 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDropdownOpen(!dropdownOpen) }}
+                  >
                     <span className="text-muted">
                       <i className='bx bx-user-circle me-1'></i>
                       สวัสดีคุณ <strong>{admin?.name}</strong>
@@ -109,9 +124,7 @@ export default function DashboardPage() {
                     </span>
                   </a>
                   <ul className={`dropdown-menu dropdown-menu-end ${dropdownOpen ? 'show' : ''}`} style={{ position: 'absolute', right: 0, top: '100%', display: dropdownOpen ? 'block' : 'none', minWidth: '200px' }}>
-                    <li>
-                      <div className="dropdown-header">ข้อมูลผู้ใช้งาน</div>
-                    </li>
+                    <li><div className="dropdown-header">ข้อมูลผู้ใช้งาน</div></li>
                     <li><div className="dropdown-divider"></div></li>
                     <li>
                       <a className="dropdown-item" href="#" onClick={(e) => { e.preventDefault(); profileRef.current?.open() }}>
@@ -140,15 +153,19 @@ export default function DashboardPage() {
           <div className="content-wrapper">
             <div className="container-xxl flex-grow-1 container-p-y">
               {activeSection === 'sec-users' ? (
-                <UserStats users={users} loading={usersLoading} />
+                <div className="mt-4">
+                  <UserStats users={users} loading={usersLoading} />
+                </div>
               ) : (
-                <DashboardStats
-                  allData={allData}
-                  loading={loading}
-                  onFilter={handleStatFilter}
-                  activeResultId={activeResultId}
-                  baseFilteredData={baseFilteredData}
-                />
+                <div className="mt-5">
+                  <DashboardStats
+                    allData={allData}
+                    loading={loading}
+                    onFilter={handleStatFilter}
+                    activeResultId={activeResultId}
+                    baseFilteredData={baseFilteredData}
+                  />
+                </div>
               )}
               {activeSection === 'sec-circular' && (
                 <CircularSection

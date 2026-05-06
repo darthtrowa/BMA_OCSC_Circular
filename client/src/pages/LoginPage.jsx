@@ -44,7 +44,7 @@ export default function LoginPage() {
             {/* Header */}
             <div className="card-header bg-navy text-white text-center py-4 border-0">
               <i className='bx bx-building-house fs-1 mb-2 d-block'></i>
-              <h4 className="mb-1 fw-bold">BMA Circular</h4>
+              <h4 className="mb-1 fw-bold font-saochingcha">BMA Circular</h4>
               <small className="opacity-75">ระบบค้นหาหนังสือเวียน ก.พ. กทม.</small>
             </div>
 

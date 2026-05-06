@@ -1,12 +1,12 @@
 // resultId ที่ตรงกับ results_id ในฐานข้อมูล
 // all=null, use=2, adjust=4, notuse=5, pending=12, missing=11
 const CARD_DEFS = [
-  { id: 'all',     label: 'ทั้งหมด',          resultId: null, color: 'primary',  hexColor: null,      icon: 'bx-file-blank',   bg: 'bg-soft-blue'   },
-  { id: 'use',     label: 'นำมาใช้',           resultId: 2,    color: 'success',  hexColor: '#71dd37', icon: 'bx-check-circle', bg: 'bg-soft-green'  },
-  { id: 'adjust',  label: 'นำมาปรับใช้',       resultId: 4,    color: 'warning',  hexColor: '#ffab00', icon: 'bx-edit',         bg: 'bg-soft-yellow' },
-  { id: 'notuse',  label: 'ไม่ใช้',            resultId: 5,    color: 'danger',   hexColor: null,      icon: 'bx-x-circle',     bg: 'bg-soft-red'    },
-  { id: 'pending', label: 'รอผลการพิจารณา',    resultId: 12,   color: 'orange',   hexColor: null,      icon: 'bx-time-five',    bg: 'bg-soft-orange' },
-  { id: 'missing', label: 'ตกหล่น',            resultId: 11,   color: 'dark',     hexColor: null,      icon: 'bx-error-circle', bg: 'bg-soft-purple' },
+  { id: 'all',     label: 'ทั้งหมด',          resultId: null, color: '#4361ee', icon: 'bx-collection', key: 'all' },
+  { id: 'use',     label: 'นำมาใช้',           resultId: 2,    color: '#10b981', icon: 'bx-check-double', key: 'use' },
+  { id: 'adjust',  label: 'นำมาปรับใช้',       resultId: 4,    color: '#f59e0b', icon: 'bx-edit-alt', key: 'adjust' },
+  { id: 'notuse',  label: 'ไม่ใช้',            resultId: 5,    color: '#ef4444', icon: 'bx-x-circle', key: 'notuse' },
+  { id: 'pending', label: 'รอผล',             resultId: 12,   color: '#f97316', icon: 'bx-time-five', key: 'pending' },
+  { id: 'missing', label: 'ตกหล่น',           resultId: 11,   color: '#64748b', icon: 'bx-error-circle', key: 'missing' },
 ]
 
 // คำนวณสถิติจากอาร์เรย์ข้อมูล
@@ -33,43 +33,40 @@ export default function StatsCards({ data, resultsData, activeCardId, onCardClic
   }
 
   return (
-    <section className="py-3 bg-pale-primary">
+    <section className="py-3">
       <div className="container">
-        <div className={`row g-3 stats-row ${(data || resultsData) ? 'stats-loaded' : ''}`}>
+        <div className="row g-4 stats-row">
           {CARD_DEFS.map(card => {
             const isActive = activeCardId === card.id
-            const color = card.hexColor || `var(--bs-${card.color})`
             const val = getValue(card)
             return (
-              <div key={card.id} className="col-6 col-md-4 col-lg-2">
+              <div key={card.id} className="col-6 col-md-4 col-lg-3 col-xl">
                 <div
-                  className="card stats-card h-100 border-0 shadow-sm"
+                  className={`card h-100 border-0 ${isActive ? 'text-white shadow-lg' : 'bg-white shadow-sm'}`}
                   style={{
                     cursor: onCardClick ? 'pointer' : 'default',
-                    outline: isActive ? `2px solid ${color}` : 'none',
-                    transform: isActive ? 'translateY(-2px)' : 'none',
-                    transition: 'all 0.2s ease',
-                    background: isActive ? (card.id === 'all' ? '#eef2ff' : '') : '',
+                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, background-color 0.3s ease',
+                    transform: isActive ? 'translateY(-8px)' : 'none',
+                    backgroundColor: isActive ? card.color : '#fff',
+                    borderRadius: '1.25rem'
                   }}
                   onClick={() => onCardClick && onCardClick(card)}
                 >
-                  <div className="card-body d-flex align-items-center gap-3 p-3">
-                    <div
-                      className={`stats-icon-wrap ${card.bg} rounded-circle`}
-                      style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                    >
-                      <i className={`bx ${card.icon}`} style={{ fontSize: '1.5rem', color }}></i>
+                  <div className="card-body p-4">
+                    <div className="d-flex align-items-center justify-content-between mb-3">
+                      <div 
+                        className={`rounded-xl d-flex align-items-center justify-content-center ${isActive ? 'bg-white bg-opacity-25' : 'bg-light'}`}
+                        style={{ width: '48px', height: '48px' }}
+                      >
+                        <i className={`bx ${card.icon} fs-3`} style={{ color: isActive ? '#fff' : card.color }}></i>
+                      </div>
+                      {isActive && <span className="badge bg-white rounded-pill px-3 shadow-sm" style={{ color: card.color }}>Active</span>}
                     </div>
                     <div>
-                      <div className="stats-label text-muted" style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-                        {card.label}
-                      </div>
-                      <div className="stats-number" style={{ fontSize: '1.6rem', fontWeight: 800, lineHeight: 1.1, color }}>
-                        {val !== null ? val.toLocaleString() : '—'}
-                      </div>
-                      <div className="text-muted" style={{ fontSize: '0.7rem' }}>
-                        {isActive ? <span style={{ color, fontWeight: 600 }}>◀ กำลังแสดง</span> : 'เรื่อง'}
-                      </div>
+                      <h2 className={`fw-bold mb-1 ${isActive ? 'text-white' : ''}`} style={{ color: !isActive ? card.color : undefined }}>
+                        {val !== null ? val.toLocaleString() : <span className="spinner-border spinner-border-sm" />}
+                      </h2>
+                      <p className={`mb-0 fw-medium ${isActive ? 'text-white text-opacity-75' : 'text-muted'}`}>{card.label}</p>
                     </div>
                   </div>
                 </div>

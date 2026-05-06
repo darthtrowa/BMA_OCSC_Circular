@@ -36,7 +36,7 @@ const upload = multer({
 // ─── Helper: parse STRING_AGG → object / array ────────────────
 const parseFirst = (val, fields) => {
   if (!val) return null
-  const parts = val.split(',')[0].split(':')
+  const parts = val.split(',')[0].split('|#|')
   return Object.fromEntries(fields.map((f, i) => [f, parts[i] || '']))
 }
 const parseList = (val, parser, delim = ',') =>
@@ -88,14 +88,14 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
         c_information.in_id, c_information.in_num_date, c_information.in_detail,
         c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
-        STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,':',c_mati_kk.mkk_name,':',c_mati_kk.mkk_date), ',')   AS mati_kk,
-        STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,':',c_mati_work.mw_name,':',c_mati_work.mw_date), ',') AS mati_work,
-        STRING_AGG(DISTINCT CONCAT(c_results.results_id,':',c_results.results_detail,':',c_results.results_color), ',') AS results,
-        STRING_AGG(DISTINCT CONCAT(c_year.year_id,':',c_year.year_value), ',')                               AS year,
-        STRING_AGG(DISTINCT CONCAT(c_status.status_id,':',c_status.status_value), ',')                      AS status_a,
-        STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,':',c_categories.cat_name), ',')                     AS categories,
-        STRING_AGG(DISTINCT CONCAT(c_agency.ag_id,':',c_agency.ag_name), ',')                               AS agency,
-        STRING_AGG(DISTINCT CONCAT(ref_info.in_id,':',ref_info.in_num_date,':',ref_info.in_detail), '|||')    AS references_info
+        STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
+        STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,'|#|',c_mati_work.mw_name,'|#|',c_mati_work.mw_date), ',') AS mati_work,
+        STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color), ',') AS results,
+        STRING_AGG(DISTINCT CONCAT(c_year.year_id,'|#|',c_year.year_value), ',')                               AS year,
+        STRING_AGG(DISTINCT CONCAT(c_status.status_id,'|#|',c_status.status_value), ',')                      AS status_a,
+        STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,'|#|',c_categories.cat_name), ',')                     AS categories,
+        STRING_AGG(DISTINCT CONCAT(c_agency.ag_id,'|#|',c_agency.ag_name), ',')                               AS agency,
+        STRING_AGG(DISTINCT CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',ref_info.in_detail), '|||')    AS references_info
       FROM c_information
       LEFT JOIN c_information_categories ON c_information.in_id=c_information_categories.in_id
       LEFT JOIN c_categories             ON c_information_categories.cat_id=c_categories.cat_id
@@ -109,7 +109,7 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
       LEFT JOIN c_information_information ON c_information.in_id=c_information_information.in_id
       LEFT JOIN c_information AS ref_info ON c_information_information.in_id_ref=ref_info.in_id
       GROUP BY c_information.in_id
-      ORDER BY c_information.in_ordering ASC
+      ORDER BY c_information.in_ordering DESC
     `
     const { rows: infoRows } = await db.query(sql)
     const information = infoRows.map(r => ({
@@ -119,17 +119,17 @@ router.get('/dashboard', requireSuperAdmin, async (req, res) => {
       results:         parseFirst(r.results,    ['results_id','results_detail','results_color']),
       year:            parseFirst(r.year,        ['year_id','year_value']),
       status_a:        parseFirst(r.status_a,    ['status_id','status_value']),
-      categories:      parseList(r.categories,    s => { const [cat_id,cat_name]=s.split(':'); return cat_id?{cat_id,cat_name}:null }),
-      agency:          parseList(r.agency,         s => { const [ag_id,ag_name]=s.split(':'); return ag_id?{ag_id,ag_name}:null }),
-      references_info: parseList(r.references_info,s => { const p=s.split(':'); return (p.length>=3 && p[0])?{in_id:p[0],in_num_date:p[1],in_detail:p.slice(2).join(':')}:null }, '|||'),
+      categories:      parseList(r.categories,    s => { const [cat_id,cat_name]=s.split('|#|'); return cat_id?{cat_id,cat_name}:null }),
+      agency:          parseList(r.agency,         s => { const [ag_id,ag_name]=s.split('|#|'); return ag_id?{ag_id,ag_name}:null }),
+      references_info: parseList(r.references_info,s => { const p=s.split('|#|'); return (p.length>=3 && p[0])?{in_id:p[0],in_num_date:p[1],in_detail:p.slice(2).join('|#|')}:null }, '|||'),
     }))
 
     // Master data
     const [year, results, mati_work, mati_kk, agency, categories, status] = await Promise.all([
-      db.query('SELECT year_id, year_value FROM c_year ORDER BY year_ordering ASC'),
+      db.query('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
       db.query('SELECT results_id, results_detail FROM c_results ORDER BY results_ordering ASC'),
-      db.query('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_ordering ASC'),
-      db.query('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_ordering ASC'),
+      db.query('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
+      db.query('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
       db.query('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
       db.query('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
       db.query('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),

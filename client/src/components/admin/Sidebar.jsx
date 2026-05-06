@@ -1,3 +1,5 @@
+import { LOGO_URL } from '../../api/apiService'
+
 export default function Sidebar({ activeSection, onNavigate, permiss, onLogout, onProfile, onPassword }) {
   const isSuperAdmin = permiss === 'superadmin'
 
@@ -20,53 +22,58 @@ export default function Sidebar({ activeSection, onNavigate, permiss, onLogout, 
           onClick={e => { e.preventDefault(); onNavigate(secId) }}
         >
           <i className={`menu-icon tf-icons bx ${icon}`}></i>
-          <div>{label}</div>
+          <div className="menu-text">{label}</div>
         </a>
       </li>
     )
 
   return (
-    <aside className="layout-menu menu-vertical menu bg-menu-theme">
-      {/* Logo */}
-      <div className="app-brand demo">
-        <a href="/" className="app-brand-link">
-          <span className="app-brand-text menu-text fw-bold">
-            <i className='bx bx-file-blank me-1 text-primary'></i>CSC Circular
-          </span>
-        </a>
-        <button className="layout-menu-toggle menu-link text-large ms-auto d-block d-xl-none">
-          <i className='bx bx-chevron-left'></i>
-        </button>
+    <aside className="layout-menu menu-vertical menu">
+      {/* Logo Section */}
+      <div className="app-brand">
+        <div className="app-brand-logo bg-green rounded-circle d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px', backgroundColor: '#065f46', overflow: 'hidden' }}>
+          <img 
+            src={LOGO_URL} 
+            alt="Logo" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
+          <i className='bx bx-spreadsheet fs-4 text-white' style={{ display: 'none' }}></i>
+        </div>
+        <span className="app-brand-text">CSC Circular</span>
       </div>
-      <div className="menu-divider mt-0"></div>
 
-      <div className="menu-inner-shadow"></div>
-
-      <ul className="menu-inner py-1">
-        {/* หนังสือเวียน */}
+      <ul className="menu-inner">
+        {/* Main Section */}
+        <li className="menu-header">Dashboard</li>
         {navItem('sec-circular', 'หนังสือเวียน', 'bx-file-blank', isSuperAdmin)}
+        
         <li className="menu-item">
           <a href="/" className="menu-link" target="_blank" rel="noreferrer">
-            <i className="menu-icon tf-icons bx bx-world"></i>
-            <div>หน้าค้นหา</div>
+            <i className="menu-icon tf-icons bx bx-globe"></i>
+            <div className="menu-text">หน้าค้นหาสำหรับประชาชน</div>
           </a>
         </li>
-        {/* Master Data */}
+
+        {/* Master Data Section */}
         {isSuperAdmin && (
           <>
-            <li className="menu-header small text-uppercase">
-              <span className="menu-header-text">ข้อมูลหลัก</span>
-            </li>
+            <li className="menu-header">ข้อมูลหลักระบบ</li>
             {masterTypes.map(t => navItem(`sec-master-${t.key}`, t.label, t.icon))}
 
-            <li className="menu-header small text-uppercase">
-              <span className="menu-header-text">ผู้ใช้งาน</span>
-            </li>
-            {navItem('sec-users', 'จัดการผู้ใช้งาน', 'bx-user-plus', isSuperAdmin)}
+            <li className="menu-header">จัดการระบบ</li>
+            {navItem('sec-users', 'จัดการผู้ใช้งาน', 'bx-user-circle', isSuperAdmin)}
           </>
         )}
-
       </ul>
+      
+      {/* Sidebar Footer or Version info could go here */}
+      <div className="p-3 text-center">
+        <small className="text-muted" style={{ fontSize: '0.7rem' }}>v2.0 Hyper-Productive</small>
+      </div>
     </aside>
   )
 }

@@ -10,9 +10,12 @@ function processFileLink(text) {
 
 function formatMati(obj, nameKey, dateKey) {
   if (!obj) return '-'
+  const name = obj[nameKey] || ''
   const d = obj[dateKey]
-  if (!d || d === '2222-01-01') return obj[nameKey] || '-'
-  return `ครั้งที่ ${obj[nameKey]} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
+  const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
+  
+  if (!d || isDummyDate || name.includes('รอเข้า')) return name || '-'
+  return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
 }
 
 function ExpandedRow({ item }) {
@@ -121,13 +124,14 @@ export default function ResultTable({ data }) {
                   
                   return (
                     <>
-                      <tr
+                        <tr
                         key={item.in_id}
                         className={isOpen ? 'table-active' : ''}
                         onClick={() => toggleExpand(item.in_id)}
                         style={{ 
                           cursor: 'pointer',
-                          backgroundColor: isOpen ? undefined : pastelColor
+                          backgroundColor: isOpen ? undefined : pastelColor,
+                          transition: 'background-color 0.3s ease'
                         }}
                       >
                         <td className="text-center align-middle">
@@ -135,14 +139,24 @@ export default function ResultTable({ data }) {
                         </td>
                         <td className="align-middle">
                           {(() => {
-                            const parts = (item.in_num_date || '').split(' ลงวันที่ ')
+                            const splitDate = (str) => {
+                              if (str.includes(' ลงวันที่ ')) return str.split(' ลงวันที่ ')
+                              if (str.includes(' ลว. ')) return str.split(' ลว. ')
+                              if (str.includes(' ลว.')) return str.split(' ลว.')
+                              return [str, '']
+                            }
+                            const parts = splitDate(item.in_num_date || '')
                             return (
                               <>
                                 <div className="fw-bold">{parts[0]}</div>
                                 {parts[1] && <div className="fw-bold text-muted">ลงวันที่ {parts[1]}</div>}
                                 {(item.references_info || []).length > 0 && (
-                                  <div className="mt-1" style={{ fontSize: '0.75rem', color: '#800000', lineHeight: 1.2 }}>
-                                    อ้างถึง: {item.references_info.map(r => r.in_num_date).join(', ')}
+                                  <div className="mt-2 d-flex flex-column gap-1" style={{ maxWidth: '300px' }}>
+                                    {item.references_info.map((r, i) => (
+                                      <span key={i} className="badge bg-soft-red text-danger border-0 font-monospace text-wrap" style={{ fontSize: '0.65rem', whiteSpace: 'normal', textAlign: 'left', display: 'block' }}>
+                                        อ้างถึง: {r.in_num_date}
+                                      </span>
+                                    ))}
                                   </div>
                                 )}
                               </>
@@ -150,11 +164,16 @@ export default function ResultTable({ data }) {
                           })()}
                         </td>
                         <td className="align-middle">
-                          {item.in_detail}
-                          {agencyNames && <><br/><small className="text-muted">ผู้รับผิดชอบ: {agencyNames}</small></>}
+                          <div className="mb-1">{item.in_detail}</div>
+                          {agencyNames && (
+                            <div className="small fw-semibold" style={{ color: '#065f46' }}>
+                              <i className='bx bx-buildings me-1'></i>{agencyNames}
+                            </div>
+                          )}
                         </td>
-                        <td className="align-middle">
-                          <span style={{ color: `#${resColor}`, fontWeight: 600 }}>
+                        <td className="align-middle text-center">
+                          <span className="badge rounded-pill px-3 py-2" style={{ backgroundColor: resColor.startsWith('#') ? resColor : `#${resColor}`, color: '#fff', fontSize: '0.75rem' }}>
+                            <i className={`bx ${resVal === 'ไม่ใช้' ? 'bx-x-circle' : 'bx-check-circle'} me-1`}></i>
                             {resVal}
                           </span>
                         </td>

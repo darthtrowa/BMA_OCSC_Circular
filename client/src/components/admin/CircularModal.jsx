@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import Select from 'react-select'
 import Swal from 'sweetalert2'
 import { adminApi } from '../../api/apiService'
+import moment from 'moment/min/moment-with-locales'
+moment.locale('th')
 
 export default function CircularModal({ allData, editItem, onClose, onSaved }) {
   const isEdit = !!editItem
@@ -44,6 +46,14 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
 
   const makeOptions = (arr, idKey, labelFn) =>
     (arr||[]).map(item => ({ value: String(item[idKey]), label: labelFn(item) }))
+
+  const formatMati = (item, nameKey, dateKey) => {
+    const name = item[nameKey] || ''
+    const d = item[dateKey]
+    const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
+    if (!d || isDummyDate || name.includes('รอเข้า')) return name
+    return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
+  }
 
   const refOptions = (allData?.information||[]).map(i => ({
     value: String(i.in_id),
@@ -145,14 +155,14 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
                 <label className="form-label fw-semibold">มติ ก.ก.</label>
                 <select className="form-select" value={form.in_mkk_id} onChange={e=>set('in_mkk_id',e.target.value)}>
                   <option value="">-- ไม่ระบุ --</option>
-                  {(allData?.mati_kk||[]).map(m=><option key={m.mkk_id} value={m.mkk_id}>{m.mkk_name}</option>)}
+                  {(allData?.mati_kk||[]).map(m=><option key={m.mkk_id} value={m.mkk_id}>{formatMati(m, 'mkk_name', 'mkk_date')}</option>)}
                 </select>
               </div>
               <div className="col-md-6">
                 <label className="form-label fw-semibold">มติคณะทำงาน</label>
                 <select className="form-select" value={form.in_mw_id} onChange={e=>set('in_mw_id',e.target.value)}>
                   <option value="">-- ไม่ระบุ --</option>
-                  {(allData?.mati_work||[]).map(m=><option key={m.mw_id} value={m.mw_id}>{m.mw_name}</option>)}
+                  {(allData?.mati_work||[]).map(m=><option key={m.mw_id} value={m.mw_id}>{formatMati(m, 'mw_name', 'mw_date')}</option>)}
                 </select>
               </div>
               <div className="col-md-6">
