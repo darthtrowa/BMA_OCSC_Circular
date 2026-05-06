@@ -1,0 +1,116 @@
+/* === Global Fonts === */
+* { font-family: 'Sarabun', 'Anuphan', sans-serif; }
+
+/* === Colors === */
+:root {
+  --color-green:      #007947;
+  --color-navy:       #1d3e73;
+  --color-pale-blue:  #dce7f3;
+  --color-pale-navy:  #e8eef6;
+}
+
+/* === Login Page === */
+.login-wrapper {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1d3e73 0%, #2563a8 50%, #007947 100%);
+  position: relative;
+}
+.card-header.bg-navy { background-color: var(--color-navy) !important; }
+
+/* === Public Page === */
+.public-page { min-height: 100vh; background: #f4f7fb; }
+.public-header { background: linear-gradient(135deg, #e8f5f0 0%, #dce7f3 100%); border-bottom: 2px solid #c3d9c9; }
+.text-green { color: var(--color-green) !important; }
+.bg-pale-primary { background: linear-gradient(135deg, #f0f8f5 0%, #e8f0fb 100%) !important; }
+.bg-pale-navy { background: var(--color-pale-navy) !important; }
+
+/* === Stats Cards === */
+.stats-row { transition: opacity 0.5s, transform 0.5s; }
+.stats-row:not(.stats-loaded) { opacity: 0.3; }
+.stats-card { transition: transform 0.2s, box-shadow 0.2s; }
+.stats-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
+.bg-soft-blue   { background: #dbeafe; }
+.bg-soft-green  { background: #dcfce7; }
+.bg-soft-yellow { background: #fef9c3; }
+.bg-soft-red    { background: #fee2e2; }
+.bg-soft-orange { background: #ffedd5; }
+.bg-soft-purple { background: #f3e8ff; }
+
+/* === Chatbot Button === */
+.chatbot-btn {
+  position: fixed; bottom: 90px; right: 28px;
+  width: 62px; height: 62px;
+  background: linear-gradient(135deg, #20c997, #0dcaf0);
+  color: white; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; text-decoration: none;
+  box-shadow: 0 4px 15px rgba(32,201,151,.4);
+  z-index: 9999;
+  transition: transform 0.3s, box-shadow 0.3s;
+  animation: pulse-glow 2s infinite;
+}
+.chatbot-btn:hover { transform: translateY(-4px) scale(1.05); color: white; }
+@keyframes pulse-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(32,201,151,.7); }
+  70%  { box-shadow: 0 0 0 12px rgba(32,201,151,0); }
+  100% { box-shadow: 0 0 0 0 rgba(32,201,151,0); }
+}
+
+/* === Admin Layout === */
+.admin-layout { background: #f5f5f9; min-height: 100vh; }
+.layout-wrapper { display: flex; }
+.layout-container { display: flex; width: 100%; }
+.layout-menu {
+  width: 260px; min-height: 100vh; flex-shrink: 0;
+  background: #fff; border-right: 1px solid #e0e0e0;
+  display: flex; flex-direction: column;
+}
+.layout-page { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.layout-navbar { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 0.75rem 1.5rem; }
+.content-wrapper { flex: 1; }
+.container-xxl { max-width: 1400px; margin: 0 auto; }
+.container-p-y { padding: 1.5rem; }
+
+/* === Sidebar === */
+.app-brand { padding: 1.25rem 1.5rem; border-bottom: 1px solid #e0e0e0; }
+.app-brand-text { font-size: 1.1rem; color: #333; }
+.menu-inner { list-style: none; padding: 0.5rem 0; margin: 0; flex: 1; }
+.menu-item { position: relative; }
+.menu-link {
+  display: flex; align-items: center; padding: 0.625rem 1.25rem;
+  color: #697a8d; text-decoration: none; cursor: pointer;
+  transition: background 0.2s, color 0.2s; border-radius: 0.375rem; margin: 0 0.5rem;
+}
+.menu-link:hover { background: #e8f0ff; color: #4361ee; }
+.menu-link.active { background: #4361ee; color: #fff; }
+.menu-link.active .menu-icon { color: #fff !important; }
+.menu-icon { margin-right: 0.75rem; font-size: 1.2rem; color: #9ba9ba; }
+.menu-header { padding: 0.5rem 1.25rem 0.25rem; font-size: 0.7rem; color: #9ba9ba; letter-spacing: 0.05em; }
+.menu-header-text { text-transform: uppercase; }
+.menu-divider { border-top: 1px solid #e0e0e0; margin: 0.25rem 0; }
+
+/* === Chat Page === */
+.chat-page { font-family: 'Sarabun', sans-serif; }
+.chat-header { position: sticky; top: 0; z-index: 100; }
+.chat-messages { max-height: calc(100vh - 140px); }
+.chat-bubble { font-size: 0.95rem; line-height: 1.7; }
+.typing-dots span {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #9ba9ba; animation: typing 1.4s infinite ease-in-out;
+  margin-right: 3px;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); }
+  30%           { transform: translateY(-8px); }
+}
+
+/* === Expanded Row === */
+.expanded-detail { background: #f9fbfd; }
+
+/* === Responsive === */
+@media (max-width: 768px) {
+  .layout-menu { display: none; }
+  .layout-page { width: 100%; }
+}
