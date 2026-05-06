@@ -20,15 +20,12 @@ module.exports = {
       },
     },
     // ===== Frontend (Vite Dev Server) =====
-    // Using "cmd /c" is the most reliable way to run npm scripts via PM2 on Windows
     {
       name: "circular-frontend",
-      script: "cmd",
-      args: "/c npm run dev",
+      script: "./node_modules/vite/bin/vite.js",
       cwd: path.join(baseDir, "client"),
       exec_mode: "fork",
       watch: false,
-      interpreter: "none",
       autorestart: true,
     },
   ],
