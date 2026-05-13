@@ -5,3 +5,8 @@ node_modules/
 uploads/
 _backup/
 scratch/
+pgdata/
+dist/
+*.sql
+*.dump
+robocopy_log.txt

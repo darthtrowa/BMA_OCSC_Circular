@@ -24,7 +24,7 @@
 ### 2.2 ตั้งค่า Backend (API Server)
 1. เข้าไปที่โฟลเดอร์ `server`:
    ```powershell
-   cd d:\CSC_Circular\server
+   cd <พาธโปรเจกต์>\server
    ```
 2. ติดตั้ง Dependencies:
    ```powershell
@@ -44,7 +44,7 @@
 ### 2.3 ตั้งค่า Frontend (React Client)
 1. เข้าไปที่โฟลเดอร์ `client`:
    ```powershell
-   cd d:\CSC_Circular\client
+   cd <พาธโปรเจกต์>\client
    ```
 2. ติดตั้ง Dependencies:
    ```powershell
@@ -65,7 +65,7 @@
 ### 3.1 รัน Backend (API)
 เปิด Terminal (Admin) และพิมพ์คำสั่ง:
 ```powershell
-cd d:\CSC_Circular\server
+cd <พาธโปรเจกต์>\server
 pm2 start index.js --name "circular-api"
 ```
 
@@ -74,14 +74,14 @@ pm2 start index.js --name "circular-api"
 
 **วิธีที่ 1: รันแบบ Development (สำหรับทดสอบ)**
 ```powershell
-cd d:\CSC_Circular\client
+cd <พาธโปรเจกต์>\client
 pm2 start "npm run dev" --name "circular-frontend"
 ```
 
 **วิธีที่ 2: รันแบบ Production (แนะนำ)**
 1. Build โปรเจกต์:
    ```powershell
-   cd d:\CSC_Circular\client
+   cd <พาธโปรเจกต์>\client
    npm run build
    ```
 2. ผลลัพธ์จะได้โฟลเดอร์ `dist` นำไฟล์ข้างในไปวางใน **IIS** หรือใช้เครื่องมืออย่าง `serve` เพื่อรัน:

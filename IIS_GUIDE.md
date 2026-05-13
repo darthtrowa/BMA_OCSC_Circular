@@ -14,7 +14,7 @@
 ## 2. ขั้นตอนเตรียมไฟล์
 รัน Script ที่เตรียมไว้เพื่อ Build ระบบ:
 ```powershell
-powershell -ExecutionPolicy Bypass -File "d:\CSC_Circular\deploy-iis.ps1"
+powershell -ExecutionPolicy Bypass -File ".\deploy-iis.ps1"
 ```
 
 ---
@@ -24,10 +24,10 @@ powershell -ExecutionPolicy Bypass -File "d:\CSC_Circular\deploy-iis.ps1"
 2. คลิกขวาที่ **Sites** > **Add Website**
 3. ตั้งค่า:
    - **Site name**: `BMA-Circular`
-   - **Physical path**: `D:\CSC_Circular\client\dist` (โฟลเดอร์ที่ได้จากการ Build)
+   - **Physical path**: `[โฟลเดอร์โปรเจกต์]\client\dist` (โฟลเดอร์ที่ได้จากการ Build)
    - **Port**: `80` (หรือ Port ที่ต้องการ)
 4. **แก้ปัญหา React Router (กด Refresh แล้ว 404)**:
-   - ตรวจสอบว่ามีไฟล์ `D:\CSC_Circular\client\dist\web.config` หรือยัง? (ถ้ายังไม่มี ให้สร้างไฟล์นี้และใส่โค้ดด้านล่าง)
+   - ตรวจสอบว่ามีไฟล์ `[โฟลเดอร์โปรเจกต์]\client\dist\web.config` หรือยัง? (ถ้ายังไม่มี ให้สร้างไฟล์นี้และใส่โค้ดด้านล่าง)
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File "d:\CSC_Circular\deploy-iis.ps1"
 
 ## 5. การตั้งค่าสิทธิ์ (Permissions)
 อย่าลืมให้สิทธิ์ User `IIS_IUSRS` เข้าถึงโฟลเดอร์ได้:
-1. คลิกขวาที่โฟลเดอร์ `D:\CSC_Circular` > **Properties**
+1. คลิกขวาที่โฟลเดอร์ `[โฟลเดอร์โปรเจกต์]` > **Properties**
 2. ไปที่แท็บ **Security** > **Edit** > **Add**
 3. พิมพ์ `IIS_IUSRS` แล้วกด OK
 4. ให้สิทธิ์ **Read & execute** และกด OK

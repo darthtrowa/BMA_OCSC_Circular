@@ -1,0 +1,160 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model admin {
+  a_id         Int      @id @default(autoincrement())
+  a_name       String   @db.VarChar(255)
+  a_username   String   @db.VarChar(100)
+  a_password   String   @db.VarChar(255)
+  a_permiss    String   @db.VarChar(255)
+  a_status     String   @db.VarChar(255)
+  a_last_login DateTime @default(now()) @db.Timestamp(6)
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  updated_at   DateTime @default(now()) @db.Timestamp(6)
+  a_agency     String?  @db.VarChar(255)
+}
+
+model c_agency {
+  ag_id                Int                    @id @default(autoincrement())
+  ag_name              String                 @db.VarChar(255)
+  created_at           DateTime               @default(now()) @db.Timestamp(6)
+  updated_at           DateTime               @default(now()) @db.Timestamp(6)
+  agency_ordering      Int
+  c_information_agency c_information_agency[]
+}
+
+model c_categories {
+  cat_id                   Int                        @id @default(autoincrement())
+  cat_name                 String                     @db.VarChar(255)
+  cat_ref                  String                     @db.VarChar(255)
+  created_at               DateTime                   @default(now()) @db.Timestamp(6)
+  updated_at               DateTime                   @default(now()) @db.Timestamp(6)
+  cat_ordering             Int
+  c_information_categories c_information_categories[]
+}
+
+model c_information {
+  in_id                                                                        Int                         @id @default(autoincrement())
+  in_num_date                                                                  String                      @db.VarChar(100)
+  in_detail                                                                    String
+  in_detail_ag                                                                 String
+  in_etc                                                                       String                      @db.VarChar(255)
+  in_file_mkk                                                                  String                      @default("-") @db.VarChar(255)
+  in_link                                                                      String                      @db.VarChar(255)
+  created_at                                                                   DateTime                    @default(now()) @db.Timestamp(6)
+  updated_at                                                                   DateTime                    @default(now()) @db.Timestamp(6)
+  updated_user                                                                 String                      @db.VarChar(255)
+  in_mkk_id                                                                    Int
+  in_mw_id                                                                     Int
+  in_results_id                                                                Int
+  in_year_id                                                                   Int
+  in_status_id                                                                 Int
+  in_ordering                                                                  Int
+  c_mati_kk                                                                    c_mati_kk                   @relation(fields: [in_mkk_id], references: [mkk_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_c_mati_kk1")
+  c_mati_work                                                                  c_mati_work                 @relation(fields: [in_mw_id], references: [mw_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_c_mati_work1")
+  c_results                                                                    c_results                   @relation(fields: [in_results_id], references: [results_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_c_results1")
+  c_status                                                                     c_status                    @relation(fields: [in_status_id], references: [status_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_c_status1")
+  c_year                                                                       c_year                      @relation(fields: [in_year_id], references: [year_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_c_year1")
+  c_information_agency                                                         c_information_agency[]
+  c_information_categories                                                     c_information_categories[]
+  c_information_information_c_information_information_in_idToc_information     c_information_information[] @relation("c_information_information_in_idToc_information")
+  c_information_information_c_information_information_in_id_refToc_information c_information_information[] @relation("c_information_information_in_id_refToc_information")
+
+  @@index([in_mkk_id], map: "fk_c_information_c_mati_kk1_idx")
+  @@index([in_mw_id], map: "fk_c_information_c_mati_work1_idx")
+  @@index([in_results_id], map: "fk_c_information_c_results1_idx")
+  @@index([in_status_id], map: "fk_c_information_c_status1_idx")
+  @@index([in_year_id], map: "fk_c_information_c_year1_idx")
+}
+
+model c_information_agency {
+  in_id         Int
+  ag_id         Int
+  c_agency      c_agency      @relation(fields: [ag_id], references: [ag_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_agency_has_c_information_c_agency")
+  c_information c_information @relation(fields: [in_id], references: [in_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_agency_has_c_information_c_information1")
+
+  @@id([in_id, ag_id])
+  @@index([ag_id], map: "fk_c_agency_has_c_information_c_agency_idx")
+  @@index([in_id], map: "fk_c_agency_has_c_information_c_information1_idx")
+}
+
+model c_information_categories {
+  in_id         Int
+  cat_id        Int
+  c_categories  c_categories  @relation(fields: [cat_id], references: [cat_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_categories_has_c_information_c_categories1")
+  c_information c_information @relation(fields: [in_id], references: [in_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_categories_has_c_information_c_information1")
+
+  @@id([in_id, cat_id])
+  @@index([cat_id], map: "fk_c_categories_has_c_information_c_categories1_idx")
+  @@index([in_id], map: "fk_c_categories_has_c_information_c_information1_idx")
+}
+
+model c_information_information {
+  in_id                                                            Int
+  in_id_ref                                                        Int
+  c_information_c_information_information_in_idToc_information     c_information @relation("c_information_information_in_idToc_information", fields: [in_id], references: [in_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_has_c_information_c_information1")
+  c_information_c_information_information_in_id_refToc_information c_information @relation("c_information_information_in_id_refToc_information", fields: [in_id_ref], references: [in_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_c_information_has_c_information_c_information2")
+
+  @@id([in_id, in_id_ref])
+  @@index([in_id], map: "fk_c_information_has_c_information_c_information1_idx")
+  @@index([in_id_ref], map: "fk_c_information_has_c_information_c_information2_idx")
+}
+
+model c_mati_kk {
+  mkk_id        Int             @id @default(autoincrement())
+  mkk_name      String          @db.VarChar(255)
+  mkk_date      DateTime        @db.Date
+  mkk_ref       String          @db.VarChar(255)
+  created_at    DateTime        @default(now()) @db.Timestamp(6)
+  updated_at    DateTime        @default(now()) @db.Timestamp(6)
+  mkk_ordering  Int
+  c_information c_information[]
+}
+
+model c_mati_work {
+  mw_id         Int             @id @default(autoincrement())
+  mw_name       String          @db.VarChar(255)
+  mw_date       DateTime        @db.Date
+  mw_ref        String?         @db.VarChar(255)
+  created_at    DateTime        @default(now()) @db.Timestamp(6)
+  updated_at    DateTime        @default(now()) @db.Timestamp(6)
+  mw_ordering   Int
+  c_information c_information[]
+}
+
+model c_results {
+  results_id       Int             @id @default(autoincrement())
+  results_detail   String          @db.VarChar(255)
+  results_color    String          @default("000000") @db.VarChar(100)
+  results_etc      String
+  results_status   String          @default("true") @db.VarChar(255)
+  created_at       DateTime        @default(now()) @db.Timestamp(6)
+  updated_at       DateTime        @default(now()) @db.Timestamp(6)
+  results_ordering Int
+  c_information    c_information[]
+}
+
+model c_status {
+  status_id       Int             @id @default(autoincrement())
+  status_value    String          @db.VarChar(100)
+  created_at      DateTime        @default(now()) @db.Timestamp(6)
+  updated_at      DateTime        @default(now()) @db.Timestamp(6)
+  status_ordering Int
+  c_information   c_information[]
+}
+
+model c_year {
+  year_id       Int             @id @default(autoincrement())
+  year_value    String          @db.VarChar(255)
+  created_at    DateTime        @default(now()) @db.Timestamp(6)
+  updated_at    DateTime        @default(now()) @db.Timestamp(6)
+  year_ordering Int
+  c_information c_information[]
+}

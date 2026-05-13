@@ -1,5 +1,5 @@
 # Production Deployment Script for Windows Server
-$baseDir = "d:\CSC_Circular"
+$baseDir = $PSScriptRoot
 
 Write-Host "=== BMA Circular - Production Deployment ===" -ForegroundColor Cyan
 
