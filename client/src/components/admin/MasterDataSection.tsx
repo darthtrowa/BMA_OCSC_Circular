@@ -4,6 +4,11 @@ import { adminApi } from '../../api/apiService'
 import moment from 'moment/min/moment-with-locales'
 moment.locale('th')
 
+const TH_MONTHS = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+]
+
 const masterConfig = {
   year:       { dataKey: 'year',       title: 'ปี พ.ศ.',         pk: 'year_id',    columns: ['year_value'],          headers: ['ปี พ.ศ.'] },
   results:    { dataKey: 'results',    title: 'ผลการพิจารณา',     pk: 'results_id', columns: ['results_detail', 'results_etc'], headers: ['ผลการพิจารณา', 'นิยาม/คำอธิบาย'] },
@@ -26,11 +31,15 @@ export default function MasterDataSection({ type, allData, onReload }) {
 
   const formatCell = (item, col) => {
     const v = item[col]
-    if (v === '2222-01-01' || !v) return '-'
+    const isDummy = v && moment(v).format('YYYY-MM-DD') === '2222-01-01'
+    if (!v || isDummy) return '--'
+    
     if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}/))
       return moment(v).locale('th').add(543, 'year').format('DD MMM YYYY')
     return v
   }
+
+
 
   const openModal = async (id = null, item = null) => {
     let resultValue = ''
@@ -54,6 +63,110 @@ export default function MasterDataSection({ type, allData, onReload }) {
           const v1 = (document.getElementById('swal-input1') as HTMLInputElement).value
           const v2 = (document.getElementById('swal-input2') as HTMLTextAreaElement).value
           if (!v1) return Swal.showValidationMessage('กรุณากรอกผลการพิจารณา!')
+          return [v1, v2]
+        }
+      })
+      if (!value) return
+      resultValue = value[0]
+      resultValue2 = value[1]
+    } else if (type === 'mkk' || type === 'mw') {
+      const dateVal = item?.[conf.columns[1]]
+      const isDummy = !dateVal || dateVal === '2222-01-01'
+      const m = dateVal && dateVal !== '2222-01-01' ? moment(dateVal) : moment()
+      const initD = isDummy ? 1 : m.date()
+      const initM = isDummy ? 0 : m.month()
+      const initY = isDummy ? moment().year() + 543 : m.year() + 543
+
+      const { value } = await Swal.fire({
+        title: id ? `แก้ไขข้อมูล: ${conf.title}` : `เพิ่มข้อมูล: ${conf.title}`,
+        html: `
+          <div class="text-start">
+            <div class="row align-items-center mb-3">
+              <div class="col-sm-4">
+                <label class="form-label fw-semibold mb-0">ชื่อมติ</label>
+              </div>
+              <div class="col-sm-8">
+                <input id="swal-input1" class="form-control" placeholder="เช่น ครั้งที่ 1/2567" value="${item?.[conf.columns[0]] || ''}">
+              </div>
+            </div>
+            
+            <div class="row align-items-center mb-2">
+              <div class="col-sm-4">
+                <label class="form-label fw-semibold mb-0">วันที่ประชุม (พ.ศ.)</label>
+              </div>
+              <div class="col-sm-8">
+                <div class="input-group">
+                  <input type="text" id="swal-datepicker" class="form-control" ${isDummy ? 'disabled' : ''} placeholder="เลือกวันที่..." readonly>
+                  <span class="input-group-text bg-white"><i class='bx bx-calendar'></i></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-sm-4"></div>
+              <div class="col-sm-8">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="swal-no-date" ${isDummy ? 'checked' : ''} 
+                    onchange="document.getElementById('swal-datepicker').disabled = this.checked;">
+                  <label class="form-check-label text-slate-600" for="swal-no-date">ไม่ระบุวันที่</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        `,
+        didOpen: () => {
+          const initDate = isDummy ? null : (item?.[conf.columns[1]] || null);
+          (window as any).flatpickr('#swal-datepicker', {
+            locale: 'th',
+            dateFormat: 'Y-m-d',
+            defaultDate: initDate,
+            altInput: true,
+            altFormat: 'd/m/Y',
+            onReady: (selectedDates, dateStr, instance) => {
+              const yearInput = instance.calendarContainer.querySelector('.cur-year') as HTMLInputElement;
+              if (yearInput) yearInput.value = String(parseInt(yearInput.value) + 543);
+              const altInput = instance.altInput;
+              if (altInput && initDate) {
+                const y = moment(initDate).year() + 543;
+                altInput.value = moment(initDate).format(`DD/MM/${y}`);
+              }
+            },
+            onMonthChange: (selectedDates, dateStr, instance) => {
+              setTimeout(() => {
+                const yearInput = instance.calendarContainer.querySelector('.cur-year') as HTMLInputElement;
+                if (yearInput) yearInput.value = String(parseInt(yearInput.value) + 543);
+              }, 0);
+            },
+            onYearChange: (selectedDates, dateStr, instance) => {
+              setTimeout(() => {
+                const yearInput = instance.calendarContainer.querySelector('.cur-year') as HTMLInputElement;
+                if (yearInput) yearInput.value = String(parseInt(yearInput.value) + 543);
+              }, 0);
+            },
+            onChange: (selectedDates, dateStr, instance) => {
+              const altInput = instance.altInput;
+              if (altInput && selectedDates.length > 0) {
+                const y = moment(selectedDates[0]).year() + 543;
+                altInput.value = moment(selectedDates[0]).format(`DD/MM/${y}`);
+              }
+            }
+          });
+        },
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+        preConfirm: () => {
+          const v1 = (document.getElementById('swal-input1') as HTMLInputElement).value
+          const isNoDate = (document.getElementById('swal-no-date') as HTMLInputElement).checked
+          
+          if (!v1) return Swal.showValidationMessage('กรุณากรอกชื่อมติ!')
+          
+          let v2 = '2222-01-01'
+          if (!isNoDate) {
+            v2 = (document.getElementById('swal-datepicker') as HTMLInputElement).value
+            if (!v2) return Swal.showValidationMessage('กรุณาเลือกวันที่ หรือติ๊กไม่ระบุ!')
+          }
+          
           return [v1, v2]
         }
       })

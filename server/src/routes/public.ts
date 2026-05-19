@@ -126,6 +126,7 @@ router.post('/search', async (req: Request, res: Response) => {
       SELECT
         c_information.in_id, c_information.in_num_date, c_information.in_detail,
         c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
+        c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.updated_at,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), '|||')    AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_name,'|#|',c_mati_work.mw_date), '|||')  AS mati_work,
@@ -148,8 +149,8 @@ router.post('/search', async (req: Request, res: Response) => {
       LEFT JOIN c_information_information ON c_information.in_id=c_information_information.in_id
       LEFT JOIN c_information AS ref_info ON c_information_information.in_id_ref=ref_info.in_id
       WHERE ${where.join(' AND ')}
-      GROUP BY c_information.in_id
-      ORDER BY c_information.in_ordering DESC
+      GROUP BY c_information.in_id, c_year.year_value
+      ORDER BY c_year.year_value DESC, c_information.in_id DESC
     `;
 
     const { rows } = await db.query(sql, params);
@@ -186,6 +187,7 @@ router.get('/circular/:id', async (req: Request, res: Response) => {
       SELECT
         c_information.in_id, c_information.in_num_date, c_information.in_detail,
         c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
+        c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.updated_at,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), '|||')    AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_name,'|#|',c_mati_work.mw_date), '|||')  AS mati_work,

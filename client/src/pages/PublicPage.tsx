@@ -56,11 +56,14 @@ export default function PublicPage() {
     (arr || []).map(item => ({ value: item[idKey], label: labelFn(item) }))
 
   const formatMati = (item, nameKey, dateKey) => {
+    if (!item) return null
     const name = item[nameKey] || ''
     const d = item[dateKey]
     const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
 
-    if (!d || isDummyDate || name.includes('รอเข้า')) return name
+    if (!d || isDummyDate || name.includes('รอเข้า')) {
+      return name && name !== 'ไม่ระบุ' ? name : null
+    }
     return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
   }
 
@@ -142,8 +145,14 @@ export default function PublicPage() {
   // ข้อมูลที่ใช้แสดงใน ResultTable (กรองตาม card ที่เลือก)
   const displayData = (() => {
     if (!results) return []
-    if (!activeCard || activeCard.id === 'all') return results
-    return results.filter(item => item.results?.results_id == activeCard.resultId)
+    const filtered = activeCard && activeCard.id !== 'all'
+      ? results.filter(item => item.results?.results_id == activeCard.resultId)
+      : results
+
+    return [...filtered].sort((a, b) => 
+      (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0) || 
+      (Number(b.in_id) || 0) - (Number(a.in_id) || 0)
+    )
   })()
 
   const selectStyle = {
@@ -183,7 +192,7 @@ export default function PublicPage() {
               </div>
               <div>
                 <h1 className="text-xl m-0 font-bold text-emerald-800 leading-tight">
-                  ระบบสืบค้นผลการพิจารณาหนังสือเวียนสำนักงาน ก.พ.
+                  ระบบสืบค้นผลการพิจารณาหนังสือเวียนของสำนักงาน ก.พ.
                 </h1>
                 <small className="text-gray-500 text-sm">สำนักงานคณะกรรมการข้าราชการกรุงเทพมหานคร</small>
               </div>
@@ -222,7 +231,7 @@ export default function PublicPage() {
         <div className="bg-white/80 backdrop-blur shadow-lg border border-white rounded-2xl overflow-hidden mt-8 mb-10">
           <div className="p-6 md:p-8">
             <h5 className="font-bold text-emerald-800 mb-4 text-xl flex items-center">
-              <i className='bx bx-search mr-3 text-2xl'></i>ค้นหาหนังสือเวียนสำนักงาน ก.พ.
+              <i className='bx bx-search mr-3 text-2xl'></i>ค้นหาหนังสือเวียนของสำนักงาน ก.พ.
             </h5>
             <hr className="mb-6 border-emerald-100" />
             <form onSubmit={handleSearch}>

@@ -56,27 +56,39 @@ docker exec -i bma_ocsc_circular-db-1 psql -U admin circular_db < docs/circular_
 
 ---
 
+## 💻 การพัฒนาโปรเจกต์ (Development Mode)
+หากต้องการแก้ไขโค้ดและเห็นผลทันที (Hot-Reload) โดยไม่ผ่าน Docker ให้ใช้แนวทาง **Local Dev + Port Proxy** ดังนี้:
+
+1. **รันระบบผ่าน PowerShell:**
+   ```powershell
+   .\start-circular.ps1
+   ```
+2. **ตั้งค่าพอร์ต 80 (ทำครั้งเดียว):**
+   หากต้องการเข้าผ่าน `http://localhost` โดยไม่ต้องพิมพ์พอร์ต `:5173` ให้รันคำสั่งนี้ใน **Admin PowerShell**:
+   ```powershell
+   netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=5173 connectaddress=127.0.0.1
+   ```
+
+---
+
 ## 🌐 การเข้าใช้งานระบบ
 เมื่อติดตั้งเสร็จแล้ว สามารถเข้าใช้งานได้ผ่านเบราว์เซอร์:
-- **หน้าเว็บหลัก (Frontend)**: [http://localhost](http://localhost)
+- **หน้าเว็บหลัก (Frontend)**: [http://localhost](http://localhost) (ใช้ได้ทั้งโหมด Docker และ Local Dev ที่แมปพอร์ตแล้ว)
 - **ระบบหลังบ้าน (API Dashboard)**: [http://localhost:3000](http://localhost:3000)
 
 ---
 
 ## 🛠️ คำสั่งที่ใช้บ่อย (Common Commands)
 
-- **หยุดการทำงานของระบบ**:
-  ```powershell
-  docker compose down
-  ```
-- **ดู Log การทำงาน (เพื่อตรวจสอบข้อผิดพลาด)**:
-  ```powershell
-  docker compose logs -f
-  ```
-- **Restart ระบบใหม่**:
-  ```powershell
-  docker compose restart
-  ```
+### กรณีใช้ Docker (Production)
+- **เริ่มทำงาน**: `docker compose up -d --build`
+- **หยุดการทำงาน**: `docker compose down`
+
+### กรณีใช้ PM2 (Development)
+- **เริ่มทำงาน**: `.\start-circular.ps1`
+- **ดู Log**: `pm2 logs`
+- **หยุดการทำงาน**: `pm2 stop all`
 
 ---
 > **หมายเหตุ**: หากมีการเปลี่ยนพอร์ตหรือ IP ของเครื่อง Server ให้ตรวจสอบค่า `VITE_API_BASE_URL` ในไฟล์ `.env` และ Build ใหม่ด้วยคำสั่ง `docker compose up -d --build`
+

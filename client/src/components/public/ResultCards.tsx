@@ -1,22 +1,25 @@
 import { useState } from 'react'
 import moment from 'moment/min/moment-with-locales'
-import { publicApi } from '../../api/apiService'
+import { publicApi, BASE_URL } from '../../api/apiService'
 moment.locale('th')
 
 function processFileLink(text: string) {
   if (!text || text === '-') return null
   if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-sky-600 hover:text-sky-800 underline decoration-sky-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bx-link-external mr-1'></i>ลิงก์</a>
-  return <a href={`/uploads/${text}`} target="_blank" rel="noreferrer" className="text-rose-600 hover:text-rose-800 underline decoration-rose-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bxs-file-pdf mr-1'></i>ไฟล์ PDF</a>
+  return <a href={`${BASE_URL}/uploads/${text}`} target="_blank" rel="noreferrer" className="text-rose-600 hover:text-rose-800 underline decoration-rose-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bxs-file-pdf mr-1'></i>หนังสือเวียนต้นฉบับ</a>
 }
 
 interface CircularItem {
   in_id: number;
   in_num_date: string;
   in_detail: string;
+  in_circular_detail?: string;
   in_detail_ag?: string;
   in_file_mkk?: string;
   in_etc?: string;
   in_link?: string;
+  in_original_link?: string;
+  in_attachment_link?: string;
   updated_at?: string;
   created_at?: string;
   agency?: { ag_id: number; ag_name: string }[];
@@ -34,7 +37,9 @@ function formatMati(obj: any, nameKey: string, dateKey: string) {
   const d = obj[dateKey]
   const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
   
-  if (!d || isDummyDate || name.includes('รอเข้า')) return name || null
+  if (!d || isDummyDate || name.includes('รอเข้า')) {
+    return name && name !== 'ไม่ระบุ' ? name : null
+  }
   return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
 }
 
@@ -71,8 +76,12 @@ function CircularDetailsTable({ item, onRefClick }: CircularDetailsTableProps) {
             <td className="py-2.5 text-slate-700">{(item.agency||[]).map((a)=>a.ag_name).join(', ') || '-'}</td>
           </tr>
           <tr className="hover:bg-slate-50 transition">
-            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap align-top">เหตุผลจากส่วนราชการ</td>
-            <td className="py-2.5 text-slate-700">{item.in_detail_ag||'-'}</td>
+            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap align-top">รายละเอียดของหนังสือเวียน</td>
+            <td className="py-2.5 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>{item.in_circular_detail||'-'}</td>
+          </tr>
+          <tr className="hover:bg-slate-50 transition">
+            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap align-top">การพิจารณาจากส่วนราชการ</td>
+            <td className="py-2.5 text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>{item.in_detail_ag||'-'}</td>
           </tr>
           <tr className="hover:bg-slate-50 transition">
             <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap align-top">หมวดหมู่</td>
@@ -119,9 +128,19 @@ function CircularDetailsTable({ item, onRefClick }: CircularDetailsTableProps) {
           <tr className="hover:bg-slate-50 transition">
             <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">LINK เว็บไซต์ต้นทาง</td>
             <td className="py-2.5 text-slate-700">
-              {item.in_link&&item.in_link!=='-'
-                ? <a href={item.in_link} target="_blank" rel="noreferrer" className="text-sky-600 hover:text-sky-800 underline decoration-sky-600/30 underline-offset-2 break-all">{item.in_link}</a>
-                : '-'}
+              {processFileLink(item.in_link) || '-'}
+            </td>
+          </tr>
+          <tr className="hover:bg-slate-50 transition">
+            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)</td>
+            <td className="py-2.5 text-slate-700">
+              {processFileLink(item.in_original_link) || '-'}
+            </td>
+          </tr>
+          <tr className="hover:bg-slate-50 transition">
+            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">เอกสารแนบท้าย</td>
+            <td className="py-2.5 text-slate-700">
+              {processFileLink(item.in_attachment_link) || '-'}
             </td>
           </tr>
         </tbody>
@@ -253,6 +272,46 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
                       </span>
                     ))}
                   </div>
+
+                  {((item.in_original_link && item.in_original_link !== '-') || 
+                    (item.in_attachment_link && item.in_attachment_link !== '-') || 
+                    (item.in_file_mkk && item.in_file_mkk !== '-')) && (
+                    <div className="flex flex-wrap gap-2 mb-4" onClick={e => e.stopPropagation()}>
+                      {item.in_original_link && item.in_original_link !== '-' && (
+                        <a 
+                          href={`${BASE_URL}/uploads/${item.in_original_link}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                        >
+                          <i className='bx bxs-file-pdf text-sm text-rose-500'></i>
+                          <span>หนังสือเวียนต้นฉบับ</span>
+                        </a>
+                      )}
+                      {item.in_attachment_link && item.in_attachment_link !== '-' && (
+                        <a 
+                          href={`${BASE_URL}/uploads/${item.in_attachment_link}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 border border-amber-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                        >
+                          <i className='bx bxs-file-pdf text-sm text-amber-500'></i>
+                          <span>หนังสือเวียนต้นฉบับ</span>
+                        </a>
+                      )}
+                      {item.in_file_mkk && item.in_file_mkk !== '-' && (
+                        <a 
+                          href={item.in_file_mkk.startsWith('http') ? item.in_file_mkk : `${BASE_URL}/uploads/${item.in_file_mkk}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 hover:text-sky-800 border border-sky-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                        >
+                          <i className='bx bxs-file-pdf text-sm text-sky-500'></i>
+                          <span>มติ ก.ก. เฉพาะเรื่อง</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
 
                   <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-2">
                     <div className="text-slate-400 text-xs flex gap-3">

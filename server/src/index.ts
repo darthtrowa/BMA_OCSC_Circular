@@ -3,11 +3,12 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import pool from './config/database.js';
-import prisma from './db/prisma.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,13 +16,30 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Middleware ───────────────────────────────────────────────
+// ─── Security Middleware ──────────────────────────────────────
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false,
+}));
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: false, message: 'Too many requests, please try again later.' }
+});
+app.use('/api', limiter); // Apply to public API
+
+// ─── CORS ─────────────────────────────────────────────────────
 app.use(cors({
   origin: [
     'http://localhost',
     'http://localhost:5173',
     'http://localhost:4173',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:4173',
     /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127.0.0.1:\d+$/,
   ],
   credentials: true,
 }));
@@ -42,7 +60,7 @@ app.use('/admin', adminRoutes);
 app.get('/', async (_req: Request, res: Response) => {
   let dbStatus = 'Offline';
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await pool.query('SELECT 1');
     dbStatus = 'Online';
   } catch (e) {
     dbStatus = 'Error';

@@ -5,7 +5,7 @@
 
 import axios from 'axios'
 
-const BASE_URL = 'http://localhost:3000' 
+export const BASE_URL = 'http://localhost:3000' 
 export const LOGO_URL = `${BASE_URL}/image/bmalogo2.jpg`
 
 const http = axios.create({
@@ -61,11 +61,6 @@ export const publicApi = {
     if (!data.status) throw new Error(data.message)
     return data.response
   },
-
-  chat: async (message: string, sessionKey?: string): Promise<any> => {
-    const { data } = await http.post('/api/chat', { message, sessionKey })
-    return data
-  },
 }
 
 export const adminApi = {
@@ -75,6 +70,33 @@ export const adminApi = {
       loginPassword: password,
       login_submit_hidden: 'Save',
     })
+    return data
+  },
+
+  /** Step 2 of 2FA: submit OTP code + tmp_token */
+  verifyOtp: async (tmpToken: string, otpCode: string): Promise<any> => {
+    const { data } = await http.post('/admin/auth/verify-otp', {
+      tmp_token: tmpToken,
+      otp_code:  otpCode,
+    })
+    return data
+  },
+
+  /** Resend OTP (rate-limited by server) */
+  resendOtp: async (tmpToken: string): Promise<any> => {
+    const { data } = await http.post('/admin/auth/resend-otp', { tmp_token: tmpToken })
+    return data
+  },
+
+  /** Toggle 2FA for own profile */
+  toggle2fa: async (enabled: boolean): Promise<any> => {
+    const { data } = await http.patch('/admin/profile/2fa', { enabled })
+    return data
+  },
+
+  /** Toggle 2FA for another user (admin only) */
+  toggleUser2fa: async (userId: number | string, enabled: boolean): Promise<any> => {
+    const { data } = await http.patch(`/admin/users/${userId}/2fa`, { enabled })
     return data
   },
 
@@ -103,6 +125,11 @@ export const adminApi = {
     return data
   },
 
+  summarizeCircular: async (pdfPath: string): Promise<any> => {
+    const { data } = await http.post('/admin/circular/summarize', { pdfPath })
+    return data
+  },
+
   masterAction: async (action: string, type: string, id: any, value: any, value2?: any): Promise<any> => {
     const { data } = await http.post('/admin/master/action', { action, type, id, value, value2 })
     return data
@@ -118,8 +145,8 @@ export const adminApi = {
     return data
   },
 
-  updateProfile: async (name: string): Promise<any> => {
-    const { data } = await http.post('/admin/profile', { a_name: name })
+  updateProfile: async (name: string, email: string, role: string, position: string): Promise<any> => {
+    const { data } = await http.post('/admin/profile', { a_name: name, a_email: email, a_role: role, a_position: position })
     return data
   },
 

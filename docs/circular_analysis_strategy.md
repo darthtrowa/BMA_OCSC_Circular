@@ -21,15 +21,23 @@ To handle large documents and numerous attachments efficiently, the system will 
     *   Use PDF Text Extraction (OCR if needed) to index content for deep search.
     *   Categorize attachments (e.g., Application Forms, Guidelines, Salary Scales).
 
-## 2. AI-Powered Analysis Workflow
+## 2. AI-Powered Analysis Workflow (Orchestrated by n8n)
 
-Leveraging the existing AI integration, the analysis process follows these steps:
+Leveraging the existing AI integration and **n8n workflow automation**, the analysis process follows these steps:
 
-1.  **Extraction**: The system downloads the PDF and extracts text using libraries like `pdf-parse` or cloud OCR.
-2.  **Segmentation (Chunking)**: Large documents are broken into manageable segments (Circular letter vs. Annexes).
-3.  **Prompting**: The AI is prompted to compare the OCSC circular with known BMA structures.
+1.  **Ingestion & Trigger**:
+    *   The bot or admin upload triggers an **n8n Webhook**.
+    *   n8n coordinates the download and storage of the PDF.
+2.  **Extraction & Processing**:
+    *   n8n triggers the text extraction service (using `pdf-parse` or OCR nodes).
+    *   Documents are segmented (Chunking) to separate the main circular from annexes.
+3.  **AI Orchestration (n8n AI Nodes)**:
+    *   n8n sends extracted text to LLMs (OpenAI/Mistral) via dedicated AI nodes.
+    *   **Prompting**: n8n manages sophisticated prompts to compare the OCSC circular with BMA structures.
     *   *Example Prompt*: "Summarize the key points of this circular and identify specific sections that may require BMA to update its local regulations."
-4.  **Drafting**: AI populates the `in_detail_ag` field (BMA Consideration) with a draft analysis for the Coordinator to review.
+4.  **Data Persistence & Feedback**:
+    *   n8n updates the PostgreSQL database, populating the `in_detail_ag` field with a draft analysis.
+    *   Notifications (LINE/Email) are sent to the Coordinator for review.
 
 ## 3. User Interface Enhancements
 

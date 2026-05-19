@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import moment from 'moment/min/moment-with-locales'
-import { publicApi } from '../../api/apiService'
+import { publicApi, BASE_URL } from '../../api/apiService'
 moment.locale('th')
 
 function processFileLink(text) {
   if (!text || text === '-') return null
   if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">ลิงก์</a>
-  return <a href={`/uploads/${text}`} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">ไฟล์ PDF</a>
+  return <a href={`${BASE_URL}/uploads/${text}`} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">หนังสือเวียนต้นฉบับ</a>
 }
 
 function formatMati(obj, nameKey, dateKey) {
@@ -15,7 +15,9 @@ function formatMati(obj, nameKey, dateKey) {
   const d = obj[dateKey]
   const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
   
-  if (!d || isDummyDate || name.includes('รอเข้า')) return name || null
+  if (!d || isDummyDate || name.includes('รอเข้า')) {
+    return name && name !== 'ไม่ระบุ' ? name : null
+  }
   return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
 }
 
@@ -45,7 +47,8 @@ function CircularDetailsTable({ item, onRefClick }) {
           <td className="text-success fw-semibold">ผู้รับผิดชอบ</td>
           <td>{(item.agency||[]).map(a=>a.ag_name).join(', ') || '-'}</td>
         </tr>
-        <tr><td className="text-success fw-semibold">เหตุผลจากส่วนราชการ</td><td>{item.in_detail_ag||'-'}</td></tr>
+        <tr><td className="text-success fw-semibold">รายละเอียดของหนังสือเวียน</td><td style={{ whiteSpace: 'pre-wrap' }}>{item.in_circular_detail||'-'}</td></tr>
+        <tr><td className="text-success fw-semibold">การพิจารณาจากส่วนราชการ</td><td style={{ whiteSpace: 'pre-wrap' }}>{item.in_detail_ag||'-'}</td></tr>
         <tr><td className="text-success fw-semibold">หมวดหมู่</td>
           <td>{(item.categories||[]).length > 0 ? (item.categories||[]).map((c, idx) => (
             <span key={idx}>
@@ -65,9 +68,11 @@ function CircularDetailsTable({ item, onRefClick }) {
             ))}</td></tr>
         <tr><td className="text-success fw-semibold">หมายเหตุ</td><td>{item.in_etc||'-'}</td></tr>
         <tr><td className="text-success fw-semibold">LINK เว็บไซต์ต้นทาง</td>
-          <td>{item.in_link&&item.in_link!=='-'
-            ? <a href={item.in_link} target="_blank" rel="noreferrer" className="text-decoration-underline">{item.in_link}</a>
-            : '-'}</td></tr>
+          <td>{processFileLink(item.in_link) || '-'}</td></tr>
+        <tr><td className="text-success fw-semibold">หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)</td>
+          <td>{processFileLink(item.in_original_link) || '-'}</td></tr>
+        <tr><td className="text-success fw-semibold">เอกสารแนบท้าย</td>
+          <td>{processFileLink(item.in_attachment_link) || '-'}</td></tr>
       </tbody>
     </table>
   )
@@ -219,12 +224,47 @@ export default function ResultTable({ data }) {
                           })()}
                         </td>
                         <td className="align-middle">
-                          <div className="mb-1">{item.in_detail}</div>
-                          {agencyNames && (
-                            <div className="small fw-semibold" style={{ color: '#065f46' }}>
-                              <i className='bx bx-buildings me-1'></i>{agencyNames}
-                            </div>
-                          )}
+                          <div className="mb-1 fw-medium">{item.in_detail}</div>
+                          <div className="d-flex flex-wrap gap-2 align-items-center mt-2" onClick={e => e.stopPropagation()}>
+                            {agencyNames && (
+                              <span className="small fw-semibold text-emerald-800 me-2 d-inline-flex align-items-center">
+                                <i className='bx bx-buildings me-1'></i>{agencyNames}
+                              </span>
+                            )}
+                            {item.in_original_link && item.in_original_link !== '-' && (
+                              <a 
+                                href={`${BASE_URL}/uploads/${item.in_original_link}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
+                              >
+                                <i className='bx bxs-file-pdf fs-6'></i>
+                                <span>หนังสือเวียนต้นฉบับ</span>
+                              </a>
+                            )}
+                            {item.in_attachment_link && item.in_attachment_link !== '-' && (
+                              <a 
+                                href={`${BASE_URL}/uploads/${item.in_attachment_link}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
+                              >
+                                <i className='bx bxs-file-pdf fs-6'></i>
+                                <span>หนังสือเวียนต้นฉบับ</span>
+                              </a>
+                            )}
+                            {item.in_file_mkk && item.in_file_mkk !== '-' && (
+                              <a 
+                                href={item.in_file_mkk.startsWith('http') ? item.in_file_mkk : `${BASE_URL}/uploads/${item.in_file_mkk}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
+                              >
+                                <i className='bx bxs-file-pdf fs-6'></i>
+                                <span>มติ ก.ก. เฉพาะเรื่อง</span>
+                              </a>
+                            )}
+                          </div>
                         </td>
                         <td className="align-middle text-center">
                           <span className="badge rounded-pill px-3 py-2" style={{ backgroundColor: resColor.startsWith('#') ? resColor : `#${resColor}`, color: '#fff', fontSize: '0.75rem' }}>

@@ -2,11 +2,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: 1956wine
-      POSTGRES_DB: circular_db
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-1956wine}
+      POSTGRES_DB: ${DB_NAME:-circular_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -17,16 +15,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://admin:1956wine@db:5432/circular_db
-      - DB_HOST=db
-      - DB_USER=admin
-      - DB_PASSWORD=1956wine
-      - DB_NAME=circular_db
-      - DB_PORT=5432
-      - NODE_ENV=production
+    env_file:
+      - .env.docker
     depends_on:
       - db
+    restart: unless-stopped
 
   client:
     build:
@@ -36,7 +29,9 @@ services:
       - "80:80"
     depends_on:
       - server
+    restart: unless-stopped
 
 volumes:
   pgdata:
+
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import Swal from 'sweetalert2'
-import { adminApi } from '../../api/apiService'
+import { adminApi, BASE_URL } from '../../api/apiService'
 import CircularModal from './CircularModal'
 import moment from 'moment/min/moment-with-locales'
 moment.locale('th')
@@ -50,12 +50,28 @@ export default function CircularSection({
     !filterResult || item.results?.results_id == filterResult
   )
 
+  // Defensive sorting: newest to oldest
+  const sorted = [...filtered].sort((a, b) => 
+    (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0) || 
+    (Number(b.in_id) || 0) - (Number(a.in_id) || 0)
+  )
+
+  const renderFileBadge = (text: string, label: string, colorClass: string, icon: string) => {
+    if (!text || text === '-') return null;
+    const url = text.startsWith('http') ? text : `${BASE_URL}/uploads/${text}`;
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className={`px-2 py-0.5 ${colorClass} text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1`}>
+        <i className={`bx ${icon}`}></i> {label}
+      </a>
+    );
+  };
+
   useEffect(() => {
     onBaseFilteredChange?.(baseFiltered)
   }, [allData, search, filterYear, filterAg]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalPages = Math.ceil(filtered.length / perPage)
-  const paged = filtered.slice((page-1)*perPage, page*perPage)
+  const totalPages = Math.ceil(sorted.length / perPage)
+  const paged = sorted.slice((page-1)*perPage, page*perPage)
 
   const handleDelete = (item) => {
     const prefix  = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
@@ -222,11 +238,15 @@ export default function CircularSection({
                     <td className="px-6 py-4 align-top">
                       <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
                       {agencyNames && (
-                        <div className="text-xs font-medium text-emerald-700 flex items-start gap-1">
+                        <div className="text-xs font-medium text-emerald-700 flex items-start gap-1 mb-2">
                           <i className='bx bx-buildings mt-0.5'></i>
                           <span className="leading-snug">{agencyNames}</span>
                         </div>
                       )}
+                      <div className="flex flex-wrap gap-2">
+                        {renderFileBadge(item.in_original_link, 'หนังสือเวียนต้นฉบับ', 'bg-sky-50 text-sky-600 border-sky-100', 'bx-link-external')}
+                        {renderFileBadge(item.in_attachment_link, 'หนังสือเวียนต้นฉบับ', 'bg-violet-50 text-violet-600 border-violet-100', 'bx-paperclip')}
+                      </div>
                     </td>
                     <td className="px-6 py-4 align-top">
                       <span 
@@ -270,7 +290,7 @@ export default function CircularSection({
       {totalPages > 1 && (
         <div className="p-4 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50/50">
           <div className="text-sm text-slate-500">
-            แสดง <span className="font-bold text-slate-700">{Math.min((page-1)*perPage+1,filtered.length)}</span> ถึง <span className="font-bold text-slate-700">{Math.min(page*perPage,filtered.length)}</span> จากทั้งหมด <span className="font-bold text-slate-700">{filtered.length}</span> รายการ
+            แสดง <span className="font-bold text-slate-700">{Math.min((page-1)*perPage+1,sorted.length)}</span> ถึง <span className="font-bold text-slate-700">{Math.min(page*perPage,sorted.length)}</span> จากทั้งหมด <span className="font-bold text-slate-700">{sorted.length}</span> รายการ
           </div>
           <nav className="flex items-center gap-1">
             <button 

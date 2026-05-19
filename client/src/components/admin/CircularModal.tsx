@@ -8,16 +8,20 @@ moment.locale('th')
 export default function CircularModal({ allData, editItem, onClose, onSaved }) {
   const isEdit = !!editItem
   const [form, setForm] = useState({
-    in_num_date: '', in_detail: '', in_detail_ag: '',
+    in_num_date: '', in_detail: '', in_circular_detail: '', in_detail_ag: '',
     in_mkk_id: '', in_mw_id: '', in_results_id: '', in_year_id: '',
     in_status_id: '', in_etc: '', in_link: '',
+    in_original_link: '', in_attachment_link: '',
     ag_id: [], cat_id: [], in_id_ref: [],
     mkk_file_mode: 'none',
     mkk_ref_link_in: '',
     existing_file_in: '',
   })
   const [file, setFile]     = useState(null)
+  const [origFile, setOrigFile] = useState(null)
+  const [attFile, setAttFile]   = useState(null)
   const [saving, setSaving] = useState(false)
+  const [summarizing, setSummarizing] = useState(false)
 
   useEffect(() => {
     if (!editItem) return
@@ -25,6 +29,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
     setForm({
       in_num_date:    e.in_num_date || '',
       in_detail:      e.in_detail || '',
+      in_circular_detail: e.in_circular_detail || '',
       in_detail_ag:   e.in_detail_ag || '',
       in_mkk_id:      e.mati_kk?.mkk_id || '',
       in_mw_id:       e.mati_work?.mw_id || '',
@@ -33,6 +38,8 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
       in_status_id:   e.status_a?.status_id || '',
       in_etc:         e.in_etc === '-' ? '' : (e.in_etc || ''),
       in_link:        e.in_link === '-' ? '' : (e.in_link || ''),
+      in_original_link: e.in_original_link === '-' ? '' : (e.in_original_link || ''),
+      in_attachment_link: e.in_attachment_link === '-' ? '' : (e.in_attachment_link || ''),
       ag_id:   (e.agency||[]).map(a => ({ value: String(a.ag_id), label: a.ag_name })),
       cat_id:  (e.categories||[]).map(c => ({ value: String(c.cat_id), label: c.cat_name })),
       in_id_ref: (e.references_info||[]).map(r => ({
@@ -48,10 +55,14 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
     (arr||[]).map(item => ({ value: String(item[idKey]), label: labelFn(item) }))
 
   const formatMati = (item, nameKey, dateKey) => {
+    if (!item) return null
     const name = item[nameKey] || ''
     const d = item[dateKey]
     const isDummyDate = d && moment(d).format('YYYY-MM-DD') === '2222-01-01'
-    if (!d || isDummyDate || name.includes('รอเข้า')) return name
+
+    if (!d || isDummyDate || name.includes('รอเข้า')) {
+      return name && name !== 'ไม่ระบุ' ? name : null
+    }
     return `ครั้งที่ ${name} วันที่ ${moment(d).locale('th').add(543, 'year').format('DD MMM YYYY')}`
   }
 
@@ -75,6 +86,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
     if (isEdit) fd.append('in_id', editItem.in_id)
     fd.append('in_num_date',   form.in_num_date)
     fd.append('in_detail',     form.in_detail)
+    fd.append('in_circular_detail', form.in_circular_detail)
     fd.append('in_detail_ag',  form.in_detail_ag)
     fd.append('in_mkk_id',     form.in_mkk_id)
     fd.append('in_mw_id',      form.in_mw_id)
@@ -83,6 +95,21 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
     fd.append('in_status_id',  form.in_status_id)
     fd.append('in_etc',        form.in_etc)
     fd.append('in_link',       form.in_link)
+    
+    // Original Circular File
+    if (origFile) {
+      fd.append('in_original_file', origFile)
+    } else {
+      fd.append('in_original_link', form.in_original_link || '-')
+    }
+
+    // Attachment File
+    if (attFile) {
+      fd.append('in_attachment_file', attFile)
+    } else {
+      fd.append('in_attachment_link', form.in_attachment_link || '-')
+    }
+
     if (!form.in_link) fd.append('lkk_none', '-')
     form.ag_id.forEach(o  => fd.append('ag_id[]', o.value))
     form.cat_id.forEach(o => fd.append('cat_id[]', o.value))
@@ -169,13 +196,193 @@ export default function CircularModal({ allData, editItem, onClose, onSaved }) {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">รายละเอียดเพิ่มเติม</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-semibold text-slate-700">รายละเอียดของหนังสือเวียน</label>
+                <button 
+                  type="button"
+                  className="flex items-center gap-1.5 px-3 py-1 bg-violet-50 text-violet-600 hover:bg-violet-100 rounded-lg text-xs font-bold transition disabled:opacity-50"
+                  onClick={async () => {
+                    let pdfPath = ''
+                    
+                    // Priority 1: Mati KK File (Existing or Link)
+                    if (form.mkk_file_mode === 'link' && form.mkk_ref_link_in) {
+                       pdfPath = form.mkk_ref_link_in
+                    } else if (form.mkk_file_mode === 'existing' && form.existing_file_in) {
+                       pdfPath = form.existing_file_in
+                    }
+
+                    // Priority 2: Original OCSC Link
+                    if (!pdfPath && form.in_original_link && form.in_original_link !== '-') {
+                      pdfPath = form.in_original_link
+                    }
+
+                    // Priority 3: Attachment Link
+                    if (!pdfPath && form.in_attachment_link && form.in_attachment_link !== '-') {
+                      pdfPath = form.in_attachment_link
+                    }
+
+                    // Special case: New upload selected but not saved
+                    if (!pdfPath && (origFile || attFile || (form.mkk_file_mode === 'upload' && file))) {
+                       return Swal.fire({ 
+                         icon: 'info', 
+                         title: 'กรุณาบันทึกข้อมูลก่อน',
+                         text: 'เนื่องจากไฟล์หรือเอกสารแนบที่ท่านเลือกยังไม่ได้ถูกอัปโหลดขึ้นเซิร์ฟเวอร์ กรุณากดบันทึกข้อมูลก่อนหนึ่งครั้งเพื่อให้ระบบนำไฟล์ไปประมวลผลได้' 
+                       })
+                    }
+
+                    if (!pdfPath) return Swal.fire({ icon: 'warning', text: 'ไม่พบไฟล์ PDF หรือลิงก์ที่สามารถนำมาสรุปผลได้' })
+
+                    setSummarizing(true)
+                    try {
+                      const res = await adminApi.summarizeCircular(pdfPath)
+                      if (res.status) {
+                        set('in_circular_detail', res.response)
+                        Swal.fire({ icon: 'success', text: 'สรุปผลสำเร็จ', timer: 1500, showConfirmButton: false })
+                      } else {
+                        Swal.fire('ผิดพลาด', res.message, 'error')
+                      }
+                    } catch (err) {
+                      Swal.fire('ผิดพลาด', 'ไม่สามารถสรุปผลได้ในขณะนี้', 'error')
+                    } finally {
+                      setSummarizing(false)
+                    }
+                  }}
+                  disabled={summarizing}
+                >
+                  {summarizing ? (
+                    <><i className='bx bx-loader-alt animate-spin'></i> กำลังสรุป...</>
+                  ) : (
+                    <><i className='bx bx-brain'></i> ใช้ AI สรุปผล</>
+                  )}
+                </button>
+              </div>
               <textarea 
                 className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition resize-none" 
-                rows={2} 
-                value={form.in_detail_ag} 
-                onChange={e=>set('in_detail_ag',e.target.value)} 
+                rows={3} 
+                value={form.in_circular_detail} 
+                onChange={e=>set('in_circular_detail',e.target.value)} 
               />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">การพิจารณาจากส่วนราชการ</label>
+              <textarea
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition resize-none"
+                rows={2}
+                value={form.in_detail_ag}
+                onChange={e=>set('in_detail_ag',e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)</label>
+              {form.in_original_link && form.in_original_link !== '-' ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
+                    <span className="text-sm text-emerald-800 font-medium truncate">{form.in_original_link}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    onClick={() => {
+                      Swal.fire({
+                        title: 'ยืนยันลบไฟล์ต้นฉบับ?',
+                        text: 'เมื่อยืนยัน ระบบจะเคลียร์ไฟล์เดิมออก คุณสามารถเลือกอัปโหลดไฟล์ใหม่เข้ามาได้',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'ใช่, ลบไฟล์',
+                        cancelButtonText: 'ยกเลิก',
+                        confirmButtonColor: '#ef4444'
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          set('in_original_link', '-');
+                          setOrigFile(null);
+                        }
+                      });
+                    }}
+                  >
+                    <i className='bx bx-trash text-sm'></i>
+                    <span>ลบไฟล์</span>
+                  </button>
+                </div>
+              ) : !origFile ? (
+                <input 
+                  type="file"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
+                  accept=".pdf"
+                  onChange={e=>setOrigFile(e.target.files?.[0])} 
+                />
+              ) : (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
+                    <span className="text-sm text-indigo-800 font-medium truncate">{origFile.name}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    onClick={() => setOrigFile(null)}
+                  >
+                    <i className='bx bx-x text-sm'></i>
+                    <span>ยกเลิกเลือก</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">เอกสารแนบท้าย (ถ้ามี)</label>
+              {form.in_attachment_link && form.in_attachment_link !== '-' ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
+                    <span className="text-sm text-emerald-800 font-medium truncate">{form.in_attachment_link}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    onClick={() => {
+                      Swal.fire({
+                        title: 'ยืนยันลบเอกสารแนบท้าย?',
+                        text: 'เมื่อยืนยัน ระบบจะเคลียร์ไฟล์เดิมออก คุณสามารถเลือกอัปโหลดไฟล์ใหม่เข้ามาได้',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'ใช่, ลบไฟล์',
+                        cancelButtonText: 'ยกเลิก',
+                        confirmButtonColor: '#ef4444'
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          set('in_attachment_link', '-');
+                          setAttFile(null);
+                        }
+                      });
+                    }}
+                  >
+                    <i className='bx bx-trash text-sm'></i>
+                    <span>ลบไฟล์</span>
+                  </button>
+                </div>
+              ) : !attFile ? (
+                <input 
+                  type="file"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
+                  accept=".pdf"
+                  onChange={e=>setAttFile(e.target.files?.[0])} 
+                />
+              ) : (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
+                    <span className="text-sm text-indigo-800 font-medium truncate">{attFile.name}</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    onClick={() => setAttFile(null)}
+                  >
+                    <i className='bx bx-x text-sm'></i>
+                    <span>ยกเลิกเลือก</span>
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">มติ ก.ก.</label>

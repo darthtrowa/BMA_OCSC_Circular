@@ -11,7 +11,7 @@ We will expand the current `a_permiss` system into a more granular `a_role` syst
 | `SUPERADMIN` | ผู้ดูแลระบบสูงสุด | Manage users, master data, and system settings. |
 | `COORDINATOR` | เจ้าหน้าที่บริหารการพิจารณา | Manage Bot findings, create official circulars, and start the workflow. |
 | `HR_DIRECTOR` | ผอ. ศูนย์สารสนเทศฯ | Initial receiver; distributes to relevant Division Directors. |
-| `DIV_DIRECTOR` | ผอ. กอง | Assigns to Section Director or Group Leader within their division. |
+| `DIV_DIRECTOR` | ผอ. ส่วนราชการ | Assigns to Section Director or Group Leader within their division. |
 | `SEC_DIRECTOR` | ผอ. ส่วน | Assigns to Group Leader within their section. |
 | `GRP_LEADER` | หัวหน้ากลุ่มงาน/ฝ่าย | Assigns to Staff for data entry; first level of review. |
 | `STAFF` | เจ้าหน้าที่กลุ่ม | Records circular data and results. |

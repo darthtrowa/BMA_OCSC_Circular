@@ -7,7 +7,7 @@ if (!(Get-Command pm2 -ErrorAction SilentlyContinue)) {
     $pm2Command = "$npxCommand -y pm2"
 }
 
-Write-Host "--- Starting BMA Circular System ---" -ForegroundColor Cyan
+Write-Host "--- Starting BMA Circular System (Local Dev Mode) ---" -ForegroundColor Cyan
 
 # Set location to where the script is located
 Set-Location -Path $PSScriptRoot
@@ -46,14 +46,18 @@ if ($pm2Command -eq "pm2") {
     & $npxCommand -y pm2 status
 }
 
+
 Write-Host ""
-Write-Host "System is starting up!" -ForegroundColor Cyan
-Write-Host "  - Frontend : http://localhost:5173" -ForegroundColor Yellow
+Write-Host "🚀 System is starting up in Local Mode!" -ForegroundColor Cyan
+Write-Host "  - Frontend : http://localhost (Mapped from :5173)" -ForegroundColor Green
 Write-Host "  - Backend  : http://localhost:3000" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "💡 Tip: To enable http://localhost (Port 80) without Docker," -ForegroundColor Gray
+Write-Host "   Run this command ONCE in Admin PowerShell:" -ForegroundColor Gray
+Write-Host "   netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=5173 connectaddress=127.0.0.1" -ForegroundColor White
 Write-Host ""
 Write-Host "Useful Commands:" -ForegroundColor White
 Write-Host "  pm2 logs                    # View real-time logs"
-Write-Host "  pm2 logs circular-frontend  # View frontend logs"
 Write-Host "  pm2 restart all             # Restart all services"
 Write-Host "  pm2 stop all                # Stop all services"
 
