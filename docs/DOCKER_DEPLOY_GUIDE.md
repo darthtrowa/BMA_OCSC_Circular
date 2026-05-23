@@ -34,7 +34,7 @@ JWT_SECRET=your_jwt_secret_here
 NODE_ENV=production
 
 # --- Frontend Configuration ---
-VITE_API_BASE_URL=http://localhost:3000
+VITE_API_BASE_URL=""
 ```
 
 ### 3. เริ่มการทำงานของระบบ

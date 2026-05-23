@@ -986,3 +986,23 @@
 - **apiService.ts**:
   - **Issue**: The global Axios response interceptor was catching `401 Unauthorized` responses and immediately performing a hard page reload (`window.location.href = '/admin/login'`). When a user typed an incorrect password (or an old password made invalid by the new hashing algorithm), the API returned 401. This caused the page to instantly refresh before the error message could be displayed, making the login screen appear "stuck" or unresponsive.
   - **Fix**: Excluded the `/auth/login` and `/auth/verify-otp` endpoints from the global 401 redirect logic. Error messages ("Username or Password incorrect") are now properly passed to the `LoginPage` component and displayed to the user via `Swal.fire`.
+
+## [1.1.48] - 2026-05-23
+
+### DevOps & Security Hardening (Kalama Sutta Architecture)
+
+#### ⚙️ Docker & Infrastructure Changes
+
+- **docker-compose.yml**:
+  - Removed explicit port mapping (`3000:3000`) from the `server` service to enforce routing exclusively through the Nginx proxy and prevent direct external access bypasses.
+  - Hardened PostgreSQL default password handling by enforcing a strict absence check (`POSTGRES_PASSWORD: ${DB_PASSWORD?Error: DB_PASSWORD missing}`).
+
+- **server/Dockerfile**:
+  - Transitioned the base image from `node:20-slim` to `node:20-alpine` for both builder and production stages to minimize attack surface and image size.
+  - Updated package manager commands from `apt-get` to `apk` for compatibility with Alpine Linux.
+  - Implemented principle of least privilege by dropping root privileges and running the application as `USER node`.
+
+- **client/nginx.conf**:
+  - Added global gzip compression for text-based resources (`text/plain`, `application/json`, `application/javascript`, `text/css`) to improve transmission performance.
+  - Hardened the `/uploads/` directory block by removing `access_log off;` and injecting `add_header X-Content-Type-Options nosniff;` to prevent MIME-sniffing vulnerabilities.
+  - Documented a structural warning regarding potential routing conflicts between Express API namespaces and React frontend routes.

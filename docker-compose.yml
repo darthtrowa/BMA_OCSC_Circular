@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${DB_USER:-admin}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_PASSWORD: "${DB_PASSWORD?Error: DB_PASSWORD missing}"
       POSTGRES_DB: ${DB_NAME:-circular_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -13,8 +13,6 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
     env_file:
       - .env.docker
     depends_on:

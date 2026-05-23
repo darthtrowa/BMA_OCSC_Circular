@@ -5,7 +5,7 @@
 
 import axios from 'axios'
 
-export const BASE_URL = 'http://localhost:3000' 
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 export const LOGO_URL = `${BASE_URL}/image/bmalogo2.jpg`
 
 const http = axios.create({
@@ -65,7 +65,7 @@ export const publicApi = {
 
 export const adminApi = {
   login: async (username: string, password: string): Promise<any> => {
-    const { data } = await http.post('/admin/auth/login', {
+    const { data } = await http.post('/api/admin/auth/login', {
       loginUsername: username,
       loginPassword: password,
       login_submit_hidden: 'Save',
@@ -75,7 +75,7 @@ export const adminApi = {
 
   /** Step 2 of 2FA: submit OTP code + tmp_token */
   verifyOtp: async (tmpToken: string, otpCode: string): Promise<any> => {
-    const { data } = await http.post('/admin/auth/verify-otp', {
+    const { data } = await http.post('/api/admin/auth/verify-otp', {
       tmp_token: tmpToken,
       otp_code:  otpCode,
     })
@@ -84,106 +84,106 @@ export const adminApi = {
 
   /** Resend OTP (rate-limited by server) */
   resendOtp: async (tmpToken: string): Promise<any> => {
-    const { data } = await http.post('/admin/auth/resend-otp', { tmp_token: tmpToken })
+    const { data } = await http.post('/api/admin/auth/resend-otp', { tmp_token: tmpToken })
     return data
   },
 
   /** Toggle 2FA for own profile */
   toggle2fa: async (enabled: boolean): Promise<any> => {
-    const { data } = await http.patch('/admin/profile/2fa', { enabled })
+    const { data } = await http.patch('/api/admin/profile/2fa', { enabled })
     return data
   },
 
   /** Toggle 2FA for another user (admin only) */
   toggleUser2fa: async (userId: number | string, enabled: boolean): Promise<any> => {
-    const { data } = await http.patch(`/admin/users/${userId}/2fa`, { enabled })
+    const { data } = await http.patch(`/api/admin/users/${userId}/2fa`, { enabled })
     return data
   },
 
   getDashboardData: async (): Promise<any> => {
-    const { data } = await http.get<ApiResponse<any>>('/admin/dashboard')
+    const { data } = await http.get<ApiResponse<any>>('/api/admin/dashboard')
     if (!data.status) throw new Error(data.message)
     return data.response
   },
 
   createCircular: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/admin/circular/create', formData, {
+    const { data } = await http.post('/api/admin/circular/create', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
 
   updateCircular: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/admin/circular/update', formData, {
+    const { data } = await http.post('/api/admin/circular/update', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
 
   deleteCircular: async (encodedId: string | number): Promise<any> => {
-    const { data } = await http.post('/admin/circular/delete', { in_id: encodedId })
+    const { data } = await http.post('/api/admin/circular/delete', { in_id: encodedId })
     return data
   },
 
   summarizeCircular: async (payload: { mainPdf?: string, attachments?: string[] }): Promise<any> => {
-    const { data } = await http.post('/admin/circular/summarize', payload)
+    const { data } = await http.post('/api/admin/circular/summarize', payload)
     return data
   },
 
   uploadSingle: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/admin/circular/upload-single', formData, {
+    const { data } = await http.post('/api/admin/circular/upload-single', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
 
   masterAction: async (action: string, type: string, id: any, value: any, value2?: any): Promise<any> => {
-    const { data } = await http.post('/admin/master/action', { action, type, id, value, value2 })
+    const { data } = await http.post('/api/admin/master/action', { action, type, id, value, value2 })
     return data
   },
 
-  getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/admin/users').then(res => res.data.response),
-  createUser: (payload: any): Promise<any> => http.post('/admin/users', payload).then(res => res.data),
-  updateUser: (id: string | number, payload: any): Promise<any> => http.put(`/admin/users/${id}`, payload).then(res => res.data),
-  deleteUser: (id: string | number): Promise<any> => http.delete(`/admin/users/${id}`).then(res => res.data),
+  getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/api/admin/users').then(res => res.data.response),
+  createUser: (payload: any): Promise<any> => http.post('/api/admin/users', payload).then(res => res.data),
+  updateUser: (id: string | number, payload: any): Promise<any> => http.put(`/api/admin/users/${id}`, payload).then(res => res.data),
+  deleteUser: (id: string | number): Promise<any> => http.delete(`/api/admin/users/${id}`).then(res => res.data),
 
   getProfile: async (): Promise<any> => {
-    const { data } = await http.get('/admin/profile')
+    const { data } = await http.get('/api/admin/profile')
     return data
   },
 
   updateProfile: async (name: string, email: string, role: string, position: string): Promise<any> => {
-    const { data } = await http.post('/admin/profile', { a_name: name, a_email: email, a_role: role, a_position: position })
+    const { data } = await http.post('/api/admin/profile', { a_name: name, a_email: email, a_role: role, a_position: position })
     return data
   },
 
   changePassword: async (payload: any): Promise<any> => {
-    const { data } = await http.post('/admin/profile/change-password', payload)
+    const { data } = await http.post('/api/admin/profile/change-password', payload)
     return data
   },
 
   syncBotFindings: async (): Promise<any> => {
-    const { data } = await http.post('/admin/bot-findings/sync')
+    const { data } = await http.post('/api/admin/bot-findings/sync')
     return data
   },
 
   getBotFindings: async (): Promise<any> => {
-    const { data } = await http.get('/admin/bot-findings')
+    const { data } = await http.get('/api/admin/bot-findings')
     return data
   },
 
   actionBotFinding: async (id: string | number, action: string): Promise<any> => {
-    const { data } = await http.post(`/admin/bot-findings/${id}/action`, { action })
+    const { data } = await http.post(`/api/admin/bot-findings/${id}/action`, { action })
     return data
   },
 
   deleteBotFinding: async (id: string | number): Promise<any> => {
-    const { data } = await http.delete(`/admin/bot-findings/${id}`)
+    const { data } = await http.delete(`/api/admin/bot-findings/${id}`)
     return data
   },
 
   importBotFinding: async (payload: any): Promise<any> => {
-    const { data } = await http.post(`/admin/bot-findings/import`, payload)
+    const { data } = await http.post(`/api/admin/bot-findings/import`, payload)
     return data
   },
 }

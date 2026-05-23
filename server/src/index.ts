@@ -81,7 +81,7 @@ app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, '../../f
 
 // ─── Routes ──────────────────────────────────────────────────
 app.use('/api', publicRoutes);
-app.use('/admin', adminRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ─── Root: Status Dashboard ──────────────────────────────────
 app.get('/', async (_req: Request, res: Response) => {
