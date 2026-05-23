@@ -11,52 +11,186 @@ const __dirname = path.dirname(__filename);
 // Get API Key from environment
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-export async function summarizePdf(pdfPath: string): Promise<string> {
-  try {
-    let dataBuffer: Buffer;
+export async function extractTextFromPdf(pdfPath: string): Promise<string> {
+  let dataBuffer: Buffer;
 
-    if (pdfPath.startsWith('http')) {
-      // Download from URL
-      const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
-      dataBuffer = Buffer.from(response.data);
-    } else {
-      // Read from local file
-      const fullPath = path.join(__dirname, '../../../uploads', pdfPath);
-      if (!fs.existsSync(fullPath)) {
-        throw new Error('ไม่พบไฟล์ PDF ในระบบ');
+  if (pdfPath.startsWith('http')) {
+    const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
+    dataBuffer = Buffer.from(response.data);
+  } else {
+    const fullPath = path.join(__dirname, '../../../uploads', pdfPath);
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+    }
+    dataBuffer = fs.readFileSync(fullPath);
+  }
+
+  const parser = new PDFParse({ data: dataBuffer });
+  const data = await parser.getText();
+  await parser.destroy();
+  return data.text || '';
+}
+
+export async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
+  if (pdfPath.startsWith('http')) {
+    const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data);
+  } else {
+    const fullPath = path.join(__dirname, '../../../uploads', pdfPath);
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+    }
+    return fs.readFileSync(fullPath);
+  }
+}
+
+export async function summarizePdf(payload: { mainPdf?: string, attachments?: string[] }): Promise<{ summary: string, docDate: string, references: any[], qrLink: string }> {
+  try {
+    let pdfPart: any = null;
+    let promptParts = [];
+
+    // 1. อ่านไฟล์หลัก
+    if (payload.mainPdf) {
+      try {
+        const pdfBuffer = await getPdfBuffer(payload.mainPdf);
+        pdfPart = {
+          inlineData: {
+            data: pdfBuffer.toString('base64'),
+            mimeType: 'application/pdf'
+          }
+        };
+      } catch (err) {
+        console.warn(`[AI Service] Cannot read visual PDF for ${payload.mainPdf}, falling back to text:`, err);
       }
-      dataBuffer = fs.readFileSync(fullPath);
+
+      const mainText = await extractTextFromPdf(payload.mainPdf);
+      if (mainText.trim().length >= 10) {
+        promptParts.push(`--- ส่วนที่ 1: เนื้อหาหนังสือเวียนหลัก ---\n${mainText.substring(0, 30000)}`);
+      }
     }
 
-    // Extract text from PDF using PDFParse class
-    const parser = new PDFParse({ data: dataBuffer });
-    const data = await parser.getText();
-    const text = data.text;
-    await parser.destroy();
+    // 2. อ่านไฟล์สิ่งที่ส่งมาด้วย
+    if (payload.attachments && payload.attachments.length > 0) {
+      let attachmentText = '';
+      for (let i = 0; i < payload.attachments.length; i++) {
+        try {
+          const text = await extractTextFromPdf(payload.attachments[i]);
+          if (text.trim().length >= 10) {
+            attachmentText += `\n[สิ่งที่ส่งมาด้วยไฟล์ที่ ${i + 1}: ${payload.attachments[i]}]\n${text.substring(0, 15000)}\n`;
+          }
+        } catch (err) {
+          console.warn(`ข้ามไฟล์สิ่งที่ส่งมาด้วย ${payload.attachments[i]} เนื่องจากอ่านข้อความไม่ได้`);
+        }
+      }
+      if (attachmentText) {
+        promptParts.push(`--- ส่วนที่ 2: สิ่งที่ส่งมาด้วย ---\n${attachmentText}`);
+      }
+    }
 
-    if (!text || text.trim().length < 10) {
+    if (promptParts.length === 0) {
       throw new Error('ไม่สามารถดึงข้อความจากไฟล์ PDF ได้ หรือไฟล์ไม่มีข้อความ');
     }
 
-    // Summarize using Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // Summarize using Gemini with structured JSON output
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
+    });
+
     const prompt = `
-      คุณคือผู้ช่วยสรุปหนังสือเวียนของสำนักงาน ก.พ. และกรุงเทพมหานคร 
-      กรุณาสรุปเนื้อหาสำคัญจากข้อความในหนังสือเวียนนี้ให้กระชับ ได้ใจความ 
-      โดยเน้นที่: 
-      1. วัตถุประสงค์หลัก 
-      2. ข้อกำหนดหรือแนวทางปฏิบัติที่สำคัญ 
-      3. ผู้ที่เกี่ยวข้องหรือผู้ที่ต้องถือปฏิบัติ
-      
-      สรุปเป็นภาษาไทยที่อ่านง่ายและเป็นทางการ
-      
-      ข้อความจาก PDF:
-      ${text.substring(0, 30000)} // Limit text length for safety
+      คุณคือผู้ช่วยวิเคราะห์และสรุปหนังสือเวียนของสำนักงาน ก.พ. และกรุงเทพมหานคร
+      กรุณาวิเคราะห์เอกสาร PDF และข้อความด้านล่างนี้ และให้ผลลัพธ์เป็น JSON Object ตามโครงสร้างนี้เท่านั้น:
+      {
+        "summary": "สรุปเนื้อหาสำคัญของหนังสือหลัก โดยเน้นวัตถุประสงค์หลัก ข้อกำหนดที่สำคัญ ผู้ที่ต้องถือปฏิบัติ และผลกระทบกับการบริหารงานบุคคลของกรุงเทพมหานคร และหากมีข้อมูลใน 'ส่วนที่ 2: สิ่งที่ส่งมาด้วย' ให้เพิ่มหัวข้อ 'สิ่งที่ส่งมาด้วย' แยกต่างหากด้านล่างพร้อมสรุปใจความสำคัญของสิ่งส่งมาด้วยเหล่านั้นเป็นภาษาไทยที่เป็นทางการและอ่านง่าย (ข้อสำคัญ: 1. ให้ใช้เลขอารบิคเท่านั้น 2. ห้ามใส่เครื่องหมายดอกจัน * หรือ ** ในเนื้อหานี้สำหรับการเน้นคำ การจัดวรรคตอน หรือหัวข้อย่อยเด็ดขาด ให้ใช้ข้อความธรรมดา การเว้นวรรค และการขึ้นบรรทัดใหม่แทน)",
+        "docDate": "วันที่ของหนังสือเวียน/ลงวันที่ เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ให้กรอกเฉพาะข้อความวันที่ที่ระบุในเอกสารจริงๆ เท่านั้น หรือหากไม่พบให้ใส่เป็นค่าว่าง \"\")",
+        "references": [
+          {
+            "number": "เลขที่หนังสือเวียน/เลขที่หนังสืออ้างอิงทั้งหมดที่เกี่ยวข้องที่พบในเอกสาร เช่น 'ว 36', 'นร 1008/ว 14' (หากไม่มีให้ใส่เป็นอาเรย์ว่าง [])",
+            "date": "วันที่ของหนังสือเวียนอ้างอิงนั้น เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ระบุเฉพาะกรณีที่มีการระบุวันที่ในเอกสารอ้างอิงนั้นจริงๆ เท่านั้น หากไม่มีการระบุให้ใส่ค่าว่าง \"\")"
+          }
+        ],
+        "qrLink": "ลิงก์ URL ที่ถอดรหัสได้จากรูปภาพ QR Code ที่ปรากฏในหน้าเอกสาร PDF (เช่น ลิงก์ไปยังหน้าเว็บรายละเอียดของสำนักงาน ก.พ. มักขึ้นต้นด้วย http หรือ https) หากหาไม่พบ หรือไม่มี QR Code หรือสแกนลิงก์ไม่ได้ ให้ตอบเป็นค่าว่าง \"\" เท่านั้น"
+      }
+
+      ข้อมูลประกอบ/ส่วนที่ส่งมาด้วย:
+      ${promptParts.join('\n\n')}
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    let attempt = 0;
+    const maxRetries = 4;
+    let delayMs = 1500;
+    let lastError: any = null;
+
+    while (attempt <= maxRetries) {
+      try {
+        if (attempt > 0) {
+          console.log(`[AI Service] Retrying Gemini summarization, attempt ${attempt}/${maxRetries} after ${delayMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          delayMs *= 2; // Exponential backoff: 1.5s -> 3s -> 6s -> 12s
+        }
+
+        const contentParams: any[] = [prompt];
+        if (pdfPart) {
+          contentParams.push(pdfPart);
+        }
+
+        const result = await model.generateContent(contentParams);
+        const response = await result.response;
+        const textOutput = response.text();
+
+        try {
+          const parsed = JSON.parse(textOutput);
+          let summary = parsed.summary || '';
+          if (summary) {
+            summary = summary.replace(/\*/g, ''); // Programmatically strip asterisks
+          }
+          return {
+            summary: summary,
+            docDate: parsed.docDate || '',
+            references: Array.isArray(parsed.references) ? parsed.references : [],
+            qrLink: parsed.qrLink || ''
+          };
+        } catch (jsonErr) {
+          console.warn('[AI Service] Failed to parse JSON response from Gemini:', jsonErr);
+          let summary = textOutput || '';
+          if (summary) {
+            summary = summary.replace(/\*/g, ''); // Programmatically strip asterisks
+          }
+          return {
+            summary: summary,
+            docDate: '',
+            references: [],
+            qrLink: ''
+          };
+        }
+      } catch (error: any) {
+        lastError = error;
+        attempt++;
+
+        const status = error?.status || error?.statusCode || error?.response?.status;
+        const msg = (error?.message || '').toLowerCase();
+        const isTransient = (status === 503 || status === 429 || status === 408 || status === 500 || status === 502 || status === 504) ||
+          msg.includes('503') ||
+          msg.includes('429') ||
+          msg.includes('service unavailable') ||
+          msg.includes('busy') ||
+          msg.includes('overloaded') ||
+          msg.includes('temporary') ||
+          msg.includes('demand') ||
+          msg.includes('resource exhausted') ||
+          msg.includes('rate limit') ||
+          msg.includes('timeout');
+
+        if (!isTransient || attempt > maxRetries) {
+          break;
+        }
+        console.warn(`[AI Service] Attempt ${attempt} failed with transient error: "${error.message}".`);
+      }
+    }
+
+    throw lastError || new Error('ไม่สามารถเชื่อมต่อบริการ AI ได้');
 
   } catch (error: any) {
     console.error('AI Summarization Error:', error.message);

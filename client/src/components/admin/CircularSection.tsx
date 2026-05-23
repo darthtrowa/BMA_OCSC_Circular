@@ -9,7 +9,7 @@ interface CircularSectionProps {
   allData: any;
   loading: boolean;
   onReload: () => void;
-  initialResultId?: string;
+  initialResultId?: string | number;
   onBaseFilteredChange?: (filtered: any[]) => void;
   onFilterResultChange?: (val: string) => void;
 }
@@ -50,11 +50,22 @@ export default function CircularSection({
     !filterResult || item.results?.results_id == filterResult
   )
 
-  // Defensive sorting: newest to oldest
-  const sorted = [...filtered].sort((a, b) => 
-    (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0) || 
-    (Number(b.in_id) || 0) - (Number(a.in_id) || 0)
-  )
+  // Defensive sorting: newest to oldest, with natural numeric sort for circular numbers
+  const extractWNumber = (text: string) => {
+    if (!text) return 0;
+    const match = text.match(/\/ว\s*(\d+)/i);
+    return match && match[1] ? parseInt(match[1], 10) : 0;
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    const yearDiff = (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0);
+    if (yearDiff !== 0) return yearDiff;
+    const numA = extractWNumber(a.in_num_date);
+    const numB = extractWNumber(b.in_num_date);
+    const numDiff = numB - numA;
+    if (numDiff !== 0) return numDiff;
+    return (Number(b.in_id) || 0) - (Number(a.in_id) || 0);
+  });
 
   const renderFileBadge = (text: string, label: string, colorClass: string, icon: string) => {
     if (!text || text === '-') return null;
@@ -62,6 +73,41 @@ export default function CircularSection({
     return (
       <a href={url} target="_blank" rel="noreferrer" className={`px-2 py-0.5 ${colorClass} text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1`}>
         <i className={`bx ${icon}`}></i> {label}
+      </a>
+    );
+  };
+
+  const renderAttachmentBadges = (text: string) => {
+    if (!text || text === '-') return null;
+    let parsed: string[] = [];
+    try {
+      const p = JSON.parse(text);
+      if (Array.isArray(p)) parsed = p;
+      else parsed = [text];
+    } catch {
+      parsed = [text];
+    }
+    
+    if (parsed.length === 0) return null;
+    
+    return parsed.map((att, idx) => (
+      <a key={idx} href={`${BASE_URL}/uploads/${att}`} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-violet-50 text-violet-600 border-violet-100 text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1">
+        <i className='bx bx-paperclip'></i> เอกสารแนบท้าย{parsed.length > 1 ? ` (${idx + 1})` : ''}
+      </a>
+    ));
+  };
+
+  const renderWebsiteLink = (text: string) => {
+    if (!text || text === '-' || text.trim() === '') return null;
+    const url = text.startsWith('http') ? text : `https://${text}`;
+    return (
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noreferrer" 
+        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 border border-emerald-100 text-[11px] font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm"
+      >
+        <i className='bx bx-world text-sm'></i> Link เว็บไซต์หนังสือเวียน
       </a>
     );
   };
@@ -103,6 +149,31 @@ export default function CircularSection({
     })
   }
 
+  const handleSyncBot = async () => {
+    try {
+      Swal.fire({
+        title: 'กำลังตรวจสอบข้อมูล...',
+        text: 'กรุณารอสักครู่ ระบบกำลังดึงข้อมูลจากเว็บไซต์ ก.พ.',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading() }
+      })
+      
+      const data = await adminApi.syncBotFindings();
+      
+      if (data.status) {
+        Swal.fire({
+          icon: 'success',
+          title: 'สำเร็จ',
+          text: data.message || `พบข้อมูลใหม่ ${data.response?.count || 0} เรื่อง`,
+        })
+      } else {
+        Swal.fire('ผิดพลาด', data.message || 'เกิดข้อผิดพลาดในการซิงค์', 'error')
+      }
+    } catch (err: any) {
+      Swal.fire('ผิดพลาด', err.response?.data?.message || err.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error')
+    }
+  }
+
   return (
     <div className="bg-white rounded-3xl shadow-sm mb-6 flex flex-col overflow-hidden">
       <div className="p-6 border-b border-slate-100">
@@ -111,13 +182,22 @@ export default function CircularSection({
             <h4 className="text-xl font-bold text-slate-800 m-0 font-saochingcha">หนังสือเวียน ก.พ.</h4>
             <p className="text-slate-500 m-0 text-sm">จัดการและติดตามสถานะหนังสือเวียนทั้งหมดในระบบ</p>
           </div>
-          <button 
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition shadow-sm hover:shadow"
-            onClick={() => { setEditItem(null); setShowModal(true) }}
-          >
-            <i className='bx bx-plus-circle text-xl'></i>
-            <span>เพิ่มหนังสือเวียนใหม่</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button 
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow"
+              onClick={handleSyncBot}
+            >
+              <i className='bx bx-sync text-lg'></i>
+              <span>ตรวจสอบหนังสือเวียน (Bot)</span>
+            </button>
+            <button 
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow"
+              onClick={() => { setEditItem(null); setShowModal(true) }}
+            >
+              <i className='bx bx-plus-circle text-lg'></i>
+              <span>เพิ่มหนังสือเวียนใหม่</span>
+            </button>
+          </div>
         </div>
 
         {/* Search & Filters Bar */}
@@ -210,26 +290,18 @@ export default function CircularSection({
                 else if (resVal.includes('นำมาใช้')) resColor = '10b981'
                 
                 const statusVal  = item.status_a?.status_value || '-'
-                const agencyNames = (item.agency||[]).map((a:any)=>a.ag_name).join(', ')
-                const splitDate = (str: string) => {
-                  if (str.includes(' ลงวันที่ ')) return str.split(' ลงวันที่ ')
-                  if (str.includes(' ลว. ')) return str.split(' ลว. ')
-                  if (str.includes(' ลว.')) return str.split(' ลว.')
-                  return [str, '']
-                }
-                const parts = splitDate(item.in_num_date || '')
 
                 return (
                   <tr key={item.in_id} className="hover:bg-slate-50 border-b border-slate-100 transition last:border-0">
                     <td className="px-6 py-4 text-slate-400">{(page-1)*perPage+idx+1}</td>
                     <td className="px-6 py-4 align-top">
-                      <div className="font-bold text-slate-800">{parts[0]}</div>
-                      {parts[1] && <div className="text-xs text-slate-500 mt-1"><i className='bx bx-calendar-event mr-1'></i>ลงวันที่ {parts[1]}</div>}
+                      <div className="font-bold text-slate-800">{item.in_num_date}</div>
+                      {item.in_doc_date && <div className="text-xs text-slate-500 mt-1"><i className='bx bx-calendar-event mr-1'></i>ลงวันที่ {item.in_doc_date}</div>}
                       {(item.references_info || []).length > 0 && (
                         <div className="mt-2 flex flex-col gap-1 max-w-[300px]">
                           {item.references_info.map((r: any, i: number) => (
                             <span key={i} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block break-words">
-                              อ้างถึง: {r.in_num_date}
+                              อ้างถึง: {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}
                             </span>
                           ))}
                         </div>
@@ -237,15 +309,18 @@ export default function CircularSection({
                     </td>
                     <td className="px-6 py-4 align-top">
                       <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
-                      {agencyNames && (
-                        <div className="text-xs font-medium text-emerald-700 flex items-start gap-1 mb-2">
-                          <i className='bx bx-buildings mt-0.5'></i>
-                          <span className="leading-snug">{agencyNames}</span>
+                      {item.agency && item.agency.length > 0 && (
+                        <div className="text-xs font-medium text-emerald-700 flex flex-col gap-1 mb-2">
+                          {item.agency.map((a: any, idx: number) => (
+                            <span key={idx} className="flex items-center gap-1">
+                              <i className='bx bx-buildings'></i>
+                              <span className="leading-snug">{a.ag_name}</span>
+                            </span>
+                          ))}
                         </div>
                       )}
                       <div className="flex flex-wrap gap-2">
-                        {renderFileBadge(item.in_original_link, 'หนังสือเวียนต้นฉบับ', 'bg-sky-50 text-sky-600 border-sky-100', 'bx-link-external')}
-                        {renderFileBadge(item.in_attachment_link, 'หนังสือเวียนต้นฉบับ', 'bg-violet-50 text-violet-600 border-violet-100', 'bx-paperclip')}
+                        {renderWebsiteLink(item.in_link)}
                       </div>
                     </td>
                     <td className="px-6 py-4 align-top">
@@ -257,8 +332,16 @@ export default function CircularSection({
                       </span>
                     </td>
                     <td className="px-6 py-4 align-top">
-                      <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${statusVal==='ใช้งาน'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700'}`}>
-                        {statusVal}
+                      <span className={`px-2.5 py-1.5 text-xs font-bold rounded-xl inline-block text-center ${statusVal==='ใช้งาน'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700'}`}>
+                        {statusVal === 'รอผลการพิจารณาจากคณะทำงานฯ' ? (
+                          <>
+                            รอผลการพิจารณาจาก
+                            <br />
+                            คณะทำงานฯ
+                          </>
+                        ) : (
+                          statusVal
+                        )}
                       </span>
                     </td>
                     <td className="px-6 py-4 align-top text-right">

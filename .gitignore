@@ -10,3 +10,21 @@ dist/
 *.sql
 *.dump
 robocopy_log.txt
+
+# Environments and Local Settings
+.env.docker
+
+# Temporary / Database scripts at server root
+server/add_qr_link_column.js
+server/alter_db.cjs
+server/alter_db2.cjs
+server/clear_bot.cjs
+server/migrate_split_date.cjs
+server/scratch_db.cjs
+server/testSync.mjs
+
+# VS Code settings
+.vscode/
+
+# Temp Files
+client/src/components/admin/test.txt

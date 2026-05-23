@@ -166,6 +166,7 @@ export default function ExecutiveDashboard({ allData, loading }) {
                       <td className="px-6 py-4 border-b border-slate-50">
                         <div className="flex flex-col">
                           <span className="font-semibold text-slate-800">{item.in_num_date}</span>
+                          {item.in_doc_date && <span className="text-xs text-slate-400"><i className='bx bx-calendar-event mr-1'></i>ลงวันที่ {item.in_doc_date}</span>}
                           <span className="text-slate-500 truncate max-w-xs">{item.in_detail}</span>
                         </div>
                       </td>
@@ -184,14 +185,22 @@ export default function ExecutiveDashboard({ allData, loading }) {
                           const displayStatus = isFinal ? 'พิจารณาเสร็จสิ้น' : (statusStr || 'อยู่ระหว่างพิจารณา')
 
                           return (
-                            <span className={`px-3 py-1 text-xs font-semibold rounded-full ${isFinal ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'}`}>
-                              {displayStatus}
+                            <span className={`px-3 py-1.5 text-xs font-semibold rounded-xl inline-block text-center ${isFinal ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'}`}>
+                              {displayStatus === 'รอผลการพิจารณาจากคณะทำงานฯ' ? (
+                                <>
+                                  รอผลการพิจารณาจาก
+                                  <br />
+                                  คณะทำงานฯ
+                                </>
+                              ) : (
+                                displayStatus
+                              )}
                             </span>
                           )
                         })()}
                       </td>
                       <td className="px-6 py-4 border-b border-slate-50 text-right">
-                        <button className="w-8 h-8 rounded-full bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition flex items-center justify-center inline-flex" title="ดูรายละเอียด">
+                        <button className="w-8 h-8 rounded-full bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition flex items-center justify-center" title="ดูรายละเอียด">
                           <i className='bx bx-right-arrow-alt text-lg'></i>
                         </button>
                       </td>
@@ -207,15 +216,7 @@ export default function ExecutiveDashboard({ allData, loading }) {
         </div>
       </div>
 
-      <div className="mt-8">
-        <div className="bg-gradient-to-r from-emerald-800 to-emerald-600 text-white p-8 rounded-3xl overflow-hidden relative shadow-lg">
-          <div className="relative z-10">
-            <h4 className="font-bold text-2xl mb-2 text-white">พร้อมสำหรับการพิจารณารอบถัดไปหรือยัง?</h4>
-            <p className="m-0 text-emerald-100 max-w-2xl text-lg">ใช้ระบบ AI ในการช่วยสรุปเนื้อหาและเปรียบเทียบระเบียบเพื่อให้การทำงานรวดเร็วขึ้นถึง 3 เท่า</p>
-          </div>
-          <i className='bx bxs-zap absolute -right-6 -top-6 text-[180px] text-emerald-900/20 transform rotate-12'></i>
-        </div>
-      </div>
+
     </div>
   )
 }

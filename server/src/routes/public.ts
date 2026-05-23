@@ -124,8 +124,8 @@ router.post('/search', async (req: Request, res: Response) => {
 
     const sql = `
       SELECT
-        c_information.in_id, c_information.in_num_date, c_information.in_detail,
-        c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
+        c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
+        c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link, c_information.in_qr_link,
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.updated_at,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), '|||')    AS mati_kk,
@@ -135,7 +135,7 @@ router.post('/search', async (req: Request, res: Response) => {
         STRING_AGG(DISTINCT c_status.status_value, '|||')                                 AS status_a,
         STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,'|#|',c_categories.cat_name), '|||') AS categories,
         STRING_AGG(DISTINCT CONCAT(c_agency.ag_id,'|#|',c_agency.ag_name), '|||')           AS agency,
-        STRING_AGG(DISTINCT CASE WHEN ref_info.in_id IS NOT NULL THEN CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',ref_info.in_detail) END, '|||') AS references_info
+        STRING_AGG(DISTINCT CASE WHEN ref_info.in_id IS NOT NULL THEN CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',COALESCE(ref_info.in_doc_date,''),'|#|',ref_info.in_detail) END, '|||') AS references_info
       FROM c_information
       LEFT JOIN c_information_categories ON c_information.in_id=c_information_categories.in_id
       LEFT JOIN c_categories             ON c_information_categories.cat_id=c_categories.cat_id
@@ -166,7 +166,7 @@ router.post('/search', async (req: Request, res: Response) => {
       agency:          parseList(r.agency,         (s: string) => { const [ag_id,ag_name]=s.split('|#|'); return ag_id?{ag_id,ag_name}:null }, '|||'),
       references_info: parseList(r.references_info, (s: string) => {
         const parts = s.split('|#|');
-        return parts.length >= 2 ? { in_id: parts[0], in_num_date: parts[1], in_detail: parts[2] || '' } : null;
+        return (parts.length >= 4 && parts[0]) ? { in_id: parts[0], in_num_date: parts[1], in_doc_date: parts[2] || null, in_detail: parts.slice(3).join('|#|') } : null;
       }, '|||'),
     }));
 
@@ -185,8 +185,8 @@ router.get('/circular/:id', async (req: Request, res: Response) => {
   try {
     const sql = `
       SELECT
-        c_information.in_id, c_information.in_num_date, c_information.in_detail,
-        c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
+        c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
+        c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link, c_information.in_qr_link,
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.updated_at,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), '|||')    AS mati_kk,
@@ -196,7 +196,7 @@ router.get('/circular/:id', async (req: Request, res: Response) => {
         STRING_AGG(DISTINCT c_status.status_value, '|||')                                 AS status_a,
         STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,'|#|',c_categories.cat_name), '|||') AS categories,
         STRING_AGG(DISTINCT CONCAT(c_agency.ag_id,'|#|',c_agency.ag_name), '|||')           AS agency,
-        STRING_AGG(DISTINCT CASE WHEN ref_info.in_id IS NOT NULL THEN CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',ref_info.in_detail) END, '|||') AS references_info
+        STRING_AGG(DISTINCT CASE WHEN ref_info.in_id IS NOT NULL THEN CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',COALESCE(ref_info.in_doc_date,''),'|#|',ref_info.in_detail) END, '|||') AS references_info
       FROM c_information
       LEFT JOIN c_information_categories ON c_information.in_id=c_information_categories.in_id
       LEFT JOIN c_categories             ON c_information_categories.cat_id=c_categories.cat_id
@@ -228,7 +228,7 @@ router.get('/circular/:id', async (req: Request, res: Response) => {
       agency:          parseList(r.agency,         s => { const [ag_id,ag_name]=s.split('|#|'); return ag_id?{ag_id,ag_name}:null }, '|||'),
       references_info: parseList(r.references_info, s => {
         const parts = s.split('|#|');
-        return parts.length >= 2 ? { in_id: parts[0], in_num_date: parts[1], in_detail: parts[2] || '' } : null;
+        return (parts.length >= 4 && parts[0]) ? { in_id: parts[0], in_num_date: parts[1], in_doc_date: parts[2] || null, in_detail: parts.slice(3).join('|#|') } : null;
       }, '|||'),
     };
 

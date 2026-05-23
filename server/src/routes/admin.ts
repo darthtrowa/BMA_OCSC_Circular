@@ -12,11 +12,17 @@ import { sendOtpEmail } from '../services/emailService.js';
 import { generateOtp, hashOtp, verifyOtp, otpExpiry, maskEmail } from '../utils/otp.js';
 import { requireAdmin, JWT_SECRET, AdminRequest } from '../middleware/auth.js';
 import { summarizePdf } from '../services/aiService.js';
+import { syncOCSC } from '../services/botService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = Router();
+
+// Ensure in_qr_link column exists
+db.query(`ALTER TABLE c_information ADD COLUMN IF NOT EXISTS in_qr_link VARCHAR(1000) DEFAULT '-';`)
+  .then(() => console.log('✅ Column in_qr_link ensured'))
+  .catch((e) => console.error('❌ Failed to add in_qr_link column:', e.message));
 
 const ok = (data: any, msg: string = 'success') => ({ status: true, message: msg, response: data });
 const err = (msg: string = 'error') => ({ status: false, message: msg });
@@ -39,16 +45,32 @@ const upload = multer({
       cb(null, prefix + Date.now() + path.extname(file.originalname).toLowerCase());
     },
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) =>
     file.mimetype === 'application/pdf' ? cb(null, true) : cb(new Error('กรุณาเลือกไฟล์ PDF เท่านั้น')),
 });
 
-const uploadFields = upload.fields([
+const _uploadFields = upload.fields([
   { name: 'mkk_ref_upload_in', maxCount: 1 },
   { name: 'in_original_file', maxCount: 1 },
-  { name: 'in_attachment_file', maxCount: 1 }
+  { name: 'in_attachment_file', maxCount: 20 }
 ]);
+
+const uploadFields = (req: any, res: any, next: any) => {
+  _uploadFields(req, res, (err: any) => {
+    if (err) {
+      console.error('Multer Upload Error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ status: false, message: 'ขนาดไฟล์ใหญ่เกินไป (จำกัด 50MB ต่อไฟล์)' });
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ status: false, message: 'จำนวนไฟล์แนบท้ายเกินขีดจำกัด หรือฟิลด์ไม่ถูกต้อง' });
+      }
+      return res.status(400).json({ status: false, message: err.message || 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์' });
+    }
+    next();
+  });
+};
 
 // ─── Helper: parse STRING_AGG → object / array ────────────────
 const parseFirst = (val: string | null, fields: string[]) => {
@@ -392,8 +414,9 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
   try {
     const sql = `
       SELECT
-        c_information.in_id, c_information.in_num_date, c_information.in_detail,
+        c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
         c_information.in_detail_ag, c_information.in_file_mkk, c_information.in_etc, c_information.in_link,
+        c_information.in_qr_link,
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
@@ -403,7 +426,7 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
         STRING_AGG(DISTINCT CONCAT(c_status.status_id,'|#|',c_status.status_value), ',')                      AS status_a,
         STRING_AGG(DISTINCT CONCAT(c_categories.cat_id,'|#|',c_categories.cat_name), ',')                     AS categories,
         STRING_AGG(DISTINCT CONCAT(c_agency.ag_id,'|#|',c_agency.ag_name), ',')                               AS agency,
-        STRING_AGG(DISTINCT CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',ref_info.in_detail), '|||')    AS references_info
+        STRING_AGG(DISTINCT CONCAT(ref_info.in_id,'|#|',ref_info.in_num_date,'|#|',COALESCE(ref_info.in_doc_date,''),'|#|',ref_info.in_detail), '|||')    AS references_info
       FROM c_information
       LEFT JOIN c_information_categories ON c_information.in_id=c_information_categories.in_id
       LEFT JOIN c_categories             ON c_information_categories.cat_id=c_categories.cat_id
@@ -429,7 +452,7 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
       status_a: parseFirst(r.status_a, ['status_id', 'status_value']),
       categories: parseList(r.categories, (s: string) => { const [cat_id, cat_name] = s.split('|#|'); return cat_id ? { cat_id, cat_name } : null }),
       agency: parseList(r.agency, (s: string) => { const [ag_id, ag_name] = s.split('|#|'); return ag_id ? { ag_id, ag_name } : null }),
-      references_info: parseList(r.references_info, (s: string) => { const p = s.split('|#|'); return (p.length >= 3 && p[0]) ? { in_id: p[0], in_num_date: p[1], in_detail: p.slice(2).join('|#|') } : null }, '|||'),
+      references_info: parseList(r.references_info, (s: string) => { const p = s.split('|#|'); return (p.length >= 4 && p[0]) ? { in_id: p[0], in_num_date: p[1], in_doc_date: p[2] || null, in_detail: p.slice(3).join('|#|') } : null }, '|||'),
     }));
 
     const [year, results, mati_work, mati_kk, agency, categories, status] = await Promise.all([
@@ -485,14 +508,35 @@ router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminReq
     let in_original_link = b.in_original_link?.trim() || '-';
     if (files?.in_original_file?.[0]) in_original_link = files.in_original_file[0].filename;
 
-    let in_attachment_link = b.in_attachment_link?.trim() || '-';
-    if (files?.in_attachment_file?.[0]) in_attachment_link = files.in_attachment_file[0].filename;
+    let attachmentLinks: string[] = [];
+    if (b.kept_attachment_links !== undefined || b['kept_attachment_links[]'] !== undefined) {
+      attachmentLinks = [].concat(b['kept_attachment_links[]'] || b.kept_attachment_links || []);
+    } else {
+      let legacyLink = b.in_attachment_link?.trim() || '-';
+      if (legacyLink !== '-') {
+        try {
+          const parsed = JSON.parse(legacyLink);
+          if (Array.isArray(parsed)) attachmentLinks = parsed;
+          else attachmentLinks = [legacyLink];
+        } catch {
+          attachmentLinks = [legacyLink];
+        }
+      }
+    }
+
+    if (files?.in_attachment_file?.length) {
+      files.in_attachment_file.forEach(f => attachmentLinks.push(f.filename));
+    }
+
+    const in_qr_link = b.in_qr_link?.trim() || '-';
+
+    let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
     const { rows: [{ in_id }] } = await db.query(
-      `INSERT INTO c_information (in_num_date,in_detail,in_detail_ag,in_etc,in_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW(),$13,$14,$15,$16) RETURNING in_id`,
+      `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18) RETURNING in_id`,
       [
-        b.in_num_date, b.in_detail, b.in_detail_ag, in_etc, in_link, in_file_mkk, req.admin?.name, 
+        b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
         toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
         toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
         newOrder, in_circular_detail, in_original_link, in_attachment_link
@@ -516,18 +560,49 @@ router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminReq
 });
 
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // POST /admin/circular/summarize
 // ─────────────────────────────────────────────────────────────
 router.post('/circular/summarize', requireAdmin, async (req: AdminRequest, res: Response) => {
-  const { pdfPath } = req.body;
-  if (!pdfPath) return res.status(400).json(err('ไม่พบข้อมูลไฟล์ PDF'));
+  const { pdfPath, mainPdf, attachments } = req.body;
+  
+  // Backward compatibility with older frontend requests
+  const payload = (mainPdf !== undefined || attachments !== undefined) 
+    ? { mainPdf, attachments: attachments || [] }
+    : { mainPdf: pdfPath, attachments: [] };
+
+  if (!payload.mainPdf && payload.attachments.length === 0) {
+    return res.status(400).json(err('ไม่พบข้อมูลไฟล์ PDF สำหรับการอ่าน'));
+  }
+
   try {
-    const summary = await summarizePdf(pdfPath);
+    const summary = await summarizePdf(payload);
     return res.json(ok(summary, 'สรุปผลสำเร็จ'));
   } catch (e: any) {
     console.error(e);
     return res.status(500).json(err(e.message || 'ไม่สามารถสรุปผลได้'));
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /admin/circular/upload-single
+// ─────────────────────────────────────────────────────────────
+router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Response) => {
+  const uploadSingle = upload.any();
+  uploadSingle(req, res, (err: any) => {
+    if (err) {
+      console.error('Single Upload Error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ status: false, message: 'ขนาดไฟล์ใหญ่เกินไป (จำกัด 50MB)' });
+      }
+      return res.status(400).json({ status: false, message: err.message || 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์' });
+    }
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ status: false, message: 'กรุณาเลือกไฟล์สำหรับอัปโหลด' });
+    }
+    return res.json(ok({ filename: files[0].filename }, 'อัปโหลดไฟล์สำเร็จ'));
+  });
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -554,13 +629,34 @@ router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminReq
     let in_original_link = b.in_original_link?.trim() || '-';
     if (files?.in_original_file?.[0]) in_original_link = files.in_original_file[0].filename;
 
-    let in_attachment_link = b.in_attachment_link?.trim() || '-';
-    if (files?.in_attachment_file?.[0]) in_attachment_link = files.in_attachment_file[0].filename;
+    let attachmentLinks: string[] = [];
+    if (b.kept_attachment_links !== undefined || b['kept_attachment_links[]'] !== undefined) {
+      attachmentLinks = [].concat(b['kept_attachment_links[]'] || b.kept_attachment_links || []);
+    } else {
+      let legacyLink = b.in_attachment_link?.trim() || '-';
+      if (legacyLink !== '-') {
+        try {
+          const parsed = JSON.parse(legacyLink);
+          if (Array.isArray(parsed)) attachmentLinks = parsed;
+          else attachmentLinks = [legacyLink];
+        } catch {
+          attachmentLinks = [legacyLink];
+        }
+      }
+    }
+
+    if (files?.in_attachment_file?.length) {
+      files.in_attachment_file.forEach(f => attachmentLinks.push(f.filename));
+    }
+
+    const in_qr_link = b.in_qr_link?.trim() || '-';
+
+    let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
     await db.query(
-      `UPDATE c_information SET in_num_date=$1,in_detail=$2,in_detail_ag=$3,in_etc=$4,in_link=$5,in_file_mkk=$6,updated_user=$7,in_mkk_id=$8,in_mw_id=$9,in_results_id=$10,in_year_id=$11,in_status_id=$12,in_circular_detail=$13,in_original_link=$14,in_attachment_link=$15,updated_at=NOW() WHERE in_id=$16`,
+      `UPDATE c_information SET in_num_date=$1,in_doc_date=$2,in_detail=$3,in_detail_ag=$4,in_etc=$5,in_link=$6,in_qr_link=$7,in_file_mkk=$8,updated_user=$9,in_mkk_id=$10,in_mw_id=$11,in_results_id=$12,in_year_id=$13,in_status_id=$14,in_circular_detail=$15,in_original_link=$16,in_attachment_link=$17,updated_at=NOW() WHERE in_id=$18`,
       [
-        b.in_num_date, b.in_detail, b.in_detail_ag, in_etc, in_link, in_file_mkk, req.admin?.name, 
+        b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
         toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
         toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
         in_circular_detail, in_original_link, in_attachment_link, toSqlInt(b.in_id)
@@ -707,17 +803,22 @@ router.post('/master/action', requireAdmin, async (req: AdminRequest, res: Respo
     if (action === 'create') {
       const { rows: [{ max_val }] } = await db.query(`SELECT MAX(${order}) AS max_val FROM ${table}`);
       const { value2 } = req.body;
+      let insertedId = null;
       if (type === 'results') {
-        await db.query(`INSERT INTO ${table} (${val}, results_etc, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [value, value2 || '-', (max_val ?? 0) + 1]);
+        const r = await db.query(`INSERT INTO ${table} (${val}, results_etc, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING ${pk}`, [value, value2 || '-', (max_val ?? 0) + 1]);
+        insertedId = r.rows[0][pk];
       } else if (date) {
         const dateVal = (!value2 || value2 === '2222-01-01') ? '2222-01-01' : value2;
-        await db.query(`INSERT INTO ${table} (${val}, ${date}, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [value, dateVal, (max_val ?? 0) + 1]);
+        const r = await db.query(`INSERT INTO ${table} (${val}, ${date}, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING ${pk}`, [value, dateVal, (max_val ?? 0) + 1]);
+        insertedId = r.rows[0][pk];
       } else if (type === 'categories') {
-        await db.query(`INSERT INTO ${table} (${val}, cat_ref, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [value, value2 || '-', (max_val ?? 0) + 1]);
+        const r = await db.query(`INSERT INTO ${table} (${val}, cat_ref, ${order}, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING ${pk}`, [value, value2 || '-', (max_val ?? 0) + 1]);
+        insertedId = r.rows[0][pk];
       } else {
-        await db.query(`INSERT INTO ${table} (${val},${order},created_at,updated_at) VALUES ($1,$2,NOW(),NOW())`, [value, (max_val ?? 0) + 1]);
+        const r = await db.query(`INSERT INTO ${table} (${val},${order},created_at,updated_at) VALUES ($1,$2,NOW(),NOW()) RETURNING ${pk}`, [value, (max_val ?? 0) + 1]);
+        insertedId = r.rows[0][pk];
       }
-      return res.json(ok('success', 'เพิ่มข้อมูลสำเร็จ'));
+      return res.json(ok({ id: insertedId }, 'เพิ่มข้อมูลสำเร็จ'));
     }
     if (action === 'update') {
       if (!id) return res.status(400).json(err('ID Required'));
@@ -743,6 +844,147 @@ router.post('/master/action', requireAdmin, async (req: AdminRequest, res: Respo
       }
     }
     return res.status(400).json(err('Invalid Action'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// BOT FINDINGS QUEUE
+// ─────────────────────────────────────────────────────────────
+
+router.get('/bot-findings', requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT bot_id, bot_title, bot_url, bot_date, bot_status, created_at, bot_payload 
+      FROM c_bot_findings 
+      WHERE bot_status = 'PENDING'
+      ORDER BY bot_id DESC
+    `);
+    return res.json(ok(rows));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
+router.post('/bot-findings/sync', requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const result = await syncOCSC();
+    if (result.success) {
+      return res.json(ok({ count: result.count }, `ซิงค์ข้อมูลสำเร็จ พบเรื่องใหม่ ${result.count} เรื่อง`));
+    }
+    return res.status(500).json(err(result.error || 'เกิดข้อผิดพลาดในการซิงค์'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
+router.post('/bot-findings/:id/action', requireAdmin, async (req: AdminRequest, res: Response) => {
+  const { id } = req.params;
+  const { action } = req.body; // 'IMPORT' | 'IGNORE'
+
+  if (action !== 'IMPORT' && action !== 'IGNORE') {
+    return res.status(400).json(err('Action ต้องเป็น IMPORT หรือ IGNORE เท่านั้น'));
+  }
+
+  try {
+    const { rows } = await db.query('SELECT * FROM c_bot_findings WHERE bot_id = $1', [id]);
+    if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูลหนังสือเวียนจากบอต'));
+    const botRecord = rows[0];
+
+    if (action === 'IGNORE') {
+      await db.query('UPDATE c_bot_findings SET bot_status = $1 WHERE bot_id = $2', ['IGNORED', id]);
+      return res.json(ok(null, 'ละเว้นหนังสือเวียนเรียบร้อยแล้ว'));
+    }
+
+    if (action === 'IMPORT') {
+      // Create a draft record in c_information
+      const { rows: [{ max_order }] } = await db.query('SELECT MAX(in_ordering) AS max_order FROM c_information');
+      const newOrder = (max_order ?? 0) + 1;
+
+      // Extract details assuming title format...
+      // Since it's from the bot, we put standard values in required fields and mark as DRAFT
+      await db.query(`
+        INSERT INTO c_information (
+          in_num_date, in_detail, in_detail_ag, in_etc, in_link, in_file_mkk,
+          updated_user, in_mkk_id, in_mw_id, in_results_id, in_year_id, in_status_id,
+          created_at, updated_at, in_ordering, in_circular_detail, in_original_link, in_attachment_link,
+          in_workflow_status
+        ) VALUES (
+          $1, $2, '-', '-', $3, '-',
+          $4, NULL, NULL, NULL, NULL, NULL,
+          NOW(), NOW(), $5, '-', '-', '-',
+          'DRAFT'
+        )
+      `, [
+        botRecord.bot_title, botRecord.bot_title, botRecord.bot_url,
+        req.admin?.name || 'Bot', newOrder
+      ]);
+
+      await db.query('UPDATE c_bot_findings SET bot_status = $1 WHERE bot_id = $2', ['IMPORTED', id]);
+      return res.json(ok(null, 'นำเข้าเป็นฉบับร่างเรียบร้อยแล้ว'));
+    }
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
+router.delete('/bot-findings/:id', requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    await db.query('DELETE FROM c_bot_findings WHERE bot_id = $1', [id]);
+    return res.json(ok(null, 'ลบข้อมูลสำเร็จ'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
+router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res: Response) => {
+  const { bot_id, in_num_date, in_doc_date, in_detail, in_year_id, in_link, categories } = req.body;
+
+  try {
+    const { rows } = await db.query('SELECT * FROM c_bot_findings WHERE bot_id = $1', [bot_id]);
+    if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูลคิวงานบอต'));
+
+    const { rows: [{ max_order }] } = await db.query('SELECT MAX(in_ordering) AS max_order FROM c_information');
+    const newOrder = (max_order ?? 0) + 1;
+
+    const { rows: inserted } = await db.query(`
+      INSERT INTO c_information (
+        in_num_date, in_doc_date, in_detail, in_detail_ag, in_etc, in_link, in_file_mkk,
+        updated_user, in_mkk_id, in_mw_id, in_results_id, in_year_id, in_status_id,
+        created_at, updated_at, in_ordering, in_circular_detail, in_original_link, in_attachment_link,
+        in_workflow_status
+      ) VALUES (
+        $1, $2, $3, '-', '-', $4, '-',
+        $5, NULL, NULL, NULL, $6, NULL,
+        NOW(), NOW(), $7, '-', '-', '-',
+        'DRAFT'
+      ) RETURNING in_id
+    `, [
+      in_num_date, in_doc_date || null, in_detail, in_link,
+      req.admin?.name || 'Admin', in_year_id || null, newOrder
+    ]);
+
+    const newInId = inserted[0].in_id;
+
+    if (categories && categories.length > 0) {
+      for (const catId of categories) {
+        await db.query(`
+          INSERT INTO c_information_categories (in_id, cat_id)
+          VALUES ($1, $2)
+        `, [newInId, catId]);
+      }
+    }
+
+    await db.query('UPDATE c_bot_findings SET bot_status = $1 WHERE bot_id = $2', ['IMPORTED', bot_id]);
+    return res.json(ok({ in_id: newInId }, 'นำเข้าข้อมูลสู่ระบบสำเร็จ'));
   } catch (e) {
     console.error(e);
     return res.status(500).json(err('Server Error'));

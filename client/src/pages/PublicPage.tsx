@@ -149,10 +149,21 @@ export default function PublicPage() {
       ? results.filter(item => item.results?.results_id == activeCard.resultId)
       : results
 
-    return [...filtered].sort((a, b) => 
-      (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0) || 
-      (Number(b.in_id) || 0) - (Number(a.in_id) || 0)
-    )
+    const extractWNumber = (text: string) => {
+      if (!text) return 0;
+      const match = text.match(/\/ว\s*(\d+)/i);
+      return match && match[1] ? parseInt(match[1], 10) : 0;
+    };
+
+    return [...filtered].sort((a, b) => {
+      const yearDiff = (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0);
+      if (yearDiff !== 0) return yearDiff;
+      const numA = extractWNumber(a.in_num_date);
+      const numB = extractWNumber(b.in_num_date);
+      const numDiff = numB - numA;
+      if (numDiff !== 0) return numDiff;
+      return (Number(b.in_id) || 0) - (Number(a.in_id) || 0);
+    });
   })()
 
   const selectStyle = {

@@ -5,8 +5,17 @@ moment.locale('th')
 
 function processFileLink(text) {
   if (!text || text === '-') return null
-  if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">ลิงก์</a>
+  if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">ข้อมูลหนังสือเวียน</a>
   return <a href={`${BASE_URL}/uploads/${text}`} target="_blank" rel="noreferrer" className="text-decoration-underline ms-1">หนังสือเวียนต้นฉบับ</a>
+}
+
+function parseAttachments(text) {
+  if (!text || text === '-') return []
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parsed
+  } catch {}
+  return [text]
 }
 
 function formatMati(obj, nameKey, dateKey) {
@@ -45,7 +54,13 @@ function CircularDetailsTable({ item, onRefClick }) {
         </tr>
         <tr>
           <td className="text-success fw-semibold">ผู้รับผิดชอบ</td>
-          <td>{(item.agency||[]).map(a=>a.ag_name).join(', ') || '-'}</td>
+          <td>
+            {item.agency && item.agency.length > 0 ? (
+              item.agency.map((a, idx) => (
+                <div key={idx}>{a.ag_name}</div>
+              ))
+            ) : '-'}
+          </td>
         </tr>
         <tr><td className="text-success fw-semibold">รายละเอียดของหนังสือเวียน</td><td style={{ whiteSpace: 'pre-wrap' }}>{item.in_circular_detail||'-'}</td></tr>
         <tr><td className="text-success fw-semibold">การพิจารณาจากส่วนราชการ</td><td style={{ whiteSpace: 'pre-wrap' }}>{item.in_detail_ag||'-'}</td></tr>
@@ -62,17 +77,56 @@ function CircularDetailsTable({ item, onRefClick }) {
           <td>{(item.references_info||[]).length===0 ? 'ไม่มี' :
             (item.references_info).map((r,i)=>(
               <div key={i} className="mb-2 p-2 rounded hover-bg-light" style={{ cursor: r.in_id ? 'pointer' : 'default' }} onClick={() => r.in_id && onRefClick(r.in_id)}>
-                <div className="text-blue fw-bold text-decoration-underline small">เลขที่หนังสือ {r.in_num_date}</div>
+                <div className="text-blue fw-bold text-decoration-underline small">เลขที่หนังสือ {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}</div>
                 <div className="text-navy small">{r.in_detail}</div>
               </div>
             ))}</td></tr>
         <tr><td className="text-success fw-semibold">หมายเหตุ</td><td>{item.in_etc||'-'}</td></tr>
-        <tr><td className="text-success fw-semibold">LINK เว็บไซต์ต้นทาง</td>
-          <td>{processFileLink(item.in_link) || '-'}</td></tr>
-        <tr><td className="text-success fw-semibold">หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)</td>
+        <tr><td className="text-success fw-semibold">Link สำนักงาน ก.พ.</td>
+          <td>
+            <div className="d-flex flex-wrap gap-2">
+              {item.in_link && item.in_link !== '-' ? (
+                item.in_link.startsWith('http') ? (
+                  <a 
+                    href={item.in_link} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="text-decoration-underline ms-1 inline-flex items-center"
+                  >
+                    <i className='bx bx-world mr-1'></i>ข้อมูลหนังสือเวียน
+                  </a>
+                ) : (
+                  processFileLink(item.in_link)
+                )
+              ) : null}
+              {item.in_qr_link && item.in_qr_link !== '-' && (
+                <a 
+                  href={item.in_qr_link.startsWith('http') ? item.in_qr_link : `${BASE_URL}/uploads/${item.in_qr_link}`} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-decoration-underline ms-1 inline-flex items-center font-bold"
+                >
+                  <i className='bx bx-paperclip mr-1'></i>สิ่งที่ส่งมาด้วย
+                </a>
+              )}
+              {(!item.in_link || item.in_link === '-') && (!item.in_qr_link || item.in_qr_link === '-') && '-'}
+            </div>
+          </td></tr>
+        <tr><td className="text-success fw-semibold">หนังสือเวียนต้นฉบับ</td>
           <td>{processFileLink(item.in_original_link) || '-'}</td></tr>
         <tr><td className="text-success fw-semibold">เอกสารแนบท้าย</td>
-          <td>{processFileLink(item.in_attachment_link) || '-'}</td></tr>
+          <td>
+            {parseAttachments(item.in_attachment_link).length > 0 
+              ? parseAttachments(item.in_attachment_link).map((att, idx) => (
+                  <span key={idx}>
+                    <a href={`${BASE_URL}/uploads/${att}`} target="_blank" rel="noreferrer" className="text-decoration-underline">
+                      เอกสารแนบท้าย{parseAttachments(item.in_attachment_link).length > 1 ? ` (${idx + 1})` : ''}
+                    </a>
+                    {idx < parseAttachments(item.in_attachment_link).length - 1 ? ', ' : ''}
+                  </span>
+                ))
+              : '-'}
+          </td></tr>
       </tbody>
     </table>
   )
@@ -158,7 +212,6 @@ export default function ResultTable({ data }) {
                 )}
                 {paged.map(item => {
                   const isOpen = expanded.has(item.in_id)
-                  const agencyNames = (item.agency||[]).map(a=>a.ag_name).join(', ')
                   const resVal = item.results?.results_detail||'-'
                   const resId = item.results?.results_id
                   
@@ -194,18 +247,8 @@ export default function ResultTable({ data }) {
                           <i className={`bx ${isOpen ? 'bx-chevron-down text-primary' : 'bx-chevron-right text-muted'} fs-4`}></i>
                         </td>
                         <td className="align-middle">
-                          {(() => {
-                            const splitDate = (str) => {
-                              if (str.includes(' ลงวันที่ ')) return str.split(' ลงวันที่ ')
-                              if (str.includes(' ลว. ')) return str.split(' ลว. ')
-                              if (str.includes(' ลว.')) return str.split(' ลว.')
-                              return [str, '']
-                            }
-                            const parts = splitDate(item.in_num_date || '')
-                            return (
-                              <>
-                                <div className="fw-bold">{parts[0]}</div>
-                                {parts[1] && <div className="fw-bold text-muted">ลงวันที่ {parts[1]}</div>}
+                              <div className="fw-bold">{item.in_num_date}</div>
+                              {item.in_doc_date && <div className="fw-bold text-muted">ลงวันที่ {item.in_doc_date}</div>}
                                 {item.references_info && item.references_info.length > 0 && (
                                   <div className="mt-2 d-flex flex-column gap-1" style={{ maxWidth: '300px' }}>
                                     {item.references_info.map((r, i) => (
@@ -214,54 +257,44 @@ export default function ResultTable({ data }) {
                                         className="badge bg-soft-red text-danger border-0 font-monospace text-wrap" 
                                         style={{ fontSize: '0.65rem', whiteSpace: 'normal', textAlign: 'left', display: 'block' }}
                                       >
-                                        อ้างถึง: {r.in_num_date}
+                                        อ้างถึง: {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}
                                       </span>
                                     ))}
                                   </div>
                                 )}
-                              </>
-                            )
-                          })()}
                         </td>
                         <td className="align-middle">
                           <div className="mb-1 fw-medium">{item.in_detail}</div>
                           <div className="d-flex flex-wrap gap-2 align-items-center mt-2" onClick={e => e.stopPropagation()}>
-                            {agencyNames && (
-                              <span className="small fw-semibold text-emerald-800 me-2 d-inline-flex align-items-center">
-                                <i className='bx bx-buildings me-1'></i>{agencyNames}
-                              </span>
+                            {item.agency && item.agency.length > 0 && (
+                              <div className="d-inline-flex flex-column align-items-start gap-1">
+                                {item.agency.map((a, idx) => (
+                                  <span key={idx} className="small fw-semibold text-emerald-800 d-inline-flex align-items-center">
+                                    <i className='bx bx-buildings me-1'></i>{a.ag_name}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                             {item.in_original_link && item.in_original_link !== '-' && (
                               <a 
-                                href={`${BASE_URL}/uploads/${item.in_original_link}`} 
+                                href={item.in_original_link.startsWith('http') ? item.in_original_link : `${BASE_URL}/uploads/${item.in_original_link}`} 
                                 target="_blank" 
                                 rel="noreferrer" 
                                 className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
                               >
-                                <i className='bx bxs-file-pdf fs-6'></i>
+                                <i className={item.in_original_link.startsWith('http') ? 'bx bx-link-external fs-6' : 'bx bxs-file-pdf fs-6'}></i>
                                 <span>หนังสือเวียนต้นฉบับ</span>
                               </a>
                             )}
-                            {item.in_attachment_link && item.in_attachment_link !== '-' && (
+                            {item.in_qr_link && item.in_qr_link !== '-' && (
                               <a 
-                                href={`${BASE_URL}/uploads/${item.in_attachment_link}`} 
+                                href={item.in_qr_link.startsWith('http') ? item.in_qr_link : `${BASE_URL}/uploads/${item.in_qr_link}`} 
                                 target="_blank" 
                                 rel="noreferrer" 
-                                className="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
+                                className="badge bg-indigo bg-opacity-10 text-indigo border border-indigo border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
                               >
-                                <i className='bx bxs-file-pdf fs-6'></i>
-                                <span>หนังสือเวียนต้นฉบับ</span>
-                              </a>
-                            )}
-                            {item.in_file_mkk && item.in_file_mkk !== '-' && (
-                              <a 
-                                href={item.in_file_mkk.startsWith('http') ? item.in_file_mkk : `${BASE_URL}/uploads/${item.in_file_mkk}`} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1.5 rounded-pill text-xs d-inline-flex align-items-center gap-1 hover:bg-opacity-20 transition-all"
-                              >
-                                <i className='bx bxs-file-pdf fs-6'></i>
-                                <span>มติ ก.ก. เฉพาะเรื่อง</span>
+                                <i className='bx bx-paperclip fs-6'></i>
+                                <span>สิ่งที่ส่งมาด้วย</span>
                               </a>
                             )}
                           </div>
@@ -347,6 +380,7 @@ export default function ResultTable({ data }) {
                   )}
                   <div className="mb-4">
                     <h5 className="fw-bold mb-1">{activeRefData.in_num_date}</h5>
+                    {activeRefData.in_doc_date && <div className="text-muted small mb-1"><i className='bx bx-calendar-event me-1'></i>ลงวันที่ {activeRefData.in_doc_date}</div>}
                     <p className="text-muted mb-0">{activeRefData.in_detail}</p>
                   </div>
                   

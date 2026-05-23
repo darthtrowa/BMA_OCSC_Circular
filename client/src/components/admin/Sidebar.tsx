@@ -28,17 +28,17 @@ export default function Sidebar({ activeSection, onNavigate, permiss, onLogout, 
       <li key={secId}>
         <a
           href="#"
-          className={`group flex items-center gap-x-3 rounded-xl p-3 text-sm font-semibold transition ${activeSection === secId ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-700'}`}
+          className={`group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold transition ${activeSection === secId ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-700'}`}
           onClick={e => { e.preventDefault(); onNavigate(secId) }}
         >
-          <i className={`bx ${icon} text-xl ${activeSection === secId ? 'text-emerald-700' : 'text-slate-400 group-hover:text-emerald-600'}`}></i>
+          <i className={`bx ${icon} text-lg ${activeSection === secId ? 'text-emerald-700' : 'text-slate-400 group-hover:text-emerald-600'}`}></i>
           {label}
         </a>
       </li>
     )
 
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-72 lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 shadow-sm z-50">
+    <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 shadow-sm z-50">
       {/* Logo Section */}
       <div className="flex h-16 shrink-0 items-center px-6 gap-3 mt-4 mb-4">
         <div className="flex items-center justify-center w-10 h-10 bg-emerald-800 rounded-xl overflow-hidden shadow-sm">
@@ -61,11 +61,12 @@ export default function Sidebar({ activeSection, onNavigate, permiss, onLogout, 
           {/* Main Section */}
           {navItem('sec-overview', 'ภาพรวมระบบ', 'bx-grid-alt', isSuperAdmin)}
           {navItem('sec-circular', 'หนังสือเวียน', 'bx-file-blank', isSuperAdmin)}
+          {navItem('sec-bot-queue', 'คิวงานบอต', 'bx-bot', isSuperAdmin)}
           
           <li>
-            <a href="/" className="group flex items-center gap-x-3 rounded-xl p-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">
-              <i className="bx bx-globe text-xl text-slate-400 group-hover:text-emerald-600"></i>
-              หน้าค้นหาสำหรับประชาชน
+            <a href="/" className="group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">
+              <i className="bx bx-globe text-lg text-slate-400 group-hover:text-emerald-600"></i>
+              ระบบค้นหา
             </a>
           </li>
 

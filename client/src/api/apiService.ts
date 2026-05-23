@@ -125,8 +125,15 @@ export const adminApi = {
     return data
   },
 
-  summarizeCircular: async (pdfPath: string): Promise<any> => {
-    const { data } = await http.post('/admin/circular/summarize', { pdfPath })
+  summarizeCircular: async (payload: { mainPdf?: string, attachments?: string[] }): Promise<any> => {
+    const { data } = await http.post('/admin/circular/summarize', payload)
+    return data
+  },
+
+  uploadSingle: async (formData: FormData): Promise<any> => {
+    const { data } = await http.post('/admin/circular/upload-single', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return data
   },
 
@@ -152,6 +159,31 @@ export const adminApi = {
 
   changePassword: async (payload: any): Promise<any> => {
     const { data } = await http.post('/admin/profile/change-password', payload)
+    return data
+  },
+
+  syncBotFindings: async (): Promise<any> => {
+    const { data } = await http.post('/admin/bot-findings/sync')
+    return data
+  },
+
+  getBotFindings: async (): Promise<any> => {
+    const { data } = await http.get('/admin/bot-findings')
+    return data
+  },
+
+  actionBotFinding: async (id: string | number, action: string): Promise<any> => {
+    const { data } = await http.post(`/admin/bot-findings/${id}/action`, { action })
+    return data
+  },
+
+  deleteBotFinding: async (id: string | number): Promise<any> => {
+    const { data } = await http.delete(`/admin/bot-findings/${id}`)
+    return data
+  },
+
+  importBotFinding: async (payload: any): Promise<any> => {
+    const { data } = await http.post(`/admin/bot-findings/import`, payload)
     return data
   },
 }

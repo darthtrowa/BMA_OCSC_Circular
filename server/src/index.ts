@@ -9,6 +9,8 @@ import { rateLimit } from 'express-rate-limit';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import pool from './config/database.js';
+import cron from 'node-cron';
+import { syncOCSC } from './services/botService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -246,4 +248,9 @@ app.listen(PORT, () => {
   console.log(`   URL:    http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
   console.log(`   Mode:   ${process.env.NODE_ENV || 'development'}\n`);
+  
+  // ─── Scheduled Tasks ──────────────────────────────────────────
+  // Cron job for bot scraper is disabled per user request
+  // cron.schedule('0 3 * * 1-5', () => { ... });
+  console.log(`   Cron:   Disabled (Manual Sync Only)`);
 });

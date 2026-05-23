@@ -10,6 +10,7 @@ import UserSection from '../components/admin/UserSection'
 import ProfileModal from '../components/admin/ProfileModal'
 import PasswordModal from '../components/admin/PasswordModal'
 import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
+import BotQueueSection from '../components/admin/BotQueueSection'
 import Swal from 'sweetalert2'
 
 export default function DashboardPage() {
@@ -94,7 +95,7 @@ export default function DashboardPage() {
         onPassword={() => passwordRef.current?.open()}
       />
       
-      <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden ml-0 lg:ml-72">
+      <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden ml-0 lg:ml-64">
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-end gap-x-4 border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
           <div className="relative">
             <button 
@@ -152,7 +153,7 @@ export default function DashboardPage() {
                 loading={loading} 
               />
             )}
-            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && (
+            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && (
               <div className="mt-4">
                 <DashboardStats
                   allData={allData}
@@ -172,6 +173,9 @@ export default function DashboardPage() {
                 onBaseFilteredChange={setBaseFilteredData}
                 onFilterResultChange={handleFilterResultChange}
               />
+            )}
+            {activeSection === 'sec-bot-queue' && (
+              <BotQueueSection allData={allData} />
             )}
             {activeSection.startsWith('sec-master-') && (
               <MasterDataSection

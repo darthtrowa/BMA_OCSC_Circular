@@ -5,19 +5,30 @@ moment.locale('th')
 
 function processFileLink(text: string) {
   if (!text || text === '-') return null
-  if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-sky-600 hover:text-sky-800 underline decoration-sky-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bx-link-external mr-1'></i>ลิงก์</a>
+  if (text.startsWith('http')) return <a href={text} target="_blank" rel="noreferrer" className="text-sky-600 hover:text-sky-800 underline decoration-sky-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bx-link-external mr-1'></i>ข้อมูลหนังสือเวียน</a>
   return <a href={`${BASE_URL}/uploads/${text}`} target="_blank" rel="noreferrer" className="text-rose-600 hover:text-rose-800 underline decoration-rose-600/30 underline-offset-2 ml-2 text-sm inline-flex items-center"><i className='bx bxs-file-pdf mr-1'></i>หนังสือเวียนต้นฉบับ</a>
+}
+
+function parseAttachments(text: string | null | undefined): string[] {
+  if (!text || text === '-') return []
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parsed
+  } catch {}
+  return [text]
 }
 
 interface CircularItem {
   in_id: number;
   in_num_date: string;
+  in_doc_date?: string;
   in_detail: string;
   in_circular_detail?: string;
   in_detail_ag?: string;
   in_file_mkk?: string;
   in_etc?: string;
   in_link?: string;
+  in_qr_link?: string;
   in_original_link?: string;
   in_attachment_link?: string;
   updated_at?: string;
@@ -28,7 +39,7 @@ interface CircularItem {
   results?: { results_id: number; results_detail: string; results_color: string };
   mati_work?: { mw_id: number; mw_name: string; mw_date: string; mw_ref?: string };
   mati_kk?: { mkk_id: number; mkk_name: string; mkk_date: string; mkk_ref?: string };
-  references_info?: { in_id: number; in_num_date: string; in_detail: string }[];
+  references_info?: { in_id: number; in_num_date: string; in_doc_date?: string; in_detail: string }[];
 }
 
 function formatMati(obj: any, nameKey: string, dateKey: string) {
@@ -73,7 +84,13 @@ function CircularDetailsTable({ item, onRefClick }: CircularDetailsTableProps) {
           </tr>
           <tr className="hover:bg-slate-50 transition">
             <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">ผู้รับผิดชอบ</td>
-            <td className="py-2.5 text-slate-700">{(item.agency||[]).map((a)=>a.ag_name).join(', ') || '-'}</td>
+            <td className="py-2.5 text-slate-700">
+              {item.agency && item.agency.length > 0 ? (
+                item.agency.map((a, idx) => (
+                  <div key={idx}>{a.ag_name}</div>
+                ))
+              ) : '-'}
+            </td>
           </tr>
           <tr className="hover:bg-slate-50 transition">
             <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap align-top">รายละเอียดของหนังสือเวียน</td>
@@ -112,7 +129,7 @@ function CircularDetailsTable({ item, onRefClick }: CircularDetailsTableProps) {
                       onClick={() => r.in_id && onRefClick(r.in_id)}
                     >
                       <div className="font-semibold text-sky-700 text-sm mb-1">
-                        <span className="underline decoration-sky-700/30 underline-offset-2">เลขที่หนังสือ {r.in_num_date}</span>
+                        <span className="underline decoration-sky-700/30 underline-offset-2">เลขที่หนังสือ {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}</span>
                       </div>
                       <div className="text-slate-600 text-xs line-clamp-2">{r.in_detail}</div>
                     </div>
@@ -126,21 +143,23 @@ function CircularDetailsTable({ item, onRefClick }: CircularDetailsTableProps) {
             <td className="py-2.5 text-slate-700">{item.in_etc||'-'}</td>
           </tr>
           <tr className="hover:bg-slate-50 transition">
-            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">LINK เว็บไซต์ต้นทาง</td>
+            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">หนังสือเวียนต้นฉบับ</td>
             <td className="py-2.5 text-slate-700">
-              {processFileLink(item.in_link) || '-'}
-            </td>
-          </tr>
-          <tr className="hover:bg-slate-50 transition">
-            <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)</td>
-            <td className="py-2.5 text-slate-700">
-              {processFileLink(item.in_original_link) || '-'}
+              {processFileLink(item.in_original_link || '') || '-'}
             </td>
           </tr>
           <tr className="hover:bg-slate-50 transition">
             <td className="py-2.5 pr-4 font-semibold text-emerald-700 whitespace-nowrap">เอกสารแนบท้าย</td>
             <td className="py-2.5 text-slate-700">
-              {processFileLink(item.in_attachment_link) || '-'}
+              {parseAttachments(item.in_attachment_link).length > 0 
+                ? <div className="flex flex-col gap-1">
+                    {parseAttachments(item.in_attachment_link).map((att, idx) => (
+                      <a key={idx} href={`${BASE_URL}/uploads/${att}`} target="_blank" rel="noreferrer" className="text-rose-600 hover:text-rose-800 underline decoration-rose-600/30 underline-offset-2 text-sm inline-flex items-center w-fit">
+                        <i className='bx bxs-file-pdf mr-1'></i>เอกสารแนบท้าย{parseAttachments(item.in_attachment_link).length > 1 ? ` (${idx + 1})` : ''}
+                      </a>
+                    ))}
+                  </div>
+                : '-'}
             </td>
           </tr>
         </tbody>
@@ -216,7 +235,6 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
       <div className="grid grid-cols-1 gap-5">
         {paged.map((item) => {
           const isOpen = expanded.has(item.in_id)
-          const agencyNames = (item.agency||[]).map((a)=>a.ag_name).join(', ')
           const resVal = item.results?.results_detail||'-'
           const resId = item.results?.results_id
           
@@ -238,14 +256,72 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
                 <div className="p-5 md:p-6">
                   <div className="flex justify-between items-start mb-4 gap-4">
                     <div className="flex-1 min-w-0">
-                      <h5 className="font-bold mb-2 text-slate-800 text-lg leading-snug truncate whitespace-normal">
-                        {item.in_num_date}
-                      </h5>
-                      <div className="flex items-center gap-2 text-slate-500 text-sm">
-                        <span className="flex items-center">
-                          <i className='bx bx-buildings mr-1.5 text-slate-400'></i>
-                          {agencyNames || 'ไม่ระบุผู้รับผิดชอบ'}
-                        </span>
+                      {/* Circular Number & Date + Action Buttons */}
+                      <div className="flex flex-wrap items-center gap-3 mb-2">
+                        <h5 className="font-bold text-slate-800 text-lg leading-snug truncate whitespace-normal mb-0">
+                          {'ที่ ' + item.in_num_date}
+                          {item.in_doc_date && ` ลงวันที่ ${item.in_doc_date}`}
+                        </h5>
+                        <div className="flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                          {item.in_original_link && item.in_original_link !== '-' && (
+                            <a 
+                              href={item.in_original_link.startsWith('http') ? item.in_original_link : `${BASE_URL}/uploads/${item.in_original_link}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                            >
+                              <i className={item.in_original_link.startsWith('http') ? 'bx bx-link-external text-xs text-rose-500' : 'bx bxs-file-pdf text-xs text-rose-500'}></i>
+                              <span>หนังสือเวียนต้นฉบับ</span>
+                            </a>
+                          )}
+                          {item.in_link && item.in_link !== '-' ? (
+                            item.in_link.startsWith('http') ? (
+                              <a 
+                                href={item.in_link} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 hover:text-sky-800 border border-sky-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                              >
+                                <i className='bx bx-world text-sm text-sky-500'></i>
+                                <span>ข้อมูลหนังสือเวียน</span>
+                              </a>
+                            ) : (
+                              processFileLink(item.in_link)
+                            )
+                          ) : null}
+                          {item.in_qr_link && item.in_qr_link !== '-' && (
+                            <a 
+                              href={item.in_qr_link.startsWith('http') ? item.in_qr_link : `${BASE_URL}/uploads/${item.in_qr_link}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 border border-indigo-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                            >
+                              <i className='bx bx-paperclip text-sm text-indigo-500'></i>
+                              <span>สิ่งที่ส่งมาด้วย</span>
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      {/* Circular Title (ชื่อหนังสือ) */}
+                      <p className={`text-slate-700 mt-2 mb-3 text-base font-semibold ${!isOpen ? 'line-clamp-2' : ''}`}>
+                        {item.in_detail}
+                      </p>
+
+                      {/* Responsible Agencies */}
+                      <div className="flex flex-col gap-1 text-slate-500 text-sm">
+                        {item.agency && item.agency.length > 0 ? (
+                          item.agency.map((a, idx) => (
+                            <span key={idx} className="flex items-center">
+                              <i className='bx bx-buildings mr-1.5 text-slate-400'></i>
+                              {a.ag_name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="flex items-center">
+                            <i className='bx bx-buildings mr-1.5 text-slate-400'></i>
+                            ไม่ระบุผู้รับผิดชอบ
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span 
@@ -256,10 +332,7 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
                     </span>
                   </div>
 
-                  <p className={`text-slate-700 mb-4 text-base ${!isOpen ? 'line-clamp-2' : ''}`}>
-                    {item.in_detail}
-                  </p>
-
+                  {/* Badges */}
                   <div className="flex flex-wrap gap-2 mb-4">
                     {item.year?.year_value && (
                       <span className="bg-slate-50 text-slate-500 border border-slate-200 py-1.5 px-3 rounded-full text-xs font-medium">
@@ -272,46 +345,6 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
                       </span>
                     ))}
                   </div>
-
-                  {((item.in_original_link && item.in_original_link !== '-') || 
-                    (item.in_attachment_link && item.in_attachment_link !== '-') || 
-                    (item.in_file_mkk && item.in_file_mkk !== '-')) && (
-                    <div className="flex flex-wrap gap-2 mb-4" onClick={e => e.stopPropagation()}>
-                      {item.in_original_link && item.in_original_link !== '-' && (
-                        <a 
-                          href={`${BASE_URL}/uploads/${item.in_original_link}`} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-                        >
-                          <i className='bx bxs-file-pdf text-sm text-rose-500'></i>
-                          <span>หนังสือเวียนต้นฉบับ</span>
-                        </a>
-                      )}
-                      {item.in_attachment_link && item.in_attachment_link !== '-' && (
-                        <a 
-                          href={`${BASE_URL}/uploads/${item.in_attachment_link}`} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 border border-amber-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-                        >
-                          <i className='bx bxs-file-pdf text-sm text-amber-500'></i>
-                          <span>หนังสือเวียนต้นฉบับ</span>
-                        </a>
-                      )}
-                      {item.in_file_mkk && item.in_file_mkk !== '-' && (
-                        <a 
-                          href={item.in_file_mkk.startsWith('http') ? item.in_file_mkk : `${BASE_URL}/uploads/${item.in_file_mkk}`} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 hover:text-sky-800 border border-sky-200/50 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-                        >
-                          <i className='bx bxs-file-pdf text-sm text-sky-500'></i>
-                          <span>มติ ก.ก. เฉพาะเรื่อง</span>
-                        </a>
-                      )}
-                    </div>
-                  )}
 
                   <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-2">
                     <div className="text-slate-400 text-xs flex gap-3">
@@ -410,7 +443,8 @@ export default function ResultCards({ data }: { data: CircularItem[] }) {
               </button>
             </div>
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-              <h5 className="font-bold mb-2 text-slate-800">{activeRefData.in_num_date}</h5>
+              <h5 className="font-bold mb-1 text-slate-800">{activeRefData.in_num_date}</h5>
+              {activeRefData.in_doc_date && <div className="text-xs text-slate-500 mb-2"><i className='bx bx-calendar-event mr-1'></i>ลงวันที่ {activeRefData.in_doc_date}</div>}
               <p className="text-slate-600 mb-6">{activeRefData.in_detail}</p>
               <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
                 <CircularDetailsTable item={activeRefData} onRefClick={handleRefClick} />
