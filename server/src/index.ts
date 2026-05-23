@@ -35,6 +35,7 @@ app.use('/api', limiter); // Apply to public API
 // ─── CORS ─────────────────────────────────────────────────────
 app.use(cors({
   origin: [
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
     'http://localhost',
     'http://localhost:5173',
     'http://localhost:4173',
@@ -49,9 +50,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Static: Uploaded files ───────────────────────────────────
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
-app.use('/image',   express.static(path.join(__dirname, '../../image')));
-app.use('/fonts',   express.static(path.join(__dirname, '../../fonts')));
+    // Nginx now serves /uploads, /image, and /fonts directly (see client/nginx.conf)
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, '../../favicon.ico')));
 
 // ─── Routes ──────────────────────────────────────────────────
