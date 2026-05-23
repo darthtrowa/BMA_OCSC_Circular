@@ -8,6 +8,18 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// SSRF protection: validate hostname is not internal
+function isInternalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '169.254.169.254') return true;
+  if (h === '::1' || h === '[::1]' || h === '[::]') return true;
+  if (h.startsWith('10.') || h.startsWith('192.168.')) return true;
+  if (h.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) return true;
+  if (h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true; // IPv6 private
+  if (h.match(/^0x/i) || h.match(/^\d+$/) || h.match(/^0\d/)) return true; // Octal/Decimal IP notation
+  return false;
+}
+
 // Get API Key from environment
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -15,10 +27,18 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
   let dataBuffer: Buffer;
 
   if (pdfPath.startsWith('http')) {
+    const parsedUrl = new URL(pdfPath);
+    if (isInternalHost(parsedUrl.hostname)) {
+      throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
+    }
     const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
     dataBuffer = Buffer.from(response.data);
   } else {
-    const fullPath = path.join(__dirname, '../../../uploads', pdfPath);
+    const absoluteUploads = path.resolve(__dirname, '../../../uploads');
+    const fullPath = path.resolve(absoluteUploads, pdfPath);
+    if (!fullPath.startsWith(absoluteUploads)) {
+      throw new Error('Invalid file path');
+    }
     if (!fs.existsSync(fullPath)) {
       throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
     }
@@ -33,10 +53,18 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
 
 export async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
   if (pdfPath.startsWith('http')) {
+    const parsedUrl = new URL(pdfPath);
+    if (isInternalHost(parsedUrl.hostname)) {
+      throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
+    }
     const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   } else {
-    const fullPath = path.join(__dirname, '../../../uploads', pdfPath);
+    const absoluteUploads = path.resolve(__dirname, '../../../uploads');
+    const fullPath = path.resolve(absoluteUploads, pdfPath);
+    if (!fullPath.startsWith(absoluteUploads)) {
+      throw new Error('Invalid file path');
+    }
     if (!fs.existsSync(fullPath)) {
       throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
     }
@@ -194,6 +222,6 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
 
   } catch (error: any) {
     console.error('AI Summarization Error:', error.message);
-    throw new Error('เกิดข้อผิดพลาดในการสรุปผลด้วย AI: ' + error.message);
+    throw new Error('เกิดข้อผิดพลาดในการสรุปผลด้วย AI');
   }
 }

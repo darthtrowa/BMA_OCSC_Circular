@@ -679,3 +679,310 @@
 
 - Async File Upload: **Verified (File uploads immediately and updates the UI state correctly while keeping the modal open)**
 
+## [1.1.42] - 2026-05-23
+
+### Security Fixes: Critical Backend Vulnerabilities
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Replaced \`requireAdmin\` with \`requireSuperAdmin\` on all \`/users\` endpoints to strictly limit user management to super administrators.
+  - Mitigated MIME spoofing in Multer configuration by forcing all uploaded filenames to have the \`.pdf\` extension.
+  - Implemented a global \`isSyncing\` lock on the \`POST /bot-findings/sync\` endpoint to prevent DoS via concurrent heavy sync operations, returning \`429 Too Many Requests\` when locked.
+- **aiService.ts**:
+#### ✅ Verification
+
+- React Frontend layout: **Updated and verified**
+
+## [1.1.31] - 2026-05-23
+
+### UI/UX: Refactored Circular Search Result Cards Layout
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx**:
+  - Combined the "ลงวันที่" (Document Date) display text directly next to the "เลขหนังสือเวียน" (Circular Number) inside the main card header, using the same bold font and size (`text-lg font-bold`).
+  - Removed the calendar icon from the date display to reduce visual clutter.
+  - Moved the "ชื่อหนังสือ" (Circular Title) text directly below the number-date header stack on a new line and added a distinct font weight (`font-semibold`).
+  - Positioned the **"หนังสือเวียนต้นฉบับ" (Original PDF)** button directly following the circular title on the next line.
+  - Removed the **"เว็บไซต์หนังสือเวียนสำนักงาน ก.พ."** button from the main card view.
+  - Relocated the styled website link button inside the expanded details table, placing it directly under the **"LINK เว็บไซต์ต้นทาง"** field.
+
+#### ✅ Verification
+
+- React Frontend card layout: **Refactored and verified**
+
+## [1.1.32] - 2026-05-23
+
+### UI/UX: Renamed Circular Links and Integrated 'สิ่งที่ส่งมาด้วย' (QR Code) Button
+
+#### ⚙️ Backend Changes
+
+- **public.ts**:
+  - Added `c_information.in_qr_link` to the database SELECT fields in both search (`/api/search`) and details (`/api/circular/:id`) routes to allow the public search interface to consume QR Code link data.
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx & ResultTable.tsx**:
+  - Updated the helper `processFileLink` to map external URL links to the name **"ข้อมูลหนังสือเวียน"** (instead of "เว็บไซต์หนังสือเวียนสำนักงาน ก.พ.") and PDF attachments to **"หนังสือเวียนต้นฉบับ"**.
+  - Renamed details table row header **"LINK เว็บไซต์ต้นทาง"** to **"ข้อมูลหนังสือเวียน"** and **"หนังสือเวียนต้นฉบับ (สำนักงาน ก.พ.)"** to **"หนังสือเวียนต้นฉบับ"**.
+  - Integrated the **"สิ่งที่ส่งมาด้วย"** quick action button (with a paperclip icon `bx bx-paperclip` and indigo background) on the search result cards and table list view pointing to `item.in_qr_link` when it exists.
+
+#### ✅ Verification
+
+- React Frontend build: **Passed (Compiled successfully with 0 errors via Vite)**
+
+## [1.1.33] - 2026-05-23
+
+### UI/UX: Aligned PDF Buttons Inline with Circular Header
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx**:
+  - Combined the circular number and date `<h5>` header with the action buttons container inside a flex row (`flex flex-wrap items-center gap-3`).
+  - This places the **"หนังสือเวียนต้นฉบับ"** and **"สิ่งที่ส่งมาด้วย"** PDF action buttons directly inline next to the circular number and date on the same row.
+  - Adjusted the layout margins to keep spacing well-balanced on desktop and mobile viewports.
+
+#### ✅ Verification
+
+- React Frontend card header layout: **Aligned inline and verified**
+
+## [1.1.34] - 2026-05-23
+
+### UI/UX: Renamed Website Link fields to 'Link สำนักงาน ก.พ.'
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx & ResultTable.tsx**:
+  - Renamed the details table row header **"ข้อมูลหนังสือเวียน"** to **"Link สำนักงาน ก.พ."**.
+  - Updated the button and link labels within this row, as well as the link text inside `processFileLink` helper, to **"Link สำนักงาน ก.พ."** (instead of "ข้อมูลหนังสือเวียน") to specify the target origin of the document website.
+
+#### ✅ Verification
+
+- React Frontend layout labels: **Renamed and verified**
+
+## [1.1.35] - 2026-05-23
+
+### UI/UX: Kept 'Link สำนักงาน ก.พ.' Header while Showing 'ข้อมูลหนังสือเวียน' Link Button
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx & ResultTable.tsx**:
+  - Reverted the link buttons text and `processFileLink` helper return text to **"ข้อมูลหนังสือเวียน"** (instead of "Link สำนักงาน ก.พ.").
+  - Kept the table row header as **"Link สำนักงาน ก.พ."** to preserve clarity on the link's target authority.
+
+#### ✅ Verification
+
+- React Frontend layout: **Updated and verified**
+
+## [1.1.36] - 2026-05-23
+
+### TypeScript: Fixed Missing in_qr_link in CircularItem Interface
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx**:
+  - Added `in_qr_link?: string;` as an optional property in the `CircularItem` type definition. This fixes the TypeScript compilation error caused by using the property `item.in_qr_link` in the card component layout.
+
+#### ✅ Verification
+
+- TypeScript compilation error: **Resolved**
+
+## [1.1.37] - 2026-05-23
+
+### UI/UX: Added 'สิ่งที่ส่งมาด้วย' Button Inline under 'Link สำนักงาน ก.พ.' Row
+
+#### 🎨 Frontend Changes
+
+- **ResultCards.tsx & ResultTable.tsx**:
+  - Refactored the **"Link สำนักงาน ก.พ."** row container in the details sub-table to use flex-wrap layout.
+  - Positioned the **"สิ่งที่ส่งมาด้วย"** button pointing to `in_qr_link` directly next to the **"ข้อมูลหนังสือเวียน"** button (if both exist) under this row for unified navigation.
+
+#### ✅ Verification
+
+- React Frontend layout: **Updated and verified**
+
+## [1.1.38] - 2026-05-23
+
+### AI: Prevent Formatting Asterisks in Summarization Outputs
+
+#### ⚙️ Backend Changes
+
+- **aiService.ts**:
+  - Modified the Gemini AI system instructions prompt to explicitly prohibit using asterisks (`*` or `**`) for bold text, headers, and bullet points inside the `summary` field.
+  - Implemented a regex clean-up wrapper (`.replace(/\*/g, '')`) on the generated text output (both parsed JSON and raw text fallback) to guarantee that all formatting asterisks are stripped programmatically before the summary is returned to the client and stored in the database.
+
+#### ✅ Verification
+
+- Server build and compilation: **Passed**
+
+## [1.1.39] - 2026-05-23
+
+### UI/UX: Admin Circular Modal Layout Enhancements
+
+#### 🎨 Frontend Changes
+
+- **CircularModal.tsx**:
+  - Placed "เลขที่หนังสือ" (Circular Number), "ลงวันที่" (Document Date), and "ปี พ.ศ." (Year) fields in the same row on desktop screens using responsive layout (`md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-5`).
+  - Expanded the vertical space of the "รายละเอียดของหนังสือเวียน" (Circular Details) textarea by increasing default `rows` from `3` to `6` and enabling vertical resizing (`resize-y`).
+
+#### ✅ Verification
+
+- UI Layout: **Verified (Symmetrical 3-column row layout for date/number/year on desktop, and expanded vertical text area for details)**
+
+## [1.1.40] - 2026-05-23
+
+### Bug Fix: Strict Matching and Date Validation for AI References
+
+#### ⚙️ Backend Changes
+
+- **aiService.ts**:
+  - Updated Gemini system prompt to extract references as structured objects with both `"number"` and `"date"` attributes rather than plain text strings.
+  - Adjusted the return type of `summarizePdf` to `any[]` to handle the new references object structure.
+
+#### 🎨 Frontend Changes
+
+- **CircularModal.tsx**:
+  - Implemented the `normalizeDateStr` utility function to normalize Thai date strings by mapping full Thai month names to standard abbreviations (e.g. `"ตุลาคม"` to `"ต.ค."`) and removing all whitespace characters and common prefixes (like `"วันที่"`, `"ลงวันที่"`, `"เมื่อวันที่"`).
+  - Updated the reference matching logic. When scanning the database list for matches, the system now requires both the circular number and the document date to be non-empty and match the AI-extracted metadata.
+  - Prevents random duplicate references (e.g. matching `ว 2` from other years) from being added when summarizing circular files.
+
+#### ✅ Verification
+
+- Reference Extraction: **Verified (Only references matching both number and date are automatically linked)**
+
+## [1.1.41] - 2026-05-23
+
+### Feature: Immediate PDF Upload in Admin Circular Modal
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Implemented `POST /admin/circular/upload-single` endpoint using Multer to support single file uploads.
+  - Returns the uploaded filename, and uses field names (`in_original_file`, `in_attachment_file`, `mkk_ref_upload_in`) to automatically apply matching name prefixes (`orig`, `att`, `mkk`).
+
+#### 🎨 Frontend Changes
+
+- **apiService.ts**:
+  - Added the `uploadSingle` method to `adminApi` to post Multipart/Form-Data files to `/admin/circular/upload-single`.
+- **CircularModal.tsx**:
+  - Added an "อัปโหลดทันที" (Upload Immediately) button next to local file previews in the original circular, attachments, and MKK file sections.
+  - When clicked, it uploads only the selected file, updates the modal's state (converting from a local file state to an uploaded path/badged link), and clears local state variables without closing the modal or saving the rest of the form.
+  - Enables administrators to run the AI summary instantly on newly selected files without having to close and reopen the modal.
+
+#### ✅ Verification
+
+- Async File Upload: **Verified (File uploads immediately and updates the UI state correctly while keeping the modal open)**
+
+## [1.1.42] - 2026-05-23
+
+### Security Fixes: Critical Backend Vulnerabilities
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Replaced `requireAdmin` with `requireSuperAdmin` on all `/users` endpoints to strictly limit user management to super administrators.
+  - Mitigated MIME spoofing in Multer configuration by forcing all uploaded filenames to have the `.pdf` extension.
+  - Implemented a global `isSyncing` lock on the `POST /bot-findings/sync` endpoint to prevent DoS via concurrent heavy sync operations, returning `429 Too Many Requests` when locked.
+- **aiService.ts**:
+  - Mitigated Server-Side Request Forgery (SSRF) by validating hostnames in HTTP URLs against local subnets and addresses (e.g. `localhost`, `127.0.0.1`, `169.254.x.x`, `10.x.x.x`).
+  - Mitigated Path Traversal vulnerabilities by wrapping local PDF paths with `path.resolve` and ensuring the resolved paths rigidly start within the absolute `uploads` directory limit.
+- **index.ts**:
+  - Hardened endpoints against brute-force attacks by applying the `express-rate-limit` middleware directly to all `/admin/auth/*` routes.
+
+#### ✅ Verification
+
+- Security Policy: **Verified (tsc compiled without errors, rate limit applied, SSRF and path traversal validation implemented)**
+
+## [1.1.43] - 2026-05-23
+
+### Security Fixes: Phase 2 Backend Hardening
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - **Resource Exhaustion Prevention**: Reduced `in_attachment_file` Multer maxCount from 20 to 5 to mitigate excessive file processing overhead.
+  - **Information Exposure Prevention**: Sanitized multiple `catch (e: any)` blocks. Replaced raw `e.message` exposure in JSON responses with generic messages like `Internal Server Error`, while keeping the raw message exclusively in server-side `console.error` logs.
+  - **Self-Deletion Prevention**: Added a safeguard in `DELETE /users/:id` to prevent administrators from mistakenly (or maliciously) deleting the account they are currently logged in with.
+  - **Cryptographic Standardization**: Removed legacy custom prefixing logic (`"01234567890123456789" + hash`) when creating and updating passwords. Standardized `bcrypt.compare` to evaluate pure bcrypt hashes without replacing legacy `$2y$` structures, aligning with modern cryptographic standards.
+
+#### ✅ Verification
+
+- Hardening Checks: **Verified (tsc compiled without errors)**
+
+## [1.1.44] - 2026-05-23
+
+### Security Fixes: Token Versioning (Stateful JWT)
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Implemented automatic database migration script on startup to add `a_token_version` (INT DEFAULT 1) to the `admin` table if it does not exist.
+  - Updated the JWT signing payload in the `POST /auth/login` and `POST /auth/verify-otp` endpoints to inject the current `token_version`.
+  - Enforced token invalidation on password changes. The `PUT /users/:id` and `POST /profile/change-password` routes now increment the user's `a_token_version` by 1 upon a successful password update.
+- **auth.ts**:
+  - Transitioned authorization middleware (`requireAdmin`, `requireSuperAdmin`, `requireRole`) to `async` functions to support database queries.
+  - Implemented token version cross-checking. The middleware now fetches the active `a_token_version` from the database and compares it against the `token_version` embedded within the incoming JWT. Any mismatch strictly returns a `401 Unauthorized` with a "Session expired due to password change" message.
+
+#### ✅ Verification
+
+- Token Versioning: **Verified (tsc compiled without errors)**
+
+## [1.1.45] - 2026-05-23
+
+### Security Fixes: Phase 3 — Comprehensive Audit Remediation
+
+#### ⚙️ Backend Changes
+
+- **docker-compose.yml** (CRITICAL):
+  - Removed hardcoded fallback DB password `1956wine`. The `DB_PASSWORD` environment variable is now required (`${DB_PASSWORD:?DB_PASSWORD must be set}`).
+- **admin.ts** (CRITICAL + HIGH):
+  - Replaced `upload.any()` on `/circular/upload-single` with `upload.fields()` restricted to 3 named fields (maxCount: 1 each), closing an unrestricted file upload vector.
+  - Replaced `SELECT *` on login query with explicit column selection, minimizing data exposure.
+  - Replaced `SELECT *` on bot-findings queries with explicit column selection.
+  - Fixed bot sync error leaking internal error messages to client. Errors are now logged server-side only.
+- **index.ts** (HIGH + MEDIUM):
+  - Enabled Content Security Policy (CSP) via Helmet with directives for `defaultSrc`, `scriptSrc`, `styleSrc`, `fontSrc`, `imgSrc`, `connectSrc`.
+  - Added explicit body size limits (`1mb`) to `express.json()` and `express.urlencoded()`.
+  - Split rate limiters: public API (`/api`) now allows 200 req/15min, while auth endpoints (`/admin/auth`) are restricted to 15 req/15min.
+  - Removed request path reflection from 404 responses to prevent information leakage.
+  - Made CORS localhost origins conditional on `NODE_ENV !== 'production'`.
+- **aiService.ts** (HIGH + MEDIUM):
+  - Strengthened SSRF hostname validation with a centralized `isInternalHost()` function covering IPv6 (`::1`, `[::]`), `0.0.0.0`, IPv6 private ranges (`fc`, `fd`, `fe80`), and octal/decimal IP notation.
+  - Removed raw `error.message` concatenation from thrown errors to prevent information exposure.
+- **migrate.ts** (HIGH):
+  - Replaced string-interpolated SQL column lookups with parameterized queries (`$1`, `$2`).
+  - Added a whitelist validation for allowed column names and types.
+- **emailService.ts** (LOW):
+  - Made TLS `rejectUnauthorized` environment-aware: defaults to `true` in production, `false` in development. Configurable via `SMTP_TLS_REJECT_UNAUTHORIZED`.
+
+#### ✅ Verification
+
+- Full Audit Remediation: **Verified (tsc compiled without errors)**
+
+## [1.1.46] - 2026-05-23
+
+### Security Hardening: Enforce DB_PASSWORD Requirements
+
+#### ⚙️ Database & Environment Changes
+
+- **database.ts**:
+  - Implemented startup validation to ensure `DB_PASSWORD` is explicitly set in the environment variables. The server will now log an error and exit immediately if `DB_PASSWORD` is empty or undefined.
+- **.env** & **.env.docker**:
+  - Removed the hardcoded fallback password `1956wine` and replaced it with placeholders (`your_secure_db_password_here`), forcing developers to define their own secure credentials in local and container environments.
+- **DOCKER_DEPLOY_GUIDE.md**:
+  - Replaced legacy password references with secure placeholders in step-by-step examples.
+
+#### ✅ Verification
+
+- DB_PASSWORD Enforcement: **Verified (tsc compiles cleanly)**
+
+## [1.1.47] - 2026-05-23
+
+### Bug Fix: Frontend Login Loop / Stuck Issue
+
+#### 🐛 Frontend Changes
+
+- **apiService.ts**:
+  - **Issue**: The global Axios response interceptor was catching `401 Unauthorized` responses and immediately performing a hard page reload (`window.location.href = '/admin/login'`). When a user typed an incorrect password (or an old password made invalid by the new hashing algorithm), the API returned 401. This caused the page to instantly refresh before the error message could be displayed, making the login screen appear "stuck" or unresponsive.
+  - **Fix**: Excluded the `/auth/login` and `/auth/verify-otp` endpoints from the global 401 redirect logic. Error messages ("Username or Password incorrect") are now properly passed to the `LoginPage` component and displayed to the user via `Swal.fire`.

@@ -26,11 +26,16 @@ async function migrate() {
       { name: 'in_attachment_link', type: 'TEXT' }
     ];
 
+    // Whitelist of allowed column names for safety
+    const allowedColumnNames = new Set(newFields.map(f => f.name));
+    const allowedTypes = new Set(['TEXT', 'INTEGER', 'VARCHAR(50)', 'VARCHAR(255)', 'VARCHAR(20)', 'DATE', 'TIMESTAMP']);
+
     for (const field of newFields) {
-      const { rows: fieldRows } = await pool.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name='c_information' AND column_name='${field.name}';
-      `);
+      if (!allowedColumnNames.has(field.name) || !allowedTypes.has(field.type)) continue;
+      const { rows: fieldRows } = await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`,
+        ['c_information', field.name]
+      );
       if (fieldRows.length === 0) {
         console.log(`Adding column ${field.name}...`);
         await pool.query(`ALTER TABLE c_information ADD COLUMN ${field.name} ${field.type} DEFAULT '-';`);
@@ -47,10 +52,10 @@ async function migrate() {
       { name: 'a_position', type: 'VARCHAR(255)' }
     ];
     for (const field of adminFields) {
-      const { rows } = await pool.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name='admin' AND column_name='${field.name}';
-      `);
+      const { rows } = await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`,
+        ['admin', field.name]
+      );
       if (rows.length === 0) {
         console.log(`Adding column ${field.name} to admin table...`);
         await pool.query(`ALTER TABLE admin ADD COLUMN ${field.name} ${field.type};`);
@@ -63,10 +68,10 @@ async function migrate() {
       { name: 'in_current_owner_id', type: 'INTEGER', constraint: 'REFERENCES admin(a_id)' }
     ];
     for (const field of infoFields) {
-      const { rows } = await pool.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name='c_information' AND column_name='${field.name}';
-      `);
+      const { rows } = await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`,
+        ['c_information', field.name]
+      );
       if (rows.length === 0) {
         console.log(`Adding column ${field.name} to c_information table...`);
         const query = `ALTER TABLE c_information ADD COLUMN ${field.name} ${field.type} ${field.default || ''} ${field.constraint || ''};`;

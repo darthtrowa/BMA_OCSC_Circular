@@ -19,7 +19,9 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS || '',
   },
   tls: {
-    rejectUnauthorized: false, // Allow self-signed certificates (common in corporate/local networks)
+    rejectUnauthorized: process.env.NODE_ENV === 'production'
+      ? (process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false') // default true in production
+      : false, // Allow self-signed in development
   },
 });
 

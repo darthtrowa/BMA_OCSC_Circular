@@ -22,7 +22,7 @@ http.interceptors.request.use((config) => {
 http.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 && !err.config?.url?.includes('/auth/login') && !err.config?.url?.includes('/auth/verify-otp')) {
       localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_name')
       localStorage.removeItem('admin_permiss')

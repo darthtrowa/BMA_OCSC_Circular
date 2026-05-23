@@ -21,21 +21,44 @@ const PORT = process.env.PORT || 3000;
 // ─── Security Middleware ──────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+    }
+  },
 }));
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+
+// Rate limiter for public API (generous)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: false, message: 'Too many requests, please try again later.' }
 });
-app.use('/api', limiter); // Apply to public API
+// Rate limiter for admin auth (strict — anti brute-force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: false, message: 'Too many login attempts, please try again later.' }
+});
+app.use('/api', apiLimiter);
+app.use('/admin/auth', authLimiter);
 
 // ─── CORS ─────────────────────────────────────────────────────
-app.use(cors({
-  origin: [
-    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+const isProduction = process.env.NODE_ENV === 'production';
+const corsOrigins: (string | RegExp)[] = [
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+];
+if (!isProduction) {
+  corsOrigins.push(
     'http://localhost',
     'http://localhost:5173',
     'http://localhost:4173',
@@ -43,11 +66,14 @@ app.use(cors({
     'http://127.0.0.1:4173',
     /^http:\/\/localhost:\d+$/,
     /^http:\/\/127.0.0.1:\d+$/,
-  ],
+  );
+}
+app.use(cors({
+  origin: corsOrigins,
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ─── Static: Uploaded files ───────────────────────────────────
     // Nginx now serves /uploads, /image, and /fonts directly (see client/nginx.conf)
@@ -232,7 +258,7 @@ app.get('/health', (_req: Request, res: Response) =>
 
 // ─── 404 ─────────────────────────────────────────────────────
 app.use((req: Request, res: Response) =>
-  res.status(404).json({ status: false, message: `Route not found: ${req.method} ${req.path}` })
+  res.status(404).json({ status: false, message: 'Route not found' })
 );
 
 // ─── Global error handler ─────────────────────────────────────

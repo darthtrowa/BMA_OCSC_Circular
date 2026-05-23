@@ -10,7 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sendOtpEmail } from '../services/emailService.js';
 import { generateOtp, hashOtp, verifyOtp, otpExpiry, maskEmail } from '../utils/otp.js';
-import { requireAdmin, JWT_SECRET, AdminRequest } from '../middleware/auth.js';
+import { requireAdmin, requireSuperAdmin, JWT_SECRET, AdminRequest } from '../middleware/auth.js';
 import { summarizePdf } from '../services/aiService.js';
 import { syncOCSC } from '../services/botService.js';
 
@@ -23,6 +23,10 @@ const router = Router();
 db.query(`ALTER TABLE c_information ADD COLUMN IF NOT EXISTS in_qr_link VARCHAR(1000) DEFAULT '-';`)
   .then(() => console.log('✅ Column in_qr_link ensured'))
   .catch((e) => console.error('❌ Failed to add in_qr_link column:', e.message));
+
+db.query(`ALTER TABLE admin ADD COLUMN IF NOT EXISTS a_token_version INT DEFAULT 1;`)
+  .then(() => console.log('✅ Column a_token_version ensured'))
+  .catch((e) => console.error('❌ Failed to add a_token_version column:', e.message));
 
 const ok = (data: any, msg: string = 'success') => ({ status: true, message: msg, response: data });
 const err = (msg: string = 'error') => ({ status: false, message: msg });
@@ -42,7 +46,7 @@ const upload = multer({
       if (file.fieldname === 'mkk_ref_upload_in') prefix = 'mkk';
       else if (file.fieldname === 'in_original_file') prefix = 'orig';
       else if (file.fieldname === 'in_attachment_file') prefix = 'att';
-      cb(null, prefix + Date.now() + path.extname(file.originalname).toLowerCase());
+      cb(null, prefix + Date.now() + '.pdf');
     },
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -53,7 +57,7 @@ const upload = multer({
 const _uploadFields = upload.fields([
   { name: 'mkk_ref_upload_in', maxCount: 1 },
   { name: 'in_original_file', maxCount: 1 },
-  { name: 'in_attachment_file', maxCount: 20 }
+  { name: 'in_attachment_file', maxCount: 5 }
 ]);
 
 const uploadFields = (req: any, res: any, next: any) => {
@@ -66,7 +70,7 @@ const uploadFields = (req: any, res: any, next: any) => {
       if (err.code === 'LIMIT_UNEXPECTED_FILE') {
         return res.status(400).json({ status: false, message: 'จำนวนไฟล์แนบท้ายเกินขีดจำกัด หรือฟิลด์ไม่ถูกต้อง' });
       }
-      return res.status(400).json({ status: false, message: err.message || 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์' });
+      return res.status(400).json({ status: false, message: 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์ (Internal Server Error)' });
     }
     next();
   });
@@ -90,18 +94,19 @@ router.post('/auth/login', async (req: AdminRequest, res: Response) => {
   if (!loginUsername || !loginPassword)
     return res.status(400).json(err('กรุณากรอก Username และ Password'));
   try {
-    const { rows } = await db.query('SELECT * FROM admin WHERE a_username=$1', [loginUsername]);
+    const { rows } = await db.query(
+      `SELECT a_id, a_name, a_username, a_password, a_status, a_permiss, a_role,
+              a_2fa_enabled, a_email, a_token_version
+       FROM admin WHERE a_username=$1`,
+      [loginUsername]
+    );
     if (!rows.length) return res.status(401).json(err('Username หรือ Password ไม่ถูกต้อง'));
 
     const admin = rows[0];
     if (admin.a_status === 'false')
       return res.status(403).json(err('บัญชีถูกระงับ กรุณาติดต่อผู้ดูแล'));
 
-    // รองรับ hash เดิมที่มี random prefix 20 ตัว + $2y$ prefix
-    const passStart = admin.a_password.indexOf('$2');
-    const rawHash = passStart >= 0 ? admin.a_password.substring(passStart) : admin.a_password;
-    const normHash = rawHash.replace(/^\$2y\$/, '$2b$');
-    const isMatch = await bcrypt.compare(loginPassword, normHash).catch(() => false);
+    const isMatch = await bcrypt.compare(loginPassword, admin.a_password).catch(() => false);
     if (!isMatch) return res.status(401).json(err('Username หรือ Password ไม่ถูกต้อง'));
 
     await db.query('UPDATE admin SET a_last_login=NOW() WHERE a_id=$1', [admin.a_id]);
@@ -146,6 +151,7 @@ router.post('/auth/login', async (req: AdminRequest, res: Response) => {
         name: admin.a_name,
         permiss: admin.a_permiss,
         role: admin.a_role ?? null,
+        token_version: admin.a_token_version,
       },
       JWT_SECRET,
       { expiresIn: '8h' }
@@ -181,7 +187,7 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
       return res.status(401).json(err('Token ไม่ถูกต้อง'));
 
     const { rows } = await db.query(
-      'SELECT a_id, a_name, a_permiss, a_role, a_otp_code, a_otp_expiry FROM admin WHERE a_id=$1',
+      'SELECT a_id, a_name, a_permiss, a_role, a_otp_code, a_otp_expiry, a_token_version FROM admin WHERE a_id=$1',
       [decoded.id]
     );
     if (!rows.length) return res.status(404).json(err('ไม่พบบัญชีผู้ใช้'));
@@ -204,7 +210,7 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
 
     // Issue the real long-lived JWT
     const token = jwt.sign(
-      { id: admin.a_id, name: admin.a_name, permiss: admin.a_permiss, role: admin.a_role ?? null },
+      { id: admin.a_id, name: admin.a_name, permiss: admin.a_permiss, role: admin.a_role ?? null, token_version: admin.a_token_version },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -314,7 +320,7 @@ router.patch('/profile/2fa', requireAdmin, async (req: AdminRequest, res: Respon
 // ─────────────────────────────────────────────────────────────
 
 /** 1. ดึงรายชื่อผู้ใช้ทั้งหมด */
-router.get('/users', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   try {
     let sql = `
       SELECT a_id, a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_last_login, created_at 
@@ -334,7 +340,7 @@ router.get('/users', requireAdmin, async (req: AdminRequest, res: Response) => {
 });
 
 /** 2. เพิ่มผู้ใช้ใหม่ */
-router.post('/users', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency } = req.body;
   if (req.admin?.permiss !== 'superadmin' && a_permiss === 'superadmin') {
     return res.status(403).json(err('คุณไม่มีสิทธิ์เพิ่มผู้ใช้ระดับ SuperAdmin'));
@@ -342,11 +348,10 @@ router.post('/users', requireAdmin, async (req: AdminRequest, res: Response) => 
   try {
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(a_password || '123456', salt);
-    const finalHash = "01234567890123456789" + hash;
     await db.query(`
       INSERT INTO admin (a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-    `, [a_name, a_username, a_email, finalHash, a_permiss || 'user', a_role || 'STAFF', a_position || '', a_status || '1', a_agency]);
+    `, [a_name, a_username, a_email, hash, a_permiss || 'user', a_role || 'STAFF', a_position || '', a_status || '1', a_agency]);
     return res.json(ok(null, 'เพิ่มผู้ใช้สำเร็จ'));
   } catch (e) {
     console.error(e);
@@ -355,7 +360,7 @@ router.post('/users', requireAdmin, async (req: AdminRequest, res: Response) => 
 });
 
 /** 3. แก้ไขผู้ใช้ */
-router.put('/users/:id', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.put('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   console.log(`[AdminAPI] Incoming PUT /users/${req.params.id}`, req.body);
   const { id } = req.params;
   const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency } = req.body;
@@ -371,11 +376,10 @@ router.put('/users/:id', requireAdmin, async (req: AdminRequest, res: Response) 
     if (a_password) {
       const salt = await bcrypt.genSalt(10);
       const hash = await bcrypt.hash(a_password, salt);
-      const finalHash = "01234567890123456789" + hash;
       await db.query(`
-        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_position=$7, a_status=$8, a_agency=$9, updated_at=NOW()
+        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_position=$7, a_status=$8, a_agency=$9, a_token_version = COALESCE(a_token_version, 1) + 1, updated_at=NOW()
         WHERE a_id=($10)::int
-      `, [a_name, a_username, a_email, finalHash, a_permiss, a_role, a_position, a_status, a_agency, id]);
+      `, [a_name, a_username, a_email, hash, a_permiss, a_role, a_position, a_status, a_agency, id]);
     } else {
       await db.query(`
         UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_permiss=$4, a_role=$5, a_position=$6, a_status=$7, a_agency=$8, updated_at=NOW()
@@ -391,8 +395,9 @@ router.put('/users/:id', requireAdmin, async (req: AdminRequest, res: Response) 
 });
 
 /** 4. ลบผู้ใช้ */
-router.delete('/users/:id', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.delete('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   const { id } = req.params;
+  if (parseInt(id as string) === req.admin?.id) return res.status(400).json(err('ไม่อนุญาตให้ลบบัญชีที่กำลังเข้าใช้งานอยู่'));
   try {
     const { rows: existing } = await db.query('SELECT a_permiss FROM admin WHERE a_id = $1', [id]);
     if (!existing.length) return res.status(404).json(err('ไม่พบผู้ใช้'));
@@ -555,7 +560,7 @@ router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminReq
     return res.json(ok(in_id, 'เพิ่มหนังสือเวียนสำเร็จ'));
   } catch (e: any) {
     console.error('Create Circular Full Error:', e);
-    return res.status(500).json(err('เกิดข้อผิดพลาดในการเพิ่ม: ' + e.message));
+    return res.status(500).json(err('เกิดข้อผิดพลาดในการเพิ่มข้อมูล (Internal Server Error)'));
   }
 });
 
@@ -579,8 +584,8 @@ router.post('/circular/summarize', requireAdmin, async (req: AdminRequest, res: 
     const summary = await summarizePdf(payload);
     return res.json(ok(summary, 'สรุปผลสำเร็จ'));
   } catch (e: any) {
-    console.error(e);
-    return res.status(500).json(err(e.message || 'ไม่สามารถสรุปผลได้'));
+    console.error('Summarize Error:', e);
+    return res.status(500).json(err('ไม่สามารถสรุปผลได้ (Internal Server Error)'));
   }
 });
 
@@ -588,20 +593,25 @@ router.post('/circular/summarize', requireAdmin, async (req: AdminRequest, res: 
 // POST /admin/circular/upload-single
 // ─────────────────────────────────────────────────────────────
 router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Response) => {
-  const uploadSingle = upload.any();
+  const uploadSingle = upload.fields([
+    { name: 'in_original_file', maxCount: 1 },
+    { name: 'in_attachment_file', maxCount: 1 },
+    { name: 'mkk_ref_upload_in', maxCount: 1 },
+  ]);
   uploadSingle(req, res, (err: any) => {
     if (err) {
       console.error('Single Upload Error:', err);
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ status: false, message: 'ขนาดไฟล์ใหญ่เกินไป (จำกัด 50MB)' });
       }
-      return res.status(400).json({ status: false, message: err.message || 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์' });
+      return res.status(400).json({ status: false, message: 'เกิดข้อผิดพลาดในการอัปโหลดไฟล์ (Internal Server Error)' });
     }
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const firstFile = Object.values(files || {}).flat()[0];
+    if (!firstFile) {
       return res.status(400).json({ status: false, message: 'กรุณาเลือกไฟล์สำหรับอัปโหลด' });
     }
-    return res.json(ok({ filename: files[0].filename }, 'อัปโหลดไฟล์สำเร็จ'));
+    return res.json(ok({ filename: firstFile.filename }, 'อัปโหลดไฟล์สำเร็จ'));
   });
 });
 
@@ -681,7 +691,7 @@ router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminReq
     return res.json(ok('success', 'แก้ไขหนังสือเวียนสำเร็จ'));
   } catch (e: any) {
     console.error('Update Circular Full Error:', e);
-    return res.status(500).json(err('เกิดข้อผิดพลาดในการแก้ไข: ' + e.message));
+    return res.status(500).json(err('เกิดข้อผิดพลาดในการแก้ไขข้อมูล (Internal Server Error)'));
   }
 });
 
@@ -760,16 +770,11 @@ router.post('/profile/change-password', requireAdmin, async (req: AdminRequest, 
     const { rows } = await db.query('SELECT a_password FROM admin WHERE a_id=$1', [req.admin?.id]);
     if (!rows.length) return res.status(404).json(err('ไม่พบบัญชี'));
 
-    const fullHash = rows[0].a_password;
-    const hashStart = fullHash.indexOf('$2');
-    const rawHash = hashStart >= 0 ? fullHash.substring(hashStart) : fullHash;
-    const normHash = rawHash.replace(/^\$2y\$/, '$2b$');
-    const isMatch = await bcrypt.compare(old_password, normHash).catch(() => false);
+    const isMatch = await bcrypt.compare(old_password, rows[0].a_password).catch(() => false);
     if (!isMatch) return res.status(400).json(err('รหัสผ่านเดิมไม่ถูกต้อง'));
 
-    const prefix = hashStart >= 0 ? fullHash.substring(0, hashStart) : '';
     const newHash = await bcrypt.hash(new_password, await bcrypt.genSalt(10));
-    await db.query('UPDATE admin SET a_password=$1 WHERE a_id=$2', [prefix + newHash, req.admin?.id]);
+    await db.query('UPDATE admin SET a_password=$1, a_token_version = COALESCE(a_token_version, 1) + 1 WHERE a_id=$2', [newHash, req.admin?.id]);
 
     return res.json(ok('success', 'เปลี่ยนรหัสผ่านสำเร็จ'));
   } catch (e) {
@@ -869,16 +874,22 @@ router.get('/bot-findings', requireAdmin, async (req: AdminRequest, res: Respons
   }
 });
 
+let isSyncing = false;
 router.post('/bot-findings/sync', requireAdmin, async (req: AdminRequest, res: Response) => {
+  if (isSyncing) return res.status(429).json(err('กำลังซิงค์ข้อมูล กรุณารอสักครู่'));
+  isSyncing = true;
   try {
     const result = await syncOCSC();
     if (result.success) {
       return res.json(ok({ count: result.count }, `ซิงค์ข้อมูลสำเร็จ พบเรื่องใหม่ ${result.count} เรื่อง`));
     }
-    return res.status(500).json(err(result.error || 'เกิดข้อผิดพลาดในการซิงค์'));
+    console.error('[Bot Sync Error]', result.error);
+    return res.status(500).json(err('เกิดข้อผิดพลาดในการซิงค์'));
   } catch (e) {
     console.error(e);
     return res.status(500).json(err('Server Error'));
+  } finally {
+    isSyncing = false;
   }
 });
 
@@ -891,7 +902,10 @@ router.post('/bot-findings/:id/action', requireAdmin, async (req: AdminRequest, 
   }
 
   try {
-    const { rows } = await db.query('SELECT * FROM c_bot_findings WHERE bot_id = $1', [id]);
+    const { rows } = await db.query(
+      'SELECT bot_id, bot_title, bot_url, bot_date, bot_status, created_at, bot_payload FROM c_bot_findings WHERE bot_id = $1',
+      [id]
+    );
     if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูลหนังสือเวียนจากบอต'));
     const botRecord = rows[0];
 
@@ -949,7 +963,10 @@ router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res:
   const { bot_id, in_num_date, in_doc_date, in_detail, in_year_id, in_link, categories } = req.body;
 
   try {
-    const { rows } = await db.query('SELECT * FROM c_bot_findings WHERE bot_id = $1', [bot_id]);
+    const { rows } = await db.query(
+      'SELECT bot_id, bot_title, bot_url, bot_date, bot_status, created_at, bot_payload FROM c_bot_findings WHERE bot_id = $1',
+      [bot_id]
+    );
     if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูลคิวงานบอต'));
 
     const { rows: [{ max_order }] } = await db.query('SELECT MAX(in_ordering) AS max_order FROM c_information');

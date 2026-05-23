@@ -25,12 +25,12 @@ cd BMA_OCSC_Circular
 ```env
 # --- Database Configuration ---
 POSTGRES_USER=admin
-POSTGRES_PASSWORD=1956wine
+POSTGRES_PASSWORD=your_strong_password_here
 POSTGRES_DB=circular_db
 
 # --- Backend Configuration ---
-DATABASE_URL=postgresql://admin:1956wine@db:5432/circular_db
-JWT_SECRET=L^opNlkilogmL
+DATABASE_URL=postgresql://admin:your_strong_password_here@db:5432/circular_db
+JWT_SECRET=your_jwt_secret_here
 NODE_ENV=production
 
 # --- Frontend Configuration ---
