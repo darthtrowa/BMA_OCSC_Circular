@@ -50,7 +50,7 @@ const authLimiter = rateLimit({
   message: { status: false, message: 'Too many login attempts, please try again later.' }
 });
 app.use('/api', apiLimiter);
-app.use('/admin/auth', authLimiter);
+app.use('/api/admin/auth', authLimiter);
 
 // ─── CORS ─────────────────────────────────────────────────────
 const isProduction = process.env.NODE_ENV === 'production';

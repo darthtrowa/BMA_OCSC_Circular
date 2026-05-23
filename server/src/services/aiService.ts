@@ -31,8 +31,15 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
     if (isInternalHost(parsedUrl.hostname)) {
       throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
     }
-    const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
-    dataBuffer = Buffer.from(response.data);
+    try {
+      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0 });
+      dataBuffer = Buffer.from(response.data);
+    } catch (err: any) {
+      if (err.response && err.response.status >= 300 && err.response.status < 400) {
+        throw new Error('ไม่อนุญาตให้ Redirect ไปยังแหล่งข้อมูลภายนอก');
+      }
+      throw err;
+    }
   } else {
     const absoluteUploads = path.resolve(__dirname, '../../../uploads');
     const fullPath = path.resolve(absoluteUploads, pdfPath);
@@ -57,8 +64,15 @@ export async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
     if (isInternalHost(parsedUrl.hostname)) {
       throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
     }
-    const response = await axios.get(pdfPath, { responseType: 'arraybuffer' });
-    return Buffer.from(response.data);
+    try {
+      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0 });
+      return Buffer.from(response.data);
+    } catch (err: any) {
+      if (err.response && err.response.status >= 300 && err.response.status < 400) {
+        throw new Error('ไม่อนุญาตให้ Redirect ไปยังแหล่งข้อมูลภายนอก');
+      }
+      throw err;
+    }
   } else {
     const absoluteUploads = path.resolve(__dirname, '../../../uploads');
     const fullPath = path.resolve(absoluteUploads, pdfPath);

@@ -283,7 +283,7 @@ router.post('/auth/resend-otp', async (req: AdminRequest, res: Response) => {
 // PATCH /admin/users/:id/2fa  — toggle 2FA for a user (admin only)
 // PATCH /admin/profile/2fa    — toggle own 2FA
 // ─────────────────────────────────────────────────────────────
-router.patch('/users/:id/2fa', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.patch('/users/:id/2fa', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   const { id } = req.params;
   const { enabled } = req.body; // boolean
   try {
@@ -417,6 +417,7 @@ router.delete('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Re
 // ─────────────────────────────────────────────────────────────
 router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response) => {
   try {
+    // TODO: Implement LIMIT/OFFSET pagination here to prevent Out Of Memory (OOM) as data grows
     const sql = `
       SELECT
         c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
@@ -537,6 +538,7 @@ router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminReq
 
     let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
+    await db.query('BEGIN');
     const { rows: [{ in_id }] } = await db.query(
       `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18) RETURNING in_id`,
@@ -557,8 +559,10 @@ router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminReq
     if (b.ref_none !== '-' && refIds.length)
       for (const rid of refIds) await db.query('INSERT INTO c_information_information (in_id,in_id_ref) VALUES ($1,$2)', [in_id, toSqlInt(rid)]);
 
+    await db.query('COMMIT');
     return res.json(ok(in_id, 'เพิ่มหนังสือเวียนสำเร็จ'));
   } catch (e: any) {
+    await db.query('ROLLBACK');
     console.error('Create Circular Full Error:', e);
     return res.status(500).json(err('เกิดข้อผิดพลาดในการเพิ่มข้อมูล (Internal Server Error)'));
   }
@@ -663,6 +667,7 @@ router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminReq
 
     let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
+    await db.query('BEGIN');
     await db.query(
       `UPDATE c_information SET in_num_date=$1,in_doc_date=$2,in_detail=$3,in_detail_ag=$4,in_etc=$5,in_link=$6,in_qr_link=$7,in_file_mkk=$8,updated_user=$9,in_mkk_id=$10,in_mw_id=$11,in_results_id=$12,in_year_id=$13,in_status_id=$14,in_circular_detail=$15,in_original_link=$16,in_attachment_link=$17,updated_at=NOW() WHERE in_id=$18`,
       [
@@ -688,8 +693,10 @@ router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminReq
       await db.query('DELETE FROM c_information_information WHERE in_id=$1', [toSqlInt(b.in_id)]);
     }
 
+    await db.query('COMMIT');
     return res.json(ok('success', 'แก้ไขหนังสือเวียนสำเร็จ'));
   } catch (e: any) {
+    await db.query('ROLLBACK');
     console.error('Update Circular Full Error:', e);
     return res.status(500).json(err('เกิดข้อผิดพลาดในการแก้ไขข้อมูล (Internal Server Error)'));
   }

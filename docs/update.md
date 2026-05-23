@@ -1006,3 +1006,27 @@
   - Added global gzip compression for text-based resources (`text/plain`, `application/json`, `application/javascript`, `text/css`) to improve transmission performance.
   - Hardened the `/uploads/` directory block by removing `access_log off;` and injecting `add_header X-Content-Type-Options nosniff;` to prevent MIME-sniffing vulnerabilities.
   - Documented a structural warning regarding potential routing conflicts between Express API namespaces and React frontend routes.
+
+## [1.1.49] - 2026-05-23
+
+### Bug Fix: Database Schema & API Route Alignment
+
+#### ?? Backend Changes
+
+- **Schema Consistency**: Added missing columns (in_doc_date to c_information and ot_payload to c_bot_findings as jsonb) to the Docker PostgreSQL instance to resolve HTTP 500 errors during public search and admin dashboard loads.
+- **API Namespace**: Corrected missed /admin/... frontend API calls in piService.ts (e.g. getDashboardData, getUsers) to /api/admin/... ensuring the Nginx proxy correctly routes dashboard data requests instead of serving static HTML.
+- **Security Patch**: Updated uthLimiter path to /api/admin/auth and mitigated SSRF vulnerabilities in iService.ts by explicitly enforcing maxRedirects: 0 and catching HTTP 3xx status codes to throw proper generic errors.
+- **TLS Handling**: Added ca-certificates to the Alpine node image and enabled a local TLS bypass (SMTP_TLS_REJECT_UNAUTHORIZED=false) for Nodemailer to ensure OTP emails are successfully dispatched through constrained network environments without triggering self-signed certificate errors.
+
+## [1.1.50] - 2026-05-23
+
+### Security & Scaling Refactoring
+
+#### ?? Backend Changes
+
+- **admin.ts (Transactions)**: Wrapped the multi-table INSERT and UPDATE SQL queries inside /circular/create and /circular/update with PostgreSQL transactions (BEGIN, COMMIT, ROLLBACK). This guarantees atomicity and prevents orphaned relations (e.g. categories, agencies, references) if an insert fails mid-execution.
+- **admin.ts (IDOR Fix)**: Upgraded access control for PATCH /users/:id/2fa from 
+equireAdmin to 
+equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
+- **admin.ts (Scalability)**: Documented an architectural TODO flag for implementing LIMIT/OFFSET pagination inside the heavy GET /admin/dashboard SQL query to prevent future Out-Of-Memory (OOM) risks as database volume grows.
+- **index.ts & aiService.ts**: Confirmed and validated prior critical patches including uthLimiter namespacing to /api/admin/auth and SSRF prevention via maxRedirects: 0 during PDF text extraction.
