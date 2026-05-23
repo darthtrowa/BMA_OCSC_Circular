@@ -1030,3 +1030,12 @@ equireAdmin to
 equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
 - **admin.ts (Scalability)**: Documented an architectural TODO flag for implementing LIMIT/OFFSET pagination inside the heavy GET /admin/dashboard SQL query to prevent future Out-Of-Memory (OOM) risks as database volume grows.
 - **index.ts & aiService.ts**: Confirmed and validated prior critical patches including uthLimiter namespacing to /api/admin/auth and SSRF prevention via maxRedirects: 0 during PDF text extraction.
+
+## [1.1.51] - 2026-05-23
+
+### Data Integrity & Validation
+
+#### ?? Backend Changes
+
+- **admin.ts (Zod Validation)**: Integrated zod schema validation (circularSchema) into the POST /circular/create and POST /circular/update endpoints.
+- **Validation Gate**: Applied strict type enforcement (safeParse) on incoming multipart/form-data payload fields (e.g., in_num_date, in_detail) immediately after Multer processing. Requests with missing or malformed data are now instantly rejected with a 400 Bad Request and detailed error formatting, halting execution before any database transaction begins.

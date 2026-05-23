@@ -13,6 +13,32 @@ import { generateOtp, hashOtp, verifyOtp, otpExpiry, maskEmail } from '../utils/
 import { requireAdmin, requireSuperAdmin, JWT_SECRET, AdminRequest } from '../middleware/auth.js';
 import { summarizePdf } from '../services/aiService.js';
 import { syncOCSC } from '../services/botService.js';
+import { z } from 'zod';
+
+const stringOrNumber = z.union([z.string(), z.number()]).optional().nullable();
+
+const circularSchema = z.object({
+  in_num_date: z.string({ required_error: 'ระบุเลขที่หนังสือเวียน' }).min(1, 'ระบุเลขที่หนังสือเวียน'),
+  in_detail: z.string({ required_error: 'ระบุรายละเอียดหนังสือเวียน' }).min(1, 'ระบุรายละเอียดหนังสือเวียน'),
+  in_doc_date: z.string().optional().nullable(),
+  in_detail_ag: z.string().optional().nullable(),
+  in_etc: z.string().optional().nullable(),
+  in_link: z.string().optional().nullable(),
+  in_qr_link: z.string().optional().nullable(),
+  in_circular_detail: z.string().optional().nullable(),
+  in_mkk_id: stringOrNumber,
+  in_mw_id: stringOrNumber,
+  in_results_id: stringOrNumber,
+  in_year_id: stringOrNumber,
+  in_status_id: stringOrNumber,
+  mkk_ref_link_in: z.string().optional().nullable(),
+  mkk_ref_none_in: z.string().optional().nullable(),
+  lkk_none: z.string().optional().nullable(),
+  ref_none: z.string().optional().nullable(),
+  submit_create_circular_hidden: z.any().optional(),
+  in_id: stringOrNumber,
+  existing_file_in: z.string().optional().nullable(),
+}).passthrough();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -493,6 +519,10 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
 router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
+    const validationResult = circularSchema.safeParse(b);
+    if (!validationResult.success) {
+      return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: validationResult.error.format() });
+    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (!b.submit_create_circular_hidden) return res.status(400).json(err('Submit Not Allowed'));
@@ -625,6 +655,10 @@ router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Re
 router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
+    const validationResult = circularSchema.safeParse(b);
+    if (!validationResult.success) {
+      return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: validationResult.error.format() });
+    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
     if (!b.submit_create_circular_hidden || !b.in_id) return res.status(400).json(err('ข้อมูลไม่ครบ'));
