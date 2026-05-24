@@ -1039,3 +1039,12 @@ equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilit
 
 - **admin.ts (Zod Validation)**: Integrated zod schema validation (circularSchema) into the POST /circular/create and POST /circular/update endpoints.
 - **Validation Gate**: Applied strict type enforcement (safeParse) on incoming multipart/form-data payload fields (e.g., in_num_date, in_detail) immediately after Multer processing. Requests with missing or malformed data are now instantly rejected with a 400 Bad Request and detailed error formatting, halting execution before any database transaction begins.
+
+## [1.1.52] - 2026-05-23
+
+### Final Architectural Cleanup
+
+#### ?? Backend Changes
+
+- **admin.ts (Middleware Validation)**: Refactored Zod validation into a reusable alidate(schema) middleware function, elegantly chaining it into route definitions (e.g., alidate(circularSchema)) to keep endpoint controllers clean and DRY.
+- **admin.ts (Server-side Pagination)**: Upgraded the heavy GET /admin/dashboard endpoint to support server-side pagination to prevent potential Out-Of-Memory (OOM) issues as the database grows. Implemented query parameter extraction (page and limit), LIMIT/OFFSET SQL injections, and total count calculations. The API now returns a structured pagination metadata object alongside the data.

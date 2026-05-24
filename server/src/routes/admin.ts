@@ -63,6 +63,15 @@ const toSqlInt = (val: any): number | null => {
   return isNaN(parsed) ? null : parsed;
 };
 
+// ─── Middleware: Zod Validation ───────────────────────────────
+const validate = (schema: z.ZodSchema) => (req: any, res: Response, next: any) => {
+  const validationResult = schema.safeParse(req.body);
+  if (!validationResult.success) {
+    return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: validationResult.error.format() });
+  }
+  next();
+};
+
 // ─── Multer (PDF upload) ──────────────────────────────────────
 const upload = multer({
   storage: multer.diskStorage({
@@ -441,9 +450,15 @@ router.delete('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Re
 // ─────────────────────────────────────────────────────────────
 // GET /admin/dashboard
 // ─────────────────────────────────────────────────────────────
-router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response) => {
+router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
-    // TODO: Implement LIMIT/OFFSET pagination here to prevent Out Of Memory (OOM) as data grows
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10000; // Return all for client-side filtering
+    const offset = (page - 1) * limit;
+
+    const { rows: [{ total_count }] } = await db.query('SELECT COUNT(*) AS total_count FROM c_information');
+    const total = parseInt(total_count);
+
     const sql = `
       SELECT
         c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
@@ -473,8 +488,9 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
       LEFT JOIN c_information AS ref_info ON c_information_information.in_id_ref=ref_info.in_id
       GROUP BY c_information.in_id, c_year.year_value
       ORDER BY c_year.year_value DESC, c_information.in_id DESC
+      LIMIT $1 OFFSET $2
     `;
-    const { rows: infoRows } = await db.query(sql);
+    const { rows: infoRows } = await db.query(sql, [limit, offset]);
     const information = infoRows.map((r: any) => ({
       ...r,
       mati_kk: parseFirst(r.mati_kk, ['mkk_id', 'mkk_name', 'mkk_date']),
@@ -499,6 +515,12 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
 
     return res.json(ok({
       information,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      },
       year: year.rows,
       results: results.rows,
       mati_work: mati_work.rows,
@@ -516,13 +538,9 @@ router.get('/dashboard', requireAdmin, async (_req: AdminRequest, res: Response)
 // ─────────────────────────────────────────────────────────────
 // POST /admin/circular/create
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/create', requireAdmin, uploadFields, async (req: AdminRequest, res: Response) => {
+router.post('/circular/create', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
-    const validationResult = circularSchema.safeParse(b);
-    if (!validationResult.success) {
-      return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: validationResult.error.format() });
-    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (!b.submit_create_circular_hidden) return res.status(400).json(err('Submit Not Allowed'));
@@ -652,13 +670,9 @@ router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Re
 // ─────────────────────────────────────────────────────────────
 // POST /admin/circular/update
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/update', requireAdmin, uploadFields, async (req: AdminRequest, res: Response) => {
+router.post('/circular/update', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
-    const validationResult = circularSchema.safeParse(b);
-    if (!validationResult.success) {
-      return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: validationResult.error.format() });
-    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
     if (!b.submit_create_circular_hidden || !b.in_id) return res.status(400).json(err('ข้อมูลไม่ครบ'));
