@@ -34,8 +34,8 @@ export default function LoginPage() {
           setEmailHint(result.email_hint)
           Swal.fire({ icon: 'info', text: result.message, timer: 2000, showConfirmButton: false })
         } else {
-          const { token, name, permiss } = result.response
-          login(token, name, permiss)
+          const { token, id, name, permiss, role } = result.response
+          login(token, id, name, permiss, role)
           Swal.fire({ icon: 'success', text: `สวัสดีคุณ ${name}`, timer: 1500, showConfirmButton: false })
           setTimeout(() => navigate('/admin/dashboard'), 1600)
         }
@@ -56,8 +56,8 @@ export default function LoginPage() {
     try {
       const result = await adminApi.verifyOtp(tmpToken, otpCode)
       if (result.status) {
-        const { token, name, permiss } = result.response
-        login(token, name, permiss)
+        const { token, id, name, permiss, role } = result.response
+        login(token, id, name, permiss, role)
         Swal.fire({ icon: 'success', text: 'ยืนยันตัวตนสำเร็จ', timer: 1500, showConfirmButton: false })
         setTimeout(() => navigate('/admin/dashboard'), 1600)
       } else {

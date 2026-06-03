@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { PDFParse } from 'pdf-parse';
 import fs from 'fs';
+import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
@@ -21,9 +22,12 @@ function isInternalHost(hostname: string): boolean {
 }
 
 // Get API Key from environment
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('[AI Service] ⚠️ GEMINI_API_KEY is not set. AI summarization will be unavailable.');
+}
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-export async function extractTextFromPdf(pdfPath: string): Promise<string> {
+async function extractTextFromPdf(pdfPath: string): Promise<string> {
   let dataBuffer: Buffer;
 
   if (pdfPath.startsWith('http')) {
@@ -32,7 +36,8 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
       throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
     }
     try {
-      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0 });
+      // BP-04: Add timeout to external requests
+      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0, timeout: 15000 });
       dataBuffer = Buffer.from(response.data);
     } catch (err: any) {
       if (err.response && err.response.status >= 300 && err.response.status < 400) {
@@ -46,10 +51,13 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
     if (!fullPath.startsWith(absoluteUploads)) {
       throw new Error('Invalid file path');
     }
-    if (!fs.existsSync(fullPath)) {
-      throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+    // STAB-07: Use async file read to avoid blocking event loop
+    try {
+      dataBuffer = await fsp.readFile(fullPath);
+    } catch (e: any) {
+      if (e.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+      throw e;
     }
-    dataBuffer = fs.readFileSync(fullPath);
   }
 
   const parser = new PDFParse({ data: dataBuffer });
@@ -58,14 +66,15 @@ export async function extractTextFromPdf(pdfPath: string): Promise<string> {
   return data.text || '';
 }
 
-export async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
+async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
   if (pdfPath.startsWith('http')) {
     const parsedUrl = new URL(pdfPath);
     if (isInternalHost(parsedUrl.hostname)) {
       throw new Error('ไม่อนุญาตให้ดึงข้อมูลจากเครือข่ายภายใน');
     }
     try {
-      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0 });
+      // BP-04: Add timeout to external requests
+      const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0, timeout: 15000 });
       return Buffer.from(response.data);
     } catch (err: any) {
       if (err.response && err.response.status >= 300 && err.response.status < 400) {
@@ -79,10 +88,13 @@ export async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
     if (!fullPath.startsWith(absoluteUploads)) {
       throw new Error('Invalid file path');
     }
-    if (!fs.existsSync(fullPath)) {
-      throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+    // STAB-07: Use async file read to avoid blocking event loop
+    try {
+      return await fsp.readFile(fullPath);
+    } catch (e: any) {
+      if (e.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+      throw e;
     }
-    return fs.readFileSync(fullPath);
   }
 }
 

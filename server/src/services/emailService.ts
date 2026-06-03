@@ -19,9 +19,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS || '',
   },
   tls: {
-    rejectUnauthorized: process.env.NODE_ENV === 'production'
-      ? (process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false') // default true in production
-      : false, // Allow self-signed in development
+    rejectUnauthorized: false,
   },
 });
 
@@ -114,17 +112,4 @@ export async function sendOtpEmail(to: string, name: string, otp: string): Promi
     html,
     text:    `รหัส OTP ของคุณคือ: ${otp} (หมดอายุใน ${expiryMin} นาที)`,
   });
-}
-
-/**
- * Verify the SMTP connection on startup (optional health-check).
- */
-export async function verifySmtpConnection(): Promise<void> {
-  if (!process.env.SMTP_USER) return;
-  try {
-    await transporter.verify();
-    console.log('[Email] SMTP connection verified ✅');
-  } catch (e) {
-    console.warn('[Email] SMTP connection failed:', (e as Error).message);
-  }
 }

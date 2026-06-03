@@ -8,9 +8,12 @@ import { rateLimit } from 'express-rate-limit';
 
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
+import workflowRoutes from './routes/workflowRoutes.js';
 import pool from './config/database.js';
-import cron from 'node-cron';
-import { syncOCSC } from './services/botService.js';
+import { runMigrations } from './config/migrations.js';
+import { initAdminJS } from './config/adminjs.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,13 +24,14 @@ const PORT = process.env.PORT || 3000;
 // ─── Security Middleware ──────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: ["'self'"],
     }
   },
@@ -53,7 +57,8 @@ app.use('/api', apiLimiter);
 app.use('/api/admin/auth', authLimiter);
 
 // ─── CORS ─────────────────────────────────────────────────────
-const isProduction = process.env.NODE_ENV === 'production';
+// SEC-06: Default to production-safe CORS (was permissive when NODE_ENV unset)
+const isProduction = process.env.NODE_ENV !== 'development';
 const corsOrigins: (string | RegExp)[] = [
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
 ];
@@ -72,6 +77,9 @@ app.use(cors({
   origin: corsOrigins,
   credentials: true,
 }));
+// ─── AdminJS Internal Control Panel (MUST BE BEFORE BODY PARSERS) ───
+await initAdminJS(app);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -79,12 +87,25 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
     // Nginx now serves /uploads, /image, and /fonts directly (see client/nginx.conf)
 app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, '../../favicon.ico')));
 
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+app.use('/image', express.static(path.join(__dirname, '../../image')));
 // ─── Routes ──────────────────────────────────────────────────
+import { auditMiddleware } from './middleware/auditMiddleware.js';
+
 app.use('/api', publicRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', auditMiddleware, adminRoutes);
+app.use('/api/admin/workflow', auditMiddleware, workflowRoutes);
+
+// ─── Swagger Documentation ────────────────────────────────────
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ─── Root: Status Dashboard ──────────────────────────────────
 app.get('/', async (_req: Request, res: Response) => {
+  // SEC-11: Strip environment details in production
+  if (isProduction) {
+    return res.json({ status: 'ok', service: 'CSC Circular API' });
+  }
+
   let dbStatus = 'Offline';
   try {
     await pool.query('SELECT 1');
@@ -235,11 +256,16 @@ app.get('/', async (_req: Request, res: Response) => {
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 30px;">
-          <a href="http://localhost" class="btn" style="margin-top: 0; background: #334155;">
+          <a href="http://localhost/circular" class="btn" style="margin-top: 0; background: #334155;">
             <i class='bx bx-window-open'></i> Public Portal
           </a>
-          <a href="http://localhost/admin/login" class="btn" style="margin-top: 0;">
+          <a href="http://localhost/circular/admin/login" class="btn" style="margin-top: 0;">
             <i class='bx bx-lock-alt'></i> Admin Login
+          </a>
+        </div>
+        <div style="margin-top: 15px;">
+          <a href="/internal-admin" class="btn" style="margin-top: 0; background: #6366f1;">
+            <i class='bx bx-server'></i> Internal Admin Control Panel
           </a>
         </div>
 
@@ -252,6 +278,27 @@ app.get('/', async (_req: Request, res: Response) => {
   `);
 });
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: API Health Check
+ *     description: Returns the health status of the API
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get('/health', (_req: Request, res: Response) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 );
@@ -262,20 +309,49 @@ app.use((req: Request, res: Response) =>
 );
 
 // ─── Global error handler ─────────────────────────────────────
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('❌ Server Error:', err.message);
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  console.error('❌ Server Error on', req.originalUrl, ':', err.message);
   res.status(500).json({ status: false, message: 'Internal Server Error' });
 });
 
 // ─── Start ────────────────────────────────────────────────────
-app.listen(PORT, () => {
+// STAB-02: Run database migrations synchronously before accepting requests
+await runMigrations();
+
+const server = app.listen(PORT, () => {
   console.log('\n🚀 BMA Circular API Server (TypeScript ESM)');
   console.log(`   URL:    http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
   console.log(`   Mode:   ${process.env.NODE_ENV || 'development'}\n`);
   
   // ─── Scheduled Tasks ──────────────────────────────────────────
+  import('./services/metricsCollector.js').then(({ startMetricsCollector }) => {
+    startMetricsCollector(60000); // 1 minute interval
+  }).catch(e => console.error('Failed to load metricsCollector:', e));
+
   // Cron job for bot scraper is disabled per user request
   // cron.schedule('0 3 * * 1-5', () => { ... });
   console.log(`   Cron:   Disabled (Manual Sync Only)`);
 });
+
+// ─── STAB-06: Graceful Shutdown ─────────────────────────────────
+const shutdown = async (signal: string) => {
+  console.log(`\n⏳ ${signal} received — graceful shutdown...`);
+  server.close(async () => {
+    try {
+      await pool.end();
+      console.log('✅ Database pool closed');
+    } catch (e) {
+      console.error('❌ Error closing pool:', e);
+    }
+    process.exit(0);
+  });
+  // Force kill after 10 seconds if graceful shutdown hangs
+  setTimeout(() => {
+    console.error('❌ Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

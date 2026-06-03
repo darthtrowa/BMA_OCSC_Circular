@@ -38,18 +38,11 @@ if ($pm2Command -eq "pm2") {
     & $npxCommand -y pm2 start ecosystem.config.js
 }
 
-# Show Status
-Write-Host "------------------------------------"
-if ($pm2Command -eq "pm2") {
-    & pm2 status
-} else {
-    & $npxCommand -y pm2 status
-}
-
+# Status is already shown by the pm2 start command above
 
 Write-Host ""
 Write-Host "🚀 System is starting up in Local Mode!" -ForegroundColor Cyan
-Write-Host "  - Frontend : http://localhost (Mapped from :5173)" -ForegroundColor Green
+Write-Host "  - Frontend : http://localhost/circular/ (Mapped from :5173/circular/)" -ForegroundColor Green
 Write-Host "  - Backend  : http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "💡 Tip: To enable http://localhost (Port 80) without Docker," -ForegroundColor Gray

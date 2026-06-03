@@ -14,6 +14,9 @@ import { requireAdmin, requireSuperAdmin, JWT_SECRET, AdminRequest } from '../mi
 import { summarizePdf } from '../services/aiService.js';
 import { syncOCSC } from '../services/botService.js';
 import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
+import { getCachedQuery, clearLookupCache } from '../utils/cache.js';
+import { recordAuditLog } from '../utils/auditLogger.js';
 
 const stringOrNumber = z.union([z.string(), z.number()]).optional().nullable();
 
@@ -45,14 +48,7 @@ const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// Ensure in_qr_link column exists
-db.query(`ALTER TABLE c_information ADD COLUMN IF NOT EXISTS in_qr_link VARCHAR(1000) DEFAULT '-';`)
-  .then(() => console.log('✅ Column in_qr_link ensured'))
-  .catch((e) => console.error('❌ Failed to add in_qr_link column:', e.message));
-
-db.query(`ALTER TABLE admin ADD COLUMN IF NOT EXISTS a_token_version INT DEFAULT 1;`)
-  .then(() => console.log('✅ Column a_token_version ensured'))
-  .catch((e) => console.error('❌ Failed to add a_token_version column:', e.message));
+// STAB-02: Database migrations have been extracted to config/migrations.ts
 
 const ok = (data: any, msg: string = 'success') => ({ status: true, message: msg, response: data });
 const err = (msg: string = 'error') => ({ status: false, message: msg });
@@ -77,16 +73,27 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, path.join(__dirname, '../../../uploads')),
     filename: (_req, file, cb) => {
+      // SEC-08: Validate extension server-side + use UUID for unpredictable filenames
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (ext !== '.pdf') {
+        return cb(new Error('กรุณาเลือกไฟล์ PDF เท่านั้น'), '');
+      }
       let prefix = 'file';
       if (file.fieldname === 'mkk_ref_upload_in') prefix = 'mkk';
       else if (file.fieldname === 'in_original_file') prefix = 'orig';
       else if (file.fieldname === 'in_attachment_file') prefix = 'att';
-      cb(null, prefix + Date.now() + '.pdf');
+      cb(null, `${prefix}_${uuidv4()}.pdf`);
     },
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) =>
-    file.mimetype === 'application/pdf' ? cb(null, true) : cb(new Error('กรุณาเลือกไฟล์ PDF เท่านั้น')),
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (file.mimetype === 'application/pdf' && ext === '.pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('กรุณาเลือกไฟล์ PDF เท่านั้น'));
+    }
+  },
 });
 
 const _uploadFields = upload.fields([
@@ -191,8 +198,21 @@ router.post('/auth/login', async (req: AdminRequest, res: Response) => {
       JWT_SECRET,
       { expiresIn: '8h' }
     );
+
+    recordAuditLog({
+      userId: admin.a_id,
+      userName: admin.a_name,
+      action: 'LOGIN_SUCCESS',
+      targetResource: 'auth',
+      targetId: null,
+      payload: null,
+      ipAddress: req.ip || req.socket.remoteAddress || null,
+      userAgent: req.headers['user-agent'] || null
+    });
+
     return res.json(ok({
       token,
+      id: admin.a_id,
       name: admin.a_name,
       permiss: admin.a_permiss,
       role: admin.a_role ?? null,
@@ -222,12 +242,19 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
       return res.status(401).json(err('Token ไม่ถูกต้อง'));
 
     const { rows } = await db.query(
-      'SELECT a_id, a_name, a_permiss, a_role, a_otp_code, a_otp_expiry, a_token_version FROM admin WHERE a_id=$1',
+      'SELECT a_id, a_name, a_permiss, a_role, a_otp_code, a_otp_expiry, a_token_version, a_otp_attempts FROM admin WHERE a_id=$1',
       [decoded.id]
     );
     if (!rows.length) return res.status(404).json(err('ไม่พบบัญชีผู้ใช้'));
 
     const admin = rows[0];
+
+    // SEC-09: Lock out after 5 failed OTP attempts
+    const attempts = admin.a_otp_attempts || 0;
+    if (attempts >= 5) {
+      await db.query('UPDATE admin SET a_otp_code=NULL, a_otp_expiry=NULL, a_otp_attempts=0 WHERE a_id=$1', [admin.a_id]);
+      return res.status(429).json(err('ลองผิดเกินจำนวนที่กำหนด กรุณาเข้าสู่ระบบใหม่'));
+    }
 
     // Check expiry
     if (!admin.a_otp_expiry || new Date() > new Date(admin.a_otp_expiry))
@@ -235,11 +262,15 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
 
     // Verify OTP hash
     const valid = await verifyOtp(String(otp_code).trim(), admin.a_otp_code || '');
-    if (!valid) return res.status(400).json(err('รหัส OTP ไม่ถูกต้อง'));
+    if (!valid) {
+      // Increment attempt counter on failure
+      await db.query('UPDATE admin SET a_otp_attempts = COALESCE(a_otp_attempts, 0) + 1 WHERE a_id=$1', [admin.a_id]);
+      return res.status(400).json(err('รหัส OTP ไม่ถูกต้อง'));
+    }
 
-    // Clear OTP after successful verification (single-use)
+    // Clear OTP + reset attempts after successful verification (single-use)
     await db.query(
-      'UPDATE admin SET a_otp_code=NULL, a_otp_expiry=NULL WHERE a_id=$1',
+      'UPDATE admin SET a_otp_code=NULL, a_otp_expiry=NULL, a_otp_attempts=0 WHERE a_id=$1',
       [admin.a_id]
     );
 
@@ -250,8 +281,20 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
       { expiresIn: '8h' }
     );
 
+    recordAuditLog({
+      userId: admin.a_id,
+      userName: admin.a_name,
+      action: 'LOGIN_2FA_SUCCESS',
+      targetResource: 'auth',
+      targetId: null,
+      payload: null,
+      ipAddress: req.ip || req.socket.remoteAddress || null,
+      userAgent: req.headers['user-agent'] || null
+    });
+
     return res.json(ok({
       token,
+      id:      admin.a_id,
       name:    admin.a_name,
       permiss: admin.a_permiss,
       role:    admin.a_role ?? null,
@@ -358,7 +401,7 @@ router.patch('/profile/2fa', requireAdmin, async (req: AdminRequest, res: Respon
 router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   try {
     let sql = `
-      SELECT a_id, a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_last_login, created_at 
+      SELECT a_id, a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id, a_last_login, created_at 
       FROM admin 
     `;
     const params: any[] = [];
@@ -374,19 +417,51 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
   }
 });
 
+/** 1b. ดึงรายชื่อผู้ใช้ที่ Active กรองตาม role (สำหรับ Workflow dropdowns) */
+router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const roles = req.query.roles as string; // comma-separated: e.g. "HR_DIRECTOR"
+    const params: any[] = ['1'];
+    let sql = `
+      SELECT a_id, a_name, a_role, a_position, a_agency_id 
+      FROM admin 
+      WHERE a_status = $1
+    `;
+    if (roles) {
+      const roleList = roles.split(',').map(r => r.trim()).filter(Boolean);
+      if (roleList.length > 0) {
+        const placeholders = roleList.map((_, i) => `$${i + 2}`).join(', ');
+        sql += ` AND a_role IN (${placeholders})`;
+        params.push(...roleList);
+      }
+    }
+    sql += ` ORDER BY a_name ASC`;
+    const { rows } = await db.query(sql, params);
+    return res.json(ok(rows));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('โหลดข้อมูลผู้ใช้ไม่ได้'));
+  }
+});
+
+
 /** 2. เพิ่มผู้ใช้ใหม่ */
 router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
-  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency } = req.body;
+  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id } = req.body;
   if (req.admin?.permiss !== 'superadmin' && a_permiss === 'superadmin') {
     return res.status(403).json(err('คุณไม่มีสิทธิ์เพิ่มผู้ใช้ระดับ SuperAdmin'));
   }
+  // SEC-10: Require password with minimum length
+  if (!a_password || a_password.length < 8) {
+    return res.status(400).json(err('กรุณากำหนดรหัสผ่านอย่างน้อย 8 ตัวอักษร'));
+  }
   try {
     const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(a_password || '123456', salt);
+    const hash = await bcrypt.hash(a_password, salt);
     await db.query(`
-      INSERT INTO admin (a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-    `, [a_name, a_username, a_email, hash, a_permiss || 'user', a_role || 'STAFF', a_position || '', a_status || '1', a_agency]);
+      INSERT INTO admin (a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+    `, [a_name, a_username, a_email, hash, a_permiss || 'user', a_role || 'STAFF', a_position || '', a_status || '1', a_agency, a_agency_id ? parseInt(a_agency_id) : null]);
     return res.json(ok(null, 'เพิ่มผู้ใช้สำเร็จ'));
   } catch (e) {
     console.error(e);
@@ -398,7 +473,7 @@ router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response
 router.put('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   console.log(`[AdminAPI] Incoming PUT /users/${req.params.id}`, req.body);
   const { id } = req.params;
-  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency } = req.body;
+  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id } = req.body;
   try {
     const { rows: existing } = await db.query('SELECT a_permiss FROM admin WHERE a_id = $1', [id]);
     if (!existing.length) return res.status(404).json(err('ไม่พบผู้ใช้'));
@@ -412,14 +487,14 @@ router.put('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Respo
       const salt = await bcrypt.genSalt(10);
       const hash = await bcrypt.hash(a_password, salt);
       await db.query(`
-        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_position=$7, a_status=$8, a_agency=$9, a_token_version = COALESCE(a_token_version, 1) + 1, updated_at=NOW()
-        WHERE a_id=($10)::int
-      `, [a_name, a_username, a_email, hash, a_permiss, a_role, a_position, a_status, a_agency, id]);
+        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_position=$7, a_status=$8, a_agency=$9, a_agency_id=$10, a_token_version = COALESCE(a_token_version, 1) + 1, updated_at=NOW()
+        WHERE a_id=($11)::int
+      `, [a_name, a_username, a_email, hash, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id ? parseInt(a_agency_id) : null, id]);
     } else {
       await db.query(`
-        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_permiss=$4, a_role=$5, a_position=$6, a_status=$7, a_agency=$8, updated_at=NOW()
-        WHERE a_id=($9)::int
-      `, [a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, id]);
+        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_permiss=$4, a_role=$5, a_position=$6, a_status=$7, a_agency=$8, a_agency_id=$9, updated_at=NOW()
+        WHERE a_id=($10)::int
+      `, [a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id ? parseInt(a_agency_id) : null, id]);
     }
 
     return res.json(ok(null, 'แก้ไขข้อมูลสำเร็จ'));
@@ -448,12 +523,26 @@ router.delete('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Re
 });
 
 // ─────────────────────────────────────────────────────────────
+// GET /admin/metrics (For AdminJS / Tableau Verification)
+// ─────────────────────────────────────────────────────────────
+router.get('/metrics', requireAdmin, async (req: AdminRequest, res: Response) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM system_metrics ORDER BY timestamp DESC LIMIT 50');
+    return res.json(ok(rows));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('โหลดข้อมูล metrics ไม่สำเร็จ'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
 // GET /admin/dashboard
 // ─────────────────────────────────────────────────────────────
 router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10000; // Return all for client-side filtering
+    // User requested to remove STAB-01 limit cap
+    const limit = parseInt(req.query.limit as string) || 10000;
     const offset = (page - 1) * limit;
 
     const { rows: [{ total_count }] } = await db.query('SELECT COUNT(*) AS total_count FROM c_information');
@@ -466,6 +555,7 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
         c_information.in_qr_link,
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
+        c_information.in_workflow_status, c_information.in_current_owner_id, c_information.in_creator_id,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,'|#|',c_mati_work.mw_name,'|#|',c_mati_work.mw_date), ',') AS mati_work,
         STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color,'|#|',c_results.results_etc), ',') AS results,
@@ -504,13 +594,13 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
     }));
 
     const [year, results, mati_work, mati_kk, agency, categories, status] = await Promise.all([
-      db.query('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
-      db.query('SELECT results_id, results_detail, results_etc FROM c_results ORDER BY results_ordering ASC'),
-      db.query('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
-      db.query('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
-      db.query('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
-      db.query('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
-      db.query('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
+      getCachedQuery('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
+      getCachedQuery('SELECT results_id, results_detail, results_etc FROM c_results ORDER BY results_ordering ASC'),
+      getCachedQuery('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
+      getCachedQuery('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
+      getCachedQuery('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
+      getCachedQuery('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
+      getCachedQuery('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
     ]);
 
     return res.json(ok({
@@ -588,13 +678,14 @@ router.post('/circular/create', requireAdmin, uploadFields, validate(circularSch
 
     await db.query('BEGIN');
     const { rows: [{ in_id }] } = await db.query(
-      `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18) RETURNING in_id`,
+      `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link,in_workflow_status,in_current_owner_id,in_creator_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18,$19,$20,$20) RETURNING in_id`,
       [
         b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
         toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
         toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
-        newOrder, in_circular_detail, in_original_link, in_attachment_link
+        newOrder, in_circular_detail, in_original_link, in_attachment_link,
+        'DRAFT', req.admin?.id
       ]
     );
 
@@ -768,13 +859,17 @@ router.post('/circular/delete', requireAdmin, async (req: AdminRequest, res: Res
     const used = await db.query('SELECT 1 FROM c_information_information WHERE in_id_ref=$1', [in_id]);
     if (used.rows.length) return res.status(400).json(err('หนังสือเวียนนี้ถูกอ้างอิงอยู่ ไม่สามารถลบได้'));
 
+    // SEC-05: Wrap in transaction for data integrity
+    await db.query('BEGIN');
     await db.query('DELETE FROM c_information_information WHERE in_id=$1', [in_id]);
     await db.query('DELETE FROM c_information_agency WHERE in_id=$1', [in_id]);
     await db.query('DELETE FROM c_information_categories WHERE in_id=$1', [in_id]);
     await db.query('DELETE FROM c_information WHERE in_id=$1', [in_id]);
+    await db.query('COMMIT');
 
     return res.json(ok(in_id, 'ลบหนังสือเวียนสำเร็จ'));
   } catch (e) {
+    await db.query('ROLLBACK');
     console.error(e);
     return res.status(500).json(err('เกิดข้อผิดพลาด'));
   }
@@ -785,7 +880,7 @@ router.post('/circular/delete', requireAdmin, async (req: AdminRequest, res: Res
 // ─────────────────────────────────────────────────────────────
 router.get('/profile', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
-    const { rows } = await db.query('SELECT a_name, a_username, a_email, a_permiss, a_role, a_position, a_2fa_enabled FROM admin WHERE a_id=$1', [req.admin?.id]);
+    const { rows } = await db.query('SELECT a_name, a_username, a_email, a_permiss, a_role, a_position, a_2fa_enabled, a_agency_id FROM admin WHERE a_id=$1', [req.admin?.id]);
     if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูล'));
     return res.json(ok(rows[0]));
   } catch (e) {
@@ -799,9 +894,10 @@ router.get('/profile', requireAdmin, async (req: AdminRequest, res: Response) =>
 // ─────────────────────────────────────────────────────────────
 router.post('/profile', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
-    const { a_name, a_email, a_role, a_position } = req.body;
+    // SEC-07: Removed a_role from self-service update — only superadmin can assign roles
+    const { a_name, a_email, a_position } = req.body;
     if (!a_name?.trim()) return res.status(400).json(err('กรุณากรอกชื่อ'));
-    await db.query('UPDATE admin SET a_name=$1, a_email=$2, a_role=$3, a_position=$4 WHERE a_id=$5', [a_name.trim(), a_email, a_role, a_position, req.admin?.id]);
+    await db.query('UPDATE admin SET a_name=$1, a_email=$2, a_position=$3 WHERE a_id=$4', [a_name.trim(), a_email, a_position, req.admin?.id]);
     return res.json(ok('success', 'บันทึกสำเร็จ'));
   } catch (e) {
     console.error(e);
@@ -878,6 +974,7 @@ router.post('/master/action', requireAdmin, async (req: AdminRequest, res: Respo
         const r = await db.query(`INSERT INTO ${table} (${val},${order},created_at,updated_at) VALUES ($1,$2,NOW(),NOW()) RETURNING ${pk}`, [value, (max_val ?? 0) + 1]);
         insertedId = r.rows[0][pk];
       }
+      clearLookupCache();
       return res.json(ok({ id: insertedId }, 'เพิ่มข้อมูลสำเร็จ'));
     }
     if (action === 'update') {
@@ -891,12 +988,14 @@ router.post('/master/action', requireAdmin, async (req: AdminRequest, res: Respo
       } else {
         await db.query(`UPDATE ${table} SET ${val}=$1,updated_at=NOW() WHERE ${pk}=$2`, [value, id]);
       }
+      clearLookupCache();
       return res.json(ok('success', 'แก้ไขสำเร็จ'));
     }
     if (action === 'delete') {
       if (!id) return res.status(400).json(err('ID Required'));
       try {
         await db.query(`DELETE FROM ${table} WHERE ${pk}=$1`, [id]);
+        clearLookupCache();
         return res.json(ok('success', 'ลบสำเร็จ'));
       } catch (e: any) {
         if (e.code === '23503') return res.status(400).json(err('ข้อมูลนี้ถูกใช้งานอยู่ ไม่สามารถลบได้'));
@@ -1060,6 +1159,242 @@ router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res:
   } catch (e) {
     console.error(e);
     return res.status(500).json(err('Server Error'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// AGENCY TREE MANAGEMENT
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * PUT /admin/agency-tree/reorder
+ * จัดเรียงลำดับใหม่ (Drag and Drop) ภายใน parent เดียวกัน
+ */
+router.put('/agency-tree/reorder', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const { nodes } = req.body;
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return res.status(400).json(err('ข้อมูลไม่ถูกต้อง'));
+  }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    for (const node of nodes) {
+      await client.query(
+        'UPDATE c_agency SET agency_ordering = $1, updated_at = NOW() WHERE ag_id = $2',
+        [node.agency_ordering, node.ag_id]
+      );
+    }
+    await client.query('COMMIT');
+    clearLookupCache();
+    return res.json(ok(null, 'บันทึกลำดับสำเร็จ'));
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถบันทึกลำดับได้'));
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * GET /admin/agency-tree
+ * ดึงโครงสร้างส่วนราชการทั้งหมดเป็น flat list พร้อม level/path (Recursive CTE)
+ */
+router.get('/agency-tree', requireAdmin, async (_req: AdminRequest, res: Response) => {
+  try {
+    const { rows } = await db.query(`
+      WITH RECURSIVE tree AS (
+        SELECT
+          ag_id, ag_name, ag_code, ag_status, parent_ag_id,
+          agency_ordering, 1 AS ag_level,
+          ag_id::TEXT AS ag_path
+        FROM c_agency
+        WHERE parent_ag_id IS NULL
+
+        UNION ALL
+
+        SELECT
+          c.ag_id, c.ag_name, c.ag_code, c.ag_status, c.parent_ag_id,
+          c.agency_ordering, t.ag_level + 1,
+          t.ag_path || '.' || c.ag_id::TEXT
+        FROM c_agency c
+        INNER JOIN tree t ON c.parent_ag_id = t.ag_id
+      )
+      SELECT
+        t.*,
+        (SELECT COUNT(*) FROM c_agency WHERE parent_ag_id = t.ag_id) AS children_count,
+        (SELECT COUNT(*) FROM admin WHERE a_agency_id = t.ag_id AND a_status = '1') AS direct_member_count
+      FROM tree t
+      ORDER BY t.ag_path
+    `);
+    return res.json(ok(rows));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('โหลดโครงสร้างส่วนราชการไม่สำเร็จ'));
+  }
+});
+
+/**
+ * POST /admin/agency-tree
+ * สร้างส่วนราชการใหม่
+ */
+router.post('/agency-tree', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const { ag_name, ag_code, parent_ag_id, ag_status } = req.body;
+  if (!ag_name?.trim()) return res.status(400).json(err('กรุณาระบุชื่อส่วนราชการ'));
+  try {
+    const { rows: [{ max_order }] } = await db.query(
+      'SELECT COALESCE(MAX(agency_ordering), 0) AS max_order FROM c_agency'
+    );
+    const { rows: [inserted] } = await db.query(
+      `INSERT INTO c_agency (ag_name, ag_code, parent_ag_id, ag_status, agency_ordering, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING ag_id`,
+      [
+        ag_name.trim(),
+        ag_code?.trim() || null,
+        parent_ag_id ? parseInt(parent_ag_id) : null,
+        ag_status || 'active',
+        max_order + 1,
+      ]
+    );
+    clearLookupCache();
+    return res.json(ok({ ag_id: inserted.ag_id }, 'เพิ่มส่วนราชการสำเร็จ'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถเพิ่มส่วนราชการได้'));
+  }
+});
+
+/**
+ * PUT /admin/agency-tree/:id
+ * แก้ไขข้อมูลส่วนราชการ
+ */
+router.put('/agency-tree/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const id = parseInt(String(req.params.id));
+  const { ag_name, ag_code, parent_ag_id, ag_status } = req.body;
+  if (!ag_name?.trim()) return res.status(400).json(err('กรุณาระบุชื่อส่วนราชการ'));
+  if (parent_ag_id && parseInt(parent_ag_id) === id)
+    return res.status(400).json(err('ไม่สามารถตั้งค่าหน่วยงานแม่เป็นตัวเองได้'));
+  try {
+    // ป้องกัน circular reference — parent ต้องไม่เป็น descendant ของตัวเอง
+    if (parent_ag_id) {
+      const { rows: descendants } = await db.query(`
+        WITH RECURSIVE desc_tree AS (
+          SELECT ag_id FROM c_agency WHERE parent_ag_id = $1
+          UNION ALL
+          SELECT c.ag_id FROM c_agency c INNER JOIN desc_tree d ON c.parent_ag_id = d.ag_id
+        )
+        SELECT ag_id FROM desc_tree WHERE ag_id = $2
+      `, [id, parseInt(parent_ag_id)]);
+      if (descendants.length > 0)
+        return res.status(400).json(err('ไม่สามารถย้ายส่วนราชการไปอยู่ภายใต้หน่วยงานย่อยของตัวเองได้'));
+    }
+    await db.query(
+      `UPDATE c_agency SET ag_name=$1, ag_code=$2, parent_ag_id=$3, ag_status=$4, updated_at=NOW() WHERE ag_id=$5`,
+      [
+        ag_name.trim(),
+        ag_code?.trim() || null,
+        parent_ag_id ? parseInt(parent_ag_id) : null,
+        ag_status || 'active',
+        id,
+      ]
+    );
+    clearLookupCache();
+    return res.json(ok(null, 'แก้ไขข้อมูลส่วนราชการสำเร็จ'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถแก้ไขข้อมูลได้'));
+  }
+});
+
+/**
+ * PATCH /admin/agency-tree/:id/status
+ * เปลี่ยนสถานะ (active / disbanded)
+ */
+router.patch('/agency-tree/:id/status', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const id = parseInt(String(req.params.id));
+  const { ag_status } = req.body;
+  if (!['active', 'disbanded'].includes(ag_status))
+    return res.status(400).json(err('สถานะไม่ถูกต้อง (active หรือ disbanded เท่านั้น)'));
+  try {
+    await db.query('UPDATE c_agency SET ag_status=$1, updated_at=NOW() WHERE ag_id=$2', [ag_status, id]);
+    clearLookupCache();
+    return res.json(ok(null, ag_status === 'active' ? 'เปิดใช้งานแล้ว' : 'ยุบเลิกแล้ว'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถเปลี่ยนสถานะได้'));
+  }
+});
+
+/**
+ * DELETE /admin/agency-tree/:id
+ * ลบถาวร — block ถ้ามีหน่วยงานลูก หรือมี account สังกัดอยู่
+ */
+router.delete('/agency-tree/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const id = parseInt(String(req.params.id));
+  try {
+    // ตรวจสอบหน่วยงานลูก
+    const { rows: children } = await db.query(
+      'SELECT ag_id, ag_name FROM c_agency WHERE parent_ag_id = $1 LIMIT 1', [id]
+    );
+    if (children.length > 0)
+      return res.status(400).json(err(
+        `ไม่สามารถลบส่วนราชการนี้ได้ เนื่องจากยังมีส่วนราชการภายใต้สังกัดนี้อยู่ (เช่น "${children[0].ag_name}") กรุณาย้ายหรือลบหน่วยงานที่สังกัดก่อน`
+      ));
+    // ตรวจสอบ account ที่สังกัด
+    const { rows: members } = await db.query(
+      'SELECT a_id, a_name FROM admin WHERE a_agency_id = $1 LIMIT 1', [id]
+    );
+    if (members.length > 0)
+      return res.status(400).json(err(
+        `ไม่สามารถลบส่วนราชการนี้ได้ เนื่องจากยังมีบัญชีผู้ใช้สังกัดอยู่ (เช่น "${members[0].a_name}") กรุณาย้ายสังกัดผู้ใช้งานก่อน`
+      ));
+    await db.query('DELETE FROM c_agency WHERE ag_id = $1', [id]);
+    clearLookupCache();
+    return res.json(ok(null, 'ลบส่วนราชการสำเร็จ'));
+  } catch (e: any) {
+    if (e.code === '23503') return res.status(400).json(err('ข้อมูลนี้ถูกใช้งานอยู่ในระบบ ไม่สามารถลบได้'));
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถลบข้อมูลได้'));
+  }
+});
+
+/**
+ * GET /admin/agency-tree/:id/members
+ * ดึง account สังกัดหน่วยงานนี้ รวมสังกัดย่อยทั้งหมด
+ */
+router.get('/agency-tree/:id/members', requireAdmin, async (req: AdminRequest, res: Response) => {
+  const id = parseInt(String(req.params.id));
+  try {
+    // สร้าง set ของ ag_id ทั้งหมดในสายสังกัด (รวมตัวเอง)
+    const { rows: agencyIds } = await db.query(`
+      WITH RECURSIVE sub_tree AS (
+        SELECT ag_id FROM c_agency WHERE ag_id = $1
+        UNION ALL
+        SELECT c.ag_id FROM c_agency c INNER JOIN sub_tree s ON c.parent_ag_id = s.ag_id
+      )
+      SELECT ag_id FROM sub_tree
+    `, [id]);
+
+    const ids = agencyIds.map((r: any) => r.ag_id);
+    if (ids.length === 0) return res.json(ok([]));
+
+    const placeholders = ids.map((_: any, i: number) => `$${i + 1}`).join(',');
+    const { rows: members } = await db.query(`
+      SELECT
+        a.a_id, a.a_name, a.a_username, a.a_email,
+        a.a_role, a.a_position, a.a_status, a.a_permiss,
+        a.a_agency_id,
+        ag.ag_name AS agency_name
+      FROM admin a
+      LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+      WHERE a.a_agency_id IN (${placeholders})
+      ORDER BY ag.ag_name ASC, a.a_name ASC
+    `, ids);
+
+    return res.json(ok(members));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('โหลดรายชื่อสมาชิกไม่สำเร็จ'));
   }
 });
 

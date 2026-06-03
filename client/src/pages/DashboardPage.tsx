@@ -11,12 +11,15 @@ import ProfileModal from '../components/admin/ProfileModal'
 import PasswordModal from '../components/admin/PasswordModal'
 import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
 import BotQueueSection from '../components/admin/BotQueueSection'
+import WorkflowInboxSection from '../components/admin/WorkflowInboxSection'
+import AgencyTreeSection from '../components/admin/AgencyTreeSection'
 import Swal from 'sweetalert2'
 
 export default function DashboardPage() {
-  const { admin, logout } = useAuth()
+  const { admin, login, logout } = useAuth()
   const navigate = useNavigate()
-  const [activeSection, setActiveSection]     = useState('sec-overview')
+  const isAdmin = admin?.permiss === 'superadmin' || admin?.permiss === 'admin'
+  const [activeSection, setActiveSection]     = useState(isAdmin ? 'sec-overview' : 'sec-circular')
   const [activeResultId, setActiveResultId]   = useState<string | number>('all')
   const [baseFilteredData, setBaseFilteredData] = useState<any>(null)  // ข้อมูลกรองจาก CircularSection
   const [allData, setAllData]                 = useState<any>(null)
@@ -50,7 +53,24 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { 
+    loadData()
+    syncProfile()
+  }, [])
+
+  // ── Sync Profile to ensure role is always up-to-date in AuthContext ──
+  const syncProfile = async () => {
+    try {
+      const res = await adminApi.getProfile()
+      if (res.status && res.response) {
+        const dbRole = res.response.a_role || 'STAFF'
+        // If the context role doesn't match the database, update the context immediately
+        if (admin && admin.role !== dbRole) {
+          login(admin.token, admin.name, admin.permiss, dbRole)
+        }
+      }
+    } catch {}
+  }
 
   // ปิด dropdown เมื่อคลิกที่อื่น
   useEffect(() => {
@@ -84,12 +104,17 @@ export default function DashboardPage() {
     })
   }
 
+  const info = allData?.information || []
+  const pendingTasksCount = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id)).length
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-saochingcha text-slate-800">
       <Sidebar
         activeSection={activeSection}
         onNavigate={(sec) => { setActiveSection(sec); setActiveResultId('all') }}
         permiss={admin?.permiss}
+        role={admin?.role}
+        inboxCount={pendingTasksCount}
         onLogout={doLogout}
         onProfile={() => profileRef.current?.open()}
         onPassword={() => passwordRef.current?.open()}
@@ -153,7 +178,7 @@ export default function DashboardPage() {
                 loading={loading} 
               />
             )}
-            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && (
+            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && activeSection !== 'sec-workflow-inbox' && activeSection !== 'sec-agency-structure' && (
               <div className="mt-4">
                 <DashboardStats
                   allData={allData}
@@ -177,6 +202,13 @@ export default function DashboardPage() {
             {activeSection === 'sec-bot-queue' && (
               <BotQueueSection allData={allData} />
             )}
+            {activeSection === 'sec-workflow-inbox' && (
+              <WorkflowInboxSection
+                allData={allData}
+                loading={loading}
+                onReload={loadData}
+              />
+            )}
             {activeSection.startsWith('sec-master-') && (
               <MasterDataSection
                 type={activeSection.replace('sec-master-', '')}
@@ -186,6 +218,9 @@ export default function DashboardPage() {
             )}
             {activeSection === 'sec-users' && (
               <UserSection permiss={admin?.permiss} />
+            )}
+            {activeSection === 'sec-agency-structure' && (
+              <AgencyTreeSection />
             )}
           </div>
         </main>

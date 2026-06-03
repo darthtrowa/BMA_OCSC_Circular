@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
-import { adminApi, publicApi } from '../../api/apiService'
+import { adminApi, publicApi, agencyApi } from '../../api/apiService'
 import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
+import AgencyTreeSection from './AgencyTreeSection'
 moment.locale('th')
 
 export default function UserSection({ permiss }) {
   const [users, setUsers] = useState([])
-  const [agencies, setAgencies] = useState([])
+  const [agencies, setAgencies] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
@@ -21,7 +22,8 @@ export default function UserSection({ permiss }) {
     a_role: 'STAFF',
     a_position: '',
     a_status: '1',
-    a_agency: ''
+    a_agency: '',
+    a_agency_id: ''
   })
 
   useEffect(() => {
@@ -31,8 +33,41 @@ export default function UserSection({ permiss }) {
 
   const loadAgencies = async () => {
     try {
-      const filters = await publicApi.getFilters()
-      setAgencies(filters.agency || [])
+      const flatData = await agencyApi.getTree()
+      if (!flatData) return setAgencies([])
+
+      // 1. สร้าง Tree เพื่อจัดกลุ่มและเรียงตาม agency_ordering
+      const map = new Map<number, any>()
+      flatData.forEach((n: any) => map.set(n.ag_id, { ...n, children: [] }))
+      const roots: any[] = []
+      
+      map.forEach(n => {
+        if (n.parent_ag_id && map.has(n.parent_ag_id)) {
+          map.get(n.parent_ag_id)!.children!.push(n)
+        } else {
+          roots.push(n)
+        }
+      })
+
+      roots.sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0))
+      map.forEach(n => n.children!.sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0)))
+
+      // 2. แปลงกลับเป็น Flat List พร้อมตัดตัวที่ status ไม่ใช่ active ออก
+      const flatten = (nodes: any[], currentLevel = 1): any[] => {
+        let result: any[] = []
+        nodes.forEach(n => {
+          if (n.ag_status === 'active') {
+            result.push({ ...n, ag_level: currentLevel })
+            if (n.children && n.children.length > 0) {
+              result = result.concat(flatten(n.children, currentLevel + 1))
+            }
+          }
+        })
+        return result
+      }
+      
+      const orderedActiveAgencies = flatten(roots)
+      setAgencies(orderedActiveAgencies)
     } catch (err) {
       console.error('Error loading agencies:', err)
     }
@@ -63,7 +98,8 @@ export default function UserSection({ permiss }) {
         a_role: user.a_role || 'STAFF',
         a_position: user.a_position || '',
         a_status: user.a_status || '1',
-        a_agency: user.a_agency || ''
+        a_agency: user.a_agency || '',
+        a_agency_id: user.a_agency_id ? String(user.a_agency_id) : ''
       })
     } else {
       setEditingUser(null)
@@ -76,7 +112,8 @@ export default function UserSection({ permiss }) {
         a_role: 'STAFF',
         a_position: '',
         a_status: '1',
-        a_agency: ''
+        a_agency: '',
+        a_agency_id: ''
       })
     }
     setShowModal(true)
@@ -86,8 +123,8 @@ export default function UserSection({ permiss }) {
     e.preventDefault()
 
     // Validation
-    if (!formData.a_name || !formData.a_username) {
-      return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบถ้วน', 'warning')
+    if (!formData.a_name || !formData.a_username || !formData.a_agency_id) {
+      return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลและเลือกสังกัดให้ครบถ้วน', 'warning')
     }
     if (!editingUser && !formData.a_password) {
       return Swal.fire('แจ้งเตือน', 'กรุณากรอกรหัสผ่านสำหรับผู้ใช้ใหม่', 'warning')
@@ -306,12 +343,24 @@ export default function UserSection({ permiss }) {
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">สังกัด / หน่วยงาน</label>
                     <select
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition appearance-none"
-                      value={formData.a_agency}
-                      onChange={e => setFormData({ ...formData, a_agency: e.target.value })}
+                      value={formData.a_agency_id}
+                      onChange={e => {
+                        const selectedId = e.target.value;
+                        const selectedAg = agencies.find((a: any) => String(a.ag_id) === selectedId);
+                        setFormData({
+                          ...formData,
+                          a_agency_id: selectedId,
+                          a_agency: selectedAg ? selectedAg.ag_name : ''
+                        });
+                      }}
+                      required
                     >
-                      <option value="">-- ไม่ระบุ --</option>
+                      <option value="" disabled>-- กรุณาเลือกสังกัด --</option>
                       {agencies.map((ag: any) => (
-                        <option key={ag.ag_id} value={ag.ag_name}>{ag.ag_name}</option>
+                        <option key={ag.ag_id} value={ag.ag_id}>
+                          {'\u00a0\u00a0\u00a0\u00a0'.repeat(Math.max(0, (ag.ag_level || 1) - 1))}
+                          {(ag.ag_level || 1) > 1 ? '└ ' : ''}{ag.ag_name}
+                        </option>
                       ))}
                     </select>
                   </div>

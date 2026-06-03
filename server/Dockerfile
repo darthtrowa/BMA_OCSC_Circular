@@ -10,7 +10,10 @@ RUN npm run build
 # ---- Production Stage ----
 FROM node:20-alpine
 WORKDIR /app
-RUN apk add --no-cache openssl ca-certificates
+# STAB-14: Install Chromium for Puppeteer bot sync
+RUN apk add --no-cache openssl ca-certificates chromium nss freetype harfbuzz ttf-freefont wget
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 COPY package*.json ./
 RUN npm install --omit=dev
 

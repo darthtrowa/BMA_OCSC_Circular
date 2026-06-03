@@ -1,5 +1,81 @@
 # Project Update Log
 
+## [1.2.3] - 2026-05-27
+
+### Bug Fix: Resolved 'err' is of type 'unknown' in test_login.ts
+
+#### ⚙️ Backend Changes
+
+- **test_login.ts**:
+  - Resolved TypeScript compile error `"err is of type 'unknown'"` inside the `testLogin()` catch block by safely narrowing the error type using `axios.isAxiosError(err)`.
+
+#### ✅ Verification
+
+- Backend compilation (`tsc`): **Passed with 0 errors**
+
+## [1.2.2] - 2026-05-26
+
+### UI/UX & Workflow: Reordered Circular Modal Fields, Resolution Options, and Task Submission Updates
+
+#### 🎨 Frontend Changes
+
+- **CircularModal.tsx & WorkflowActionModal.tsx & WorkflowHistoryModal.tsx (React Portals Bug Fix)**:
+  - Imported and integrated **React Portals (`createPortal`)** to render all three workflow/circular modals directly to `document.body` instead of inline within nested components.
+  - Set the outermost overlay container `z-index` to `z-[9999]` to guarantee it sits at the absolute top of the global viewport stacking context.
+  - **Resolution**: Completely resolved a classic browser compositing and stacking context bug (especially in Chromium browsers) where overlapping `backdrop-filter` layers (specifically the sticky, blurred header with `bg-white/80 backdrop-blur-md`) would render on top of the modal's dark overlay as a white/translucent horizontal strip.
+- **CircularModal.tsx (Layout)**:
+  - Moved the **"อ้างอิงหนังสือเวียน" (Circular Reference)** selection field so it renders immediately below the **"ชื่อเรื่อง" (Subject)** textarea in both standard edit and task-submission modes.
+  - Swapped the vertical ordering of the **"มติคณะทำงาน" (Working Group Resolution)** and **"มติ ก.ก." (Committee Resolution)** dropdown selection inputs, displaying "มติคณะทำงาน" before "มติ ก.ก.".
+  - Supported dual-mode functionality (`mode="edit"` and `mode="task-submit"`), filtering out administrative resolution/status inputs in task submission mode.
+- **WorkflowInboxSection.tsx**:
+  - Integrated the Pencil button for `COORDINATOR` users to edit and submit DRAFT status task workflow records.
+  - Handled on-demand loading of active `HR_Director` users dynamically.
+  - Re-used the modular `CircularModal` inside the task submit flow.
+- **WorkflowHistoryModal.tsx**:
+  - Rendered embedded user name and position snapshots in the workflow status log history.
+- **apiService.ts**:
+  - Added frontend support for active user lookup via workflow roles.
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Created backend user lookup route `GET /users/by-role` restricting the output to active administrative users matching the designated workspace roles (e.g. `HR_Director`).
+- **workflowService.ts**:
+  - Embedded name and official position snapshots into history records when submitting workflow tasks.
+
+#### ✅ Verification
+
+- React Frontend compile and build: **Passed (Compiled successfully with 0 errors via Vite)**
+
+## [1.2.1] - 2026-05-25
+
+### RBAC: Coordinator and Staff Menu Access Configuration & Login Context Fix
+
+#### 🎨 Frontend Changes
+
+- **Sidebar.tsx**:
+  - Updated to receive the user's `role` prop from the authenticated session.
+  - Allowed users with the `COORDINATOR` and `STAFF` roles to view and access the **"หนังสือเวียน" (Circular Documents)** menu in addition to SuperAdmins.
+  - Allowed users with the `COORDINATOR` role (but **NOT** `STAFF`) to view and access the **"คิวงานบอต" (Bot Queue)** menu in addition to SuperAdmins.
+  - **HOTFIX**: Explicitly allowed `SYSTEM_ADMIN` role to see both the "Circular Documents" and "Bot Queue" menus in the Sidebar, ensuring they aren't hidden if their security level is just User.
+  - Implemented a dynamic rose-colored numerical notification badge next to the **"กล่องข้อความงาน" (Workflow Inbox)** menu item, displaying the count of pending active tasks when `inboxCount > 0`.
+  - Updated the **"กล่องข้อความงาน" (Workflow Inbox)** icon from a generic tray (`bx-inbox`) to a highly professional checklist/task sheet icon (`bx-task`) in both the Sidebar and the section header.
+- **CircularSection.tsx**:
+  - Restricted visibility of the **"ตรวจสอบหนังสือเวียน (Bot)" (Check Bot Findings)** and **"เพิ่มหนังสือเวียนใหม่" (Add New Circular)** buttons so that they are only visible to users with the `SYSTEM_ADMIN` or `COORDINATOR` roles across all security levels.
+- **ProfileModal.tsx**:
+  - Fixed a state desynchronization bug where updating the `role` in the profile modal did not immediately update the `AuthContext` or `localStorage`. The application now calls `login()` directly after saving the profile so UI access restrictions (like button visibilities) update instantly without requiring a re-login.
+- **DashboardPage.tsx**:
+  - Passed the `admin?.role` prop into the `<Sidebar />` component.
+  - Dynamically initialized `activeSection` state based on the logged-in user's permission level. If the user's security level is not Admin (`permiss !== 'superadmin' && permiss !== 'admin'`), the default landing page upon entering the system is set to **"หนังสือเวียน" (Circular Documents)** instead of "ภาพรวมระบบ" (Dashboard Overview).
+  - Calculated `pendingTasksCount` (number of active workflow tasks assigned to the logged-in user) and passed it to the `Sidebar` as `inboxCount`.
+- **AuthContext.tsx & LoginPage.tsx**:
+  - Fixed a critical bug where the user's Workflow `role` field was not extracted from the login API response and not persisted in `localStorage` or loaded into the active React `admin` state. This was causing users like `admincsc01` (Security level `user`, Role `COORDINATOR`) to have `role` as `undefined` in their session, hiding the Circular Documents and Bot Queue menus.
+  - Now correctly saves `admin_role` to `localStorage` on login and loads it upon context initialization.
+
+#### ✅ Verification
+
+- React Frontend compile and build: **Passed (Compiled successfully with 0 errors via Vite)**
+
 ## [1.0.0] - 2026-05-13
 
 ### Modernization: Full-Stack TypeScript & ES Modules Migration
@@ -1048,3 +1124,113 @@ equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilit
 
 - **admin.ts (Middleware Validation)**: Refactored Zod validation into a reusable alidate(schema) middleware function, elegantly chaining it into route definitions (e.g., alidate(circularSchema)) to keep endpoint controllers clean and DRY.
 - **admin.ts (Server-side Pagination)**: Upgraded the heavy GET /admin/dashboard endpoint to support server-side pagination to prevent potential Out-Of-Memory (OOM) issues as the database grows. Implemented query parameter extraction (page and limit), LIMIT/OFFSET SQL injections, and total count calculations. The API now returns a structured pagination metadata object alongside the data.
+
+## [1.1.53] - 2026-05-25
+
+### Clean Code & Optimization: System-wide Dead Code Cleanup
+
+#### ⚙️ Backend Changes
+
+- **Removed Unused File (`test-db.cjs`)**: Deleted the legacy JavaScript database connection test script that contained hardcoded local credentials.
+- **Refactored AI Helpers (`aiService.ts`)**: Converted `extractTextFromPdf` and `getPdfBuffer` to private module functions by removing the redundant `export` keyword, as they are strictly consumed internally.
+- **Cleaned Entry Point (`index.ts`)**: Removed the unused `cron` and `syncOCSC` imports from the API server startup script.
+- **Cleaned Dependencies (`package.json`)**: Uninstalled unused dependencies (`cheerio`, `node-cron`, `winston`, `ws`) and their corresponding development type declarations (`@types/bcryptjs`, `@types/cheerio`, `@types/node-cron`) to optimize production builds and reduce surface vulnerabilities.
+
+#### 🎨 Frontend Changes
+
+- **Cleaned Dependencies (`package.json`)**: Uninstalled the unused `zod` and `@testing-library/react` (Dev) dependencies.
+- **Verification Scripts (`start-circular.ps1`)**: Updated startup log output helper paths to correctly map the configured base route prefix (`/circular/`).
+
+#### ✅ Verification
+
+- Frontend Knip scan: **Passed with 0 unused files or dependencies**
+- Backend Knip scan: **Passed with 0 unused files or dependencies (retaining only intentional future workflow role exports)**
+- PM2 dev services: **Stable and running cleanly**
+
+## [1.1.54] - 2026-05-26
+
+### Bug Fix: Public Base URL Redirect for Officer Login
+
+#### 🎨 Frontend Changes
+- **Redirect Path (`apiService.ts`)**: Updated the global Axios response 401 interceptor redirect from `/admin/login` to `/circular/admin/login` to match the configured Vite public base path (`/circular/`). This prevents the Vite dev server from showing the base URL error page ("The server is configured with a public base URL...") when unauthorized API responses trigger a hard reload.
+
+#### ⚙️ Backend Changes
+- **API Status Dashboard (`index.ts`)**: Updated the HTML template links for "Public Portal" and "Admin Login" on the server's root status dashboard to use `/circular` and `/circular/admin/login` respectively.
+
+### RBAC: Coordinator Permissions for Starting Workflows
+- **Circular Play Button (`CircularSection.tsx`)**: Updated the conditional check for showing the workflow play button ("เริ่มเวียนหนังสือ") to include `admin?.permiss === 'admin'` in addition to `admin?.permiss === 'superadmin'` and `admin?.role === 'COORDINATOR'`. This ensures that Coordinator role users across all legacy permission levels (such as 'admin' and 'user') can fully see and interact with this button to start the document workflow.
+
+### Database Maintenance
+- **Workflow State Reset**: Reset `in_workflow_status`, `in_current_owner_id`, and `in_creator_id` to `NULL` (and cleared associated workflow history) for circular document **"นร 1008/ว 5"** dated **21 พฤษภาคม 2569** (ID 509). This restores the document to its original unprocessed state, allowing the newly updated coordinator play button ("เริ่มเวียนหนังสือ") to appear for active testing.
+- **Workflow History Schema Fix**: Dropped and recreated the `c_workflow_history` table in the PostgreSQL database to align with the current schema design requirements defined in the codebase (`action` and `comments` columns), resolving the "column 'action' does not exist" error when initiating a workflow.
+
+### Bug Fix: Workflow Inbox Missing Tasks
+- **Auth State Management**: Fixed a critical issue where tasks were missing from the user's Inbox (`WorkflowInboxSection.tsx`) after initiating a workflow. The backend API (`/auth/login` and `/auth/verify-otp`) now explicitly returns the user's `id` (`admin.a_id`) in the JSON payload.
+- **Frontend Context**: Updated the frontend `AuthContext` and `LoginPage` to properly extract, store (`localStorage`), and manage the `id` within the React state. This ensures that `admin.id` correctly matches `in_current_owner_id` during the Inbox rendering check.
+
+### Bug Fix: Profile Modal Permission Display
+- **Role Display Mapping**: Fixed a hardcoded ternary operator in `ProfileModal.tsx` that assumed any user who isn't a `superadmin` must be an `Admin`. It now correctly maps all three system permission levels (`superadmin` -> ผู้ดูแลระบบสูงสุด, `admin` -> ผู้ดูแลระบบ, `user` -> เจ้าหน้าที่ทั่วไป) to ensure the user's self-viewed profile matches the system's underlying reality shown in the User Management page.
+
+## [1.1.55] - 2026-05-26
+
+### Feature: Embedded User Snapshot in Workflow History (Audit-Proof)
+
+#### 🎯 Design Rationale
+Previously, the `c_workflow_history` table stored only `from_user_id` and `to_user_id`. When displaying history, the system performed a `JOIN` on the `admin` table to fetch names and positions. This meant that if a user changed their name, received a promotion, transferred departments, or was deleted from the system, the historical record of their past actions would retroactively reflect their new information — violating auditing integrity.
+
+#### 🏗️ Database Changes (`fix_schema.ts`)
+- Dropped and recreated the `c_workflow_history` table with 4 new snapshot text columns:
+  - `from_user_name VARCHAR(255)`: The name of the actor at the time of action
+  - `from_user_position VARCHAR(255)`: The official position/role of the actor at the time
+  - `to_user_name VARCHAR(255)`: The name of the recipient at the time of action
+  - `to_user_position VARCHAR(255)`: The official position/role of the recipient at the time
+
+#### ⚙️ Backend Changes (`workflowService.ts`)
+- Refactored all 6 workflow action methods (`startWorkflow`, `submitToHR`, `delegate`, `submitReview`, `approve`, `reject`) to use a new private `addHistory()` helper.
+- `addHistory()` fetches the `a_name` and `a_position` (falling back to `a_role`) for both actors at the exact moment of the action, then embeds them as static text into the history record.
+- Updated `getHistory()` to remove the `LEFT JOIN` on the `admin` table, as all required data is now embedded in the history row itself.
+
+#### 🎨 Frontend Changes (`WorkflowHistoryModal.tsx`)
+- Updated the history display to read `h.from_user_name`, `h.from_user_position`, `h.to_user_name`, `h.to_user_position` (the embedded static fields) instead of the previously joined `h.from_position`, `h.from_role` fields.
+- Added handling for the `STARTED` action type label ("เริ่มกระบวนการ").
+- Fixed a pre-existing bug where `h.comments` was wrapped in literal quote characters `"..."` instead of being rendered as a JSX variable.
+
+## [1.1.56] - 2026-05-27
+
+### UI/UX: Parallel Workflow Text & Label Enhancements
+
+#### 🎨 Frontend Changes
+- **WorkflowInboxSection.tsx**:
+  - Changed the parallel flow activation button text from `"ส่ง Parallel"` to `"ส่งไปพิจารณา"`.
+- **ParallelAssignModal.tsx**:
+  - Removed technical and repetitive Thai subtitles and headers (e.g., deleted `"(หลายส่วนราชการ)"` and the `"กำหนดส่วนราชการปลายทางแต่ละ Track พร้อมกัน"` sub-heading).
+  - Renamed the section header from `"ส่วนราชการที่รับมอบ (Parallel Tracks)"` to `"ส่วนราชการที่รับมอบ"`.
+  - Replaced technical jargon like `"Track"` with `"ส่วนราชการ"` (e.g., changed `"เพิ่ม Track"` to `"เพิ่มส่วนราชการ"`, `"Track 1"` to `"ส่วนราชการที่ 1"`, and updated the progress indicators accordingly).
+  - Changed the field label `"หมายเหตุ"` to `"เนื้อความ"`.
+
+#### ✅ Verification
+- Production build: **Passed with 0 errors**
+
+## [1.1.57] - 2026-05-27
+
+### Bug Fix & Compliance: Parallel Workflow Department Validation & Cross-Department Role Restricting
+
+#### ⚙️ Backend Changes
+- **admin.ts**:
+  - Included `a_agency_id` in the SELECT columns list for `/users/by-role` and `GET /profile` endpoints, enabling department-based logic and user-filtering on the client interface.
+
+#### 🎨 Frontend Changes
+- **ParallelAssignModal.tsx**:
+  - **Required Department Selection**: Added `required` to the agency select input, and styled it with a red asterisk (`*`). Form submission now strictly requires a department to be specified.
+  - **Bug Fix**: Resolved user loading empty list bug when selecting departments by successfully receiving and filtering users on `a_agency_id`.
+  - **Cross-Department Restriction Rule**: Implemented logic to dynamically fetch the coordinator's profile on mount. If the target department is different from the coordinator's department, the user select dropdown is strictly restricted to display only `DIV_DIRECTOR` (Director) and `HR_DIRECTOR` (HR Director) roles, since HR Directors share equivalent functional seniority to Division Directors.
+  - **Root-Level Organizational Selection**: Fixed the agency selector to filter the API's flat list and keep only the root level of the organizational tree (where `parent_ag_id` is `null`), and sorted them by `agency_ordering` ascending to match the organization tree management screen layout.
+
+#### ✅ Verification
+- Production build: **Passed with 0 errors**
+
+
+
+
+
+

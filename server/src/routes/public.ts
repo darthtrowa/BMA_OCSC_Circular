@@ -3,6 +3,8 @@
  */
 import { Router, Request, Response } from 'express';
 import db from '../config/database.js';
+import { z } from 'zod';
+import { getCachedQuery } from '../utils/cache.js';
 
 const router = Router();
 
@@ -19,19 +21,33 @@ const parseFirst = (val: string | null, fields: string[], delim: string = ',') =
 const parseList = (val: string | null, parser: (s: string) => any, delim: string = ',') =>
   val ? val.split(delim).map(parser).filter(Boolean) : [];
 
+// STAB-12: Zod schema for public search input validation
+const idOrIds = z.union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))]).optional();
+const searchSchema = z.object({
+  in_year_id: idOrIds,
+  in_mkk_id: idOrIds,
+  in_results_id: idOrIds,
+  in_mw_id: idOrIds,
+  in_status_id: idOrIds,
+  ag_id: idOrIds,
+  cat_id: idOrIds,
+  in_num_date: z.string().max(200).optional(),
+  in_detail: z.string().max(500).optional(),
+}).passthrough();
+
 // ─────────────────────────────────────────────────────────────
 // GET /api/filters
 // ─────────────────────────────────────────────────────────────
 router.get('/filters', async (_req: Request, res: Response) => {
   try {
     const [year, results, mati_work, mati_kk, agency, categories, status] = await Promise.all([
-      db.query('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
-      db.query("SELECT results_id, results_detail FROM c_results ORDER BY results_ordering ASC"),
-      db.query('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
-      db.query('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
-      db.query('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
-      db.query('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
-      db.query('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
+      getCachedQuery('SELECT year_id, year_value FROM c_year ORDER BY year_value DESC'),
+      getCachedQuery("SELECT results_id, results_detail FROM c_results ORDER BY results_ordering ASC"),
+      getCachedQuery('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
+      getCachedQuery('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
+      getCachedQuery('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
+      getCachedQuery('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
+      getCachedQuery('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
     ]);
     return res.json(ok({
       year:       year.rows,
@@ -51,6 +67,41 @@ router.get('/filters', async (_req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────
 // GET /api/stats
 // ─────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/stats:
+ *   get:
+ *     summary: Get dashboard statistics
+ *     description: Returns aggregated statistics for circulars
+ *     tags: [Public]
+ *     responses:
+ *       200:
+ *         description: Statistics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 response:
+ *                   type: object
+ *                   properties:
+ *                     count_all:
+ *                       type: integer
+ *                     count_use:
+ *                       type: integer
+ *                     count_adjust:
+ *                       type: integer
+ *                     count_notuse:
+ *                       type: integer
+ *                     count_pending:
+ *                       type: integer
+ *                     count_missing:
+ *                       type: integer
+ */
 router.get('/stats', async (_req: Request, res: Response) => {
   try {
     const [all, use, adjust, notuse, pending, missing] = await Promise.all([
@@ -80,7 +131,12 @@ router.get('/stats', async (_req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────
 router.post('/search', async (req: Request, res: Response) => {
   try {
-    const input    = req.body;
+    // STAB-12: Validate input shape
+    const parseResult = searchSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ status: false, message: 'ข้อมูลค้นหาไม่ถูกต้อง', errors: parseResult.error.format() });
+    }
+    const input = parseResult.data;
     const params: any[] = [];
     const where    = ["1=1"];
     let   idx      = 1;

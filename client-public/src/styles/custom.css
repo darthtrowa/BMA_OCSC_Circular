@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === Public Client Design System === */
+@font-face {
+  font-family: "SaoChingcha";
+  src: url("/fonts/SaoChingcha-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SaoChingcha";
+  src: url("/fonts/SaoChingcha-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-saochingcha {
+  font-family: 'SaoChingcha', 'Anuphan', 'Sarabun', sans-serif !important;
+}
+
+:root {
+  --primary: #065f46;
+  --secondary: #044e3a;
+  --success: #10b981;
+  --info: #3b82f6;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --dark: #0f172a;
+  --slate: #1e293b;
+  --light: #f8fafc;
+  --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --glass: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.3);
+}
+
+body, input, button, select, textarea {
+  font-family: 'Anuphan', 'Inter', 'Sarabun', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Fix Boxicons appearing as squares */
+[class^="bx-"], [class*=" bx-"], .bx {
+  font-family: 'boxicons' !important;
+}
+
+html {
+  font-size: 125%;
+}
+
+body {
+  background-color: #f1f5f9;
+  color: var(--slate);
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* === Global Utilities === */
+.text-primary { color: var(--primary) !important; }
+.bg-primary { background-color: var(--primary) !important; }
+.rounded-xl { border-radius: 1rem !important; }
+.glass-effect {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+}
+
+/* === Cards & Data === */
+.card {
+  border: none;
+  border-radius: 1.25rem;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  overflow: hidden;
+}
+
+.card:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.stats-card {
+  border-left: 4px solid var(--primary);
+}
+
+.stats-card.bg-soft-green { border-left-color: var(--success); }
+.stats-card.bg-soft-red { border-left-color: var(--danger); }
+.stats-card.bg-soft-yellow { border-left-color: var(--warning); }
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+}
+
+.table thead th {
+  border: none;
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  padding: 1rem;
+}
+
+.table tbody tr {
+  background: white;
+  transition: all 0.2s;
+}
+
+.table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.table tbody td {
+  padding: 1rem;
+  vertical-align: middle;
+  border: none;
+  border-top: 1px solid #f1f5f9;
+}
+
+.table tbody tr td:first-child { border-top-left-radius: 0.75rem; border-bottom-left-radius: 0.75rem; }
+.table tbody tr td:last-child { border-top-right-radius: 0.75rem; border-bottom-right-radius: 0.75rem; }
+
+/* === Buttons === */
+.btn {
+  border-radius: 0.75rem;
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-primary {
+  background: var(--primary);
+  border: none;
+  box-shadow: 0 4px 12px rgba(6, 95, 70, 0.2);
+}
+
+.btn-primary:hover {
+  background: var(--secondary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(6, 95, 70, 0.3);
+}
+
+/* === Form Controls === */
+.form-control, .form-select {
+  border-radius: 0.75rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  transition: all 0.2s;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(6, 95, 70, 0.1);
+  background: white;
+}
+
+/* === Animations === */
+.animate__animated {
+  animation-duration: 0.8s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate__fadeIn {
+  animation-name: fadeIn;
+}
+
+/* === Fix SweetAlert2 Z-Index === */
+/* Ensure SweetAlert2 always appears above our Tailwind z-[9999] modals */
+.swal2-container {
+  z-index: 99999 !important;
+}

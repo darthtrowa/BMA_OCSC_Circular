@@ -13,11 +13,19 @@ export const syncOCSC = async () => {
   
   let browser;
   try {
+    console.log('[BOT] Launching browser...');
     browser = await puppeteer.launch({
-      headless: true, // Use headless mode
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+      headless: true,
+      timeout: 60000,
+      args: [
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+      ]
     });
     
+    console.log('[BOT] Browser launched. Opening new page...');
     const page = await browser.newPage();
     // Spoof user agent to appear as a normal browser
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -87,10 +95,10 @@ export const syncOCSC = async () => {
     });
 
     let newItemsCount = 0;
-    const dbPromises: Promise<void>[] = [];
 
     // Deduplicate array based on URL before inserting to save DB trips
-    const uniqueLinks = Array.from(new Map(links.map(item => [item.href, item])).values());
+    // STAB-04: Cap at 100 links to prevent resource exhaustion from malformed pages
+    const uniqueLinks = Array.from(new Map(links.map(item => [item.href, item])).values()).slice(0, 100);
 
     for (const link of uniqueLinks) {
       // Dedup: check if this circular already exists in c_information by doc_num + year
@@ -123,7 +131,7 @@ export const syncOCSC = async () => {
       }
     }
 
-    await Promise.all(dbPromises);
+    // STAB-05: Removed unused dbPromises array (was dead code)
     console.log(`[BOT] Sync finished. Added ${newItemsCount} new circular(s) to the staging queue.`);
     
     return { success: true, count: newItemsCount };

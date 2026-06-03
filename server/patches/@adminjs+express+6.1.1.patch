@@ -1,0 +1,14 @@
+diff --git a/node_modules/@adminjs/express/lib/buildRouter.js b/node_modules/@adminjs/express/lib/buildRouter.js
+index 3bfdd15..4af55d3 100644
+--- a/node_modules/@adminjs/express/lib/buildRouter.js
++++ b/node_modules/@adminjs/express/lib/buildRouter.js
+@@ -58,7 +58,8 @@ export const buildAssets = ({ admin, assets, routes, router, }) => {
+     }
+     assets.forEach((asset) => {
+         router.get(asset.path, async (_req, res) => {
+-            res.sendFile(path.resolve(asset.src));
++            console.log("Serving asset:", asset.path, "->", path.resolve(asset.src));
++            res.sendFile(path.resolve(asset.src), { dotfiles: 'allow' });
+         });
+     });
+ };

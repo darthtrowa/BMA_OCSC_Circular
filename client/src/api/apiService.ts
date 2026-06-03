@@ -26,7 +26,7 @@ http.interceptors.response.use(
       localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_name')
       localStorage.removeItem('admin_permiss')
-      window.location.href = '/admin/login'
+      window.location.href = '/circular/admin/login'
     }
     return Promise.reject(err)
   }
@@ -143,6 +143,8 @@ export const adminApi = {
   },
 
   getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/api/admin/users').then(res => res.data.response),
+  getUsersByRole: (roles: string[]): Promise<any[]> =>
+    http.get<ApiResponse<any[]>>(`/api/admin/users/by-role?roles=${roles.join(',')}`).then(res => res.data.response),
   createUser: (payload: any): Promise<any> => http.post('/api/admin/users', payload).then(res => res.data),
   updateUser: (id: string | number, payload: any): Promise<any> => http.put(`/api/admin/users/${id}`, payload).then(res => res.data),
   deleteUser: (id: string | number): Promise<any> => http.delete(`/api/admin/users/${id}`).then(res => res.data),
@@ -188,14 +190,93 @@ export const adminApi = {
   },
 }
 
-export function parseJwt(token: string): any {
-  try {
-    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const json = decodeURIComponent(
-      atob(base64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-    )
-    return JSON.parse(json)
-  } catch {
-    return null
-  }
-}
+export const workflowApi = {
+  startWorkflow: async (docId: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/start', { docId });
+    return data;
+  },
+
+  submitToHr: async (docId: number, hrDirectorId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/submit-to-hr', { docId, hrDirectorId, comments });
+    return data;
+  },
+
+  delegate: async (docId: number, toUserId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/delegate', { docId, toUserId, comments });
+    return data;
+  },
+
+  submitReview: async (docId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/submit-review', { docId, comments });
+    return data;
+  },
+
+  approve: async (docId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/approve', { docId, comments });
+    return data;
+  },
+
+  reject: async (docId: number, rejectToUserId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/reject', { docId, rejectToUserId, comments });
+    return data;
+  },
+
+  getHistory: async (docId: number): Promise<any> => {
+    const { data } = await http.get(`/api/admin/workflow/${docId}/history`);
+    return data;
+  },
+
+  // ── Parallel Workflow ──────────────────────────────────────
+  assignParallel: async (
+    docId: number,
+    hrDirectorId: number,
+    tracks: { ag_id?: number; ag_name?: string; toUserId: number }[],
+    comments?: string
+  ): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-assign', { docId, hrDirectorId, tracks, comments });
+    return data;
+  },
+
+  parallelDelegate: async (docId: number, paId: number, toUserId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-delegate', { docId, paId, toUserId, comments });
+    return data;
+  },
+
+  parallelSubmit: async (docId: number, paId: number, resultComments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-submit', { docId, paId, resultComments });
+    return data;
+  },
+
+  parallelReject: async (docId: number, paId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-reject', { docId, paId, comments });
+    return data;
+  },
+
+  getParallelTracks: async (docId: number): Promise<any> => {
+    const { data } = await http.get(`/api/admin/workflow/${docId}/parallel-tracks`);
+    return data;
+  },
+};
+
+export const agencyApi = {
+  getTree: (): Promise<any[]> =>
+    http.get<ApiResponse<any[]>>('/api/admin/agency-tree').then(res => res.data.response),
+
+  create: (payload: { ag_name: string; ag_code?: string; parent_ag_id?: number | null; ag_status?: string }): Promise<any> =>
+    http.post('/api/admin/agency-tree', payload).then(res => res.data),
+
+  update: (id: number, payload: { ag_name: string; ag_code?: string; parent_ag_id?: number | null; ag_status?: string }): Promise<any> =>
+    http.put(`/api/admin/agency-tree/${id}`, payload).then(res => res.data),
+
+  updateStatus: (id: number, ag_status: 'active' | 'disbanded'): Promise<any> =>
+    http.patch(`/api/admin/agency-tree/${id}/status`, { ag_status }).then(res => res.data),
+
+  remove: (id: number): Promise<any> =>
+    http.delete(`/api/admin/agency-tree/${id}`).then(res => res.data),
+
+  getMembers: (id: number): Promise<any[]> =>
+    http.get<ApiResponse<any[]>>(`/api/admin/agency-tree/${id}/members`).then(res => res.data.response),
+
+  reorder: (nodes: { ag_id: number; agency_ordering: number }[]): Promise<any> =>
+    http.put('/api/admin/agency-tree/reorder', { nodes }).then(res => res.data),
+};
