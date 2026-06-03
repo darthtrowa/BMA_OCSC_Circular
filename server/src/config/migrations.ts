@@ -109,7 +109,113 @@ export async function runMigrations() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);`);
+    // Add is_acting column to audit_logs to tag interim-capacity actions
+    await db.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS is_acting BOOLEAN DEFAULT FALSE;`);
     console.log('✅ Audit Logging tables ensured');
+
+    // 7. Acting Appointments (Temporary Privilege Escalation)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS c_acting_appointments (
+        act_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+        -- The user whose role is temporarily elevated
+        user_id         INT NOT NULL REFERENCES admin(a_id) ON DELETE CASCADE,
+
+        -- The role this user acts AS during the appointment window.
+        -- Must be a valid AdminRole value from src/middleware/auth.ts
+        target_role     VARCHAR(50) NOT NULL,
+
+        -- Appointment window (inclusive on both ends)
+        start_date      TIMESTAMPTZ NOT NULL,
+        end_date        TIMESTAMPTZ NOT NULL,
+
+        -- Soft-disable: SUPERADMIN can revoke early without deleting the record
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+        -- Authorisation audit trail
+        appointed_by    INT REFERENCES admin(a_id) ON DELETE SET NULL,
+        reason          TEXT,
+
+        -- Standard timestamps
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ DEFAULT NOW(),
+
+        -- Structural constraint: end must be after start
+        CONSTRAINT chk_acting_dates CHECK (end_date > start_date)
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_acting_user_id    ON c_acting_appointments(user_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_acting_active      ON c_acting_appointments(user_id, is_active, start_date, end_date);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_acting_appointed_by ON c_acting_appointments(appointed_by);`);
+    console.log('✅ Acting appointments table ensured');
+
+    // 8. Workflow Delegations (Order-based Acting Role Assignment)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS c_workflow_delegations (
+        delegation_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+        -- ผู้มอบอำนาจ: เจ้าของตำแหน่งจริง (e.g., HR_DIRECTOR ที่ลาหรือตำแหน่งว่าง)
+        assigner_id     INT NOT NULL REFERENCES admin(a_id) ON DELETE CASCADE,
+
+        -- ผู้รับมอบอำนาจ: บุคคลที่จะรักษาการแทน (ต้อง role ต่ำกว่า 1 ระดับ)
+        assignee_id     INT NOT NULL REFERENCES admin(a_id) ON DELETE CASCADE,
+
+        -- Role ที่ assignee จะได้รับชั่วคราว (ต้องตรงกับ AdminRole ใน auth.ts)
+        delegated_role  VARCHAR(50) NOT NULL,
+
+        -- เลขที่คำสั่งราชการ สำหรับอ้างอิง
+        order_number    VARCHAR(100) NOT NULL,
+
+        -- สถานะ: ปิด/เปิดการมอบอำนาจ (ไม่มีวันหมดอายุ — ต้อง toggle เอง)
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+
+        -- ผู้บันทึกและหมายเหตุ
+        created_by      INT REFERENCES admin(a_id) ON DELETE SET NULL,
+        notes           TEXT,
+
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ DEFAULT NOW(),
+
+        -- ป้องกัน assignee รักษาการแทนตัวเอง
+        CONSTRAINT chk_delegation_different CHECK (assigner_id != assignee_id)
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_delegation_assignee ON c_workflow_delegations(assignee_id, is_active);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_delegation_assigner ON c_workflow_delegations(assigner_id, is_active);`);
+    console.log('✅ Workflow delegations table ensured');
+
+    // 9. Workflow Inbox (Acting context tagging)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS c_workflow_inbox (
+        inbox_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+        -- หนังสือเวียนที่เชื่อมกับ inbox item นี้
+        circular_id      INT NOT NULL REFERENCES c_information(in_id) ON DELETE CASCADE,
+
+        -- ผู้รับผิดชอบปัจจุบัน
+        current_owner_id INT NOT NULL REFERENCES admin(a_id) ON DELETE CASCADE,
+
+        -- SELF = งานปกติ / ACTING = งานรักษาการแทน
+        assigned_as      VARCHAR(10) NOT NULL DEFAULT 'SELF'
+                         CHECK (assigned_as IN ('SELF', 'ACTING')),
+
+        -- ถ้าเป็น ACTING ให้บันทึก delegation ที่อนุญาต
+        delegation_id    BIGINT REFERENCES c_workflow_delegations(delegation_id) ON DELETE SET NULL,
+
+        -- ป้องกัน duplicate
+        UNIQUE (circular_id, current_owner_id, assigned_as),
+
+        created_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_inbox_owner ON c_workflow_inbox(current_owner_id, assigned_as);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_inbox_circular ON c_workflow_inbox(circular_id);`);
+    console.log('✅ Workflow inbox table ensured');
+
+    // 10. Extend audit_logs for delegation context tracking
+    await db.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_context VARCHAR(10) DEFAULT 'SELF';`);
+    await db.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS delegation_id BIGINT REFERENCES c_workflow_delegations(delegation_id) ON DELETE SET NULL;`);
+    console.log('✅ audit_logs delegation columns ensured');
 
     console.log('🎉 Database migrations completed successfully.');
   } catch (e: any) {

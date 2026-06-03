@@ -3,6 +3,8 @@ import { requireAdmin, requireRole, AdminRequest } from '../middleware/auth.js';
 import { WorkflowService } from '../services/workflowService.js';
 import { ParallelWorkflowService } from '../services/parallelWorkflowService.js';
 import { z } from 'zod';
+import db from '../config/database.js';
+import { recordAuditLog } from '../utils/auditLogger.js';
 
 const router = express.Router();
 
@@ -32,9 +34,12 @@ const submitReviewSchema = z.object({
 });
 
 const approveRejectSchema = z.object({
-  docId: z.number(),
-  comments: z.string().optional().default(''),
-  rejectToUserId: z.number().optional(), // Required only for reject
+  docId:            z.number(),
+  comments:         z.string().optional().default(''),
+  rejectToUserId:   z.number().optional(), // Required only for reject
+  // บริบทการลงนาม: SELF = ตนเอง, ACTING = รักษาการแทน
+  approval_context: z.enum(['SELF', 'ACTING']).optional().default('SELF'),
+  delegation_id:    z.number().int().positive().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -116,16 +121,56 @@ router.post(
 
 /**
  * 4. Approve review (moves up the chain)
+ * รองรับ approval_context: 'SELF' | 'ACTING'
+ * เมื่อ ACTING: ตรวจสอบ c_workflow_delegations ก่อน แล้วบันทึก context ลง audit_logs
  */
 router.post(
   '/approve',
   requireRole(['GRP_LEADER', 'SEC_DIRECTOR', 'DIV_DIRECTOR', 'HR_DIRECTOR']),
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, comments } = approveRejectSchema.parse(req.body);
+      const { docId, comments, approval_context, delegation_id } = approveRejectSchema.parse(req.body);
       const reviewerId = req.admin!.id;
 
+      // ── ACTING context: ตรวจสอบ delegation ก่อน ──────────────────────────
+      let resolvedDelegationId: number | null = null;
+      if (approval_context === 'ACTING') {
+        if (!delegation_id) {
+          return res.status(400).json({ success: false, message: 'ต้องระบุ delegation_id เมื่อลงนามในฐานะรักษาการ' });
+        }
+        // Strict verify: delegation ต้อง active และเป็นของผู้ใช้นี้
+        const { rows: delRows } = await db.query(
+          `SELECT delegation_id, delegated_role, assigner_id
+           FROM   c_workflow_delegations
+           WHERE  delegation_id = $1
+             AND  assignee_id   = $2
+             AND  is_active     = TRUE`,
+          [delegation_id, reviewerId]
+        );
+        if (!delRows.length) {
+          return res.status(403).json({ success: false, message: 'ไม่พบการมอบอำนาจที่ถูกต้อง หรือถูกยกเลิกแล้ว' });
+        }
+        resolvedDelegationId = delRows[0].delegation_id;
+      }
+
+      // ── ดำเนินการ approve ──────────────────────────────────────────────
       await WorkflowService.approve(docId, reviewerId, comments);
+
+      // ── บันทึก audit log พร้อม delegation context ─────────────────────
+      recordAuditLog({
+        userId:           reviewerId,
+        userName:         req.admin!.name,
+        action:           'WORKFLOW_APPROVE',
+        targetResource:   'workflow',
+        targetId:         String(docId),
+        payload:          { docId, comments, approval_context },
+        ipAddress:        (req.ip as string) || null,
+        userAgent:        (req.headers['user-agent'] as string) || null,
+        isActing:         approval_context === 'ACTING',
+        approval_context: approval_context,
+        delegation_id:    resolvedDelegationId,
+      });
+
       return res.json({ success: true, message: 'Approved successfully' });
     } catch (error: any) {
       return res.status(400).json({ success: false, message: error.message });

@@ -186,8 +186,13 @@ export const workflowApi = {
     return data;
   },
 
-  approve: async (docId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/approve', { docId, comments });
+  approve: async (docId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/approve', {
+      docId,
+      comments,
+      approval_context: approval_context ?? 'SELF',
+      delegation_id: delegation_id ?? undefined,
+    });
     return data;
   },
 
@@ -254,4 +259,47 @@ export const agencyApi = {
 
   reorder: (nodes: { ag_id: number; agency_ordering: number }[]): Promise<any> =>
     http.put('/api/admin/agency-tree/reorder', { nodes }).then(res => res.data),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Delegation API (Acting Role Management)
+// ─────────────────────────────────────────────────────────────────────────────
+export interface DelegationItem {
+  delegation_id:    number;
+  order_number:     string;
+  delegated_role:   string;
+  is_active?:       boolean;
+  notes?:           string;
+  assigner_id:      number;
+  assigner_name:    string;
+  assigner_role:    string;
+  assigner_position?: string;
+  assignee_id?:     number;
+  assignee_name?:   string;
+  assignee_role?:   string;
+  created_by_name?: string;
+  created_at?:      string;
+}
+
+export const delegationApi = {
+  /** ดึง delegation ทั้งหมด (SUPERADMIN) */
+  getAll: (): Promise<DelegationItem[]> =>
+    http.get<ApiResponse<DelegationItem[]>>('/api/admin/delegations').then(res => res.data.response),
+
+  /** ดึง delegation ที่ active ของ user ที่ login อยู่ */
+  getMyActive: (): Promise<DelegationItem[]> =>
+    http.get<ApiResponse<DelegationItem[]>>('/api/admin/delegations/my-active').then(res => res.data.response),
+
+  /** แต่งตั้งผู้รักษาการ (SUPERADMIN) */
+  assign: (payload: {
+    assigner_id:  number;
+    assignee_id:  number;
+    order_number: string;
+    notes?:       string;
+  }): Promise<any> =>
+    http.post('/api/admin/delegations/assign', payload).then(res => res.data),
+
+  /** เปิด/ปิด delegation */
+  toggle: (id: number, is_active: boolean): Promise<any> =>
+    http.patch(`/api/admin/delegations/${id}/toggle`, { is_active }).then(res => res.data),
 };

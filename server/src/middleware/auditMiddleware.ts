@@ -42,7 +42,9 @@ export const auditMiddleware = (req: AdminRequest, res: Response, next: NextFunc
       targetId: (targetId as string) || null,
       payload: req.body,
       ipAddress: (req.ip as string) || (req.socket.remoteAddress as string) || null,
-      userAgent: (req.headers['user-agent'] as string) || null
+      userAgent: (req.headers['user-agent'] as string) || null,
+      // Tag the record when the caller is operating under a temporary acting appointment
+      isActing: req.admin?.isActing ?? false,
     });
   }
 

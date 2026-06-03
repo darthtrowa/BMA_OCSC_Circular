@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import db from '../config/database.js';
+import { resolveEffectiveRole } from '../utils/actingRole.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set!');
@@ -24,6 +25,19 @@ export interface AdminRequest extends Request {
     name: string;
     permiss: string;  // legacy field (kept for backward compatibility)
     role?: AdminRole; // new granular role from workflow_design.md
+
+    /**
+     * True when the user's access to the current endpoint was granted via an
+     * acting appointment rather than their native role.
+     * Stamped by requireRole(); always false for requireAdmin() / requireSuperAdmin().
+     */
+    isActing: boolean;
+
+    /**
+     * The primary key of the c_acting_appointments row that granted access.
+     * Only present when isActing === true.
+     */
+    actingAppointmentId?: number;
   };
 }
 
@@ -46,7 +60,7 @@ export const requireAdmin = async (req: AdminRequest, res: Response, next: NextF
       }
     }
 
-    req.admin = decoded;
+    req.admin = { ...decoded, isActing: false };
     next();
   } catch {
     return res.status(401).json({ status: false, message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
@@ -73,7 +87,7 @@ export const requireSuperAdmin = async (req: AdminRequest, res: Response, next: 
       }
     }
 
-    req.admin = decoded;
+    req.admin = { ...decoded, isActing: false };
     next();
   } catch {
     return res.status(401).json({ status: false, message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
@@ -82,7 +96,13 @@ export const requireSuperAdmin = async (req: AdminRequest, res: Response, next: 
 
 /**
  * Middleware factory: ตรวจสอบว่า role ตรงกับที่กำหนดหรือไม่
- * ใช้กับ workflow routes ใหม่
+ * รองรับ Acting Role (temporary privilege escalation) ผ่าน c_acting_appointments
+ *
+ * Resolution order:
+ *   1. SUPERADMIN legacy flag → bypass all checks
+ *   2. Native role in JWT matches required roles → pass, isActing = false
+ *   3. Active acting appointment whose target_role matches → pass, isActing = true
+ *   4. None of the above → 403
  *
  * @example router.post('/assign', requireRole(['HR_DIRECTOR', 'DIV_DIRECTOR']), handler)
  */
@@ -93,22 +113,47 @@ export const requireRole = (roles: AdminRole[]) =>
       return res.status(401).json({ status: false, message: 'กรุณาเข้าสู่ระบบ' });
     try {
       const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as any;
-      const userRole: AdminRole = decoded.role;
-      // SUPERADMIN bypasses all role checks
-      if (decoded.permiss === 'superadmin' || roles.includes(userRole)) {
-        
-        // Validate token version
+
+      // ── 1. SUPERADMIN bypass ─────────────────────────────────────────────
+      if (decoded.permiss === 'superadmin') {
         if (decoded.token_version !== undefined) {
           const { rows } = await db.query('SELECT a_token_version FROM admin WHERE a_id = $1', [decoded.id]);
           if (rows.length && rows[0].a_token_version !== decoded.token_version) {
             return res.status(401).json({ status: false, message: 'Session expired due to password change' });
           }
         }
-
-        req.admin = decoded;
+        req.admin = { ...decoded, isActing: false };
         return next();
       }
-      return res.status(403).json({ status: false, message: `ต้องการสิทธิ์: ${roles.join(', ')}` });
+
+      // ── 2 & 3. Native role + Acting appointment check ────────────────────
+      const { effectiveRole, isActing, appointment } = await resolveEffectiveRole(
+        decoded.id,
+        decoded.role as AdminRole | undefined,
+        roles,
+      );
+
+      if (!effectiveRole) {
+        return res.status(403).json({ status: false, message: `ต้องการสิทธิ์: ${roles.join(', ')}` });
+      }
+
+      // ── Token version check ──────────────────────────────────────────────
+      if (decoded.token_version !== undefined) {
+        const { rows } = await db.query('SELECT a_token_version FROM admin WHERE a_id = $1', [decoded.id]);
+        if (rows.length && rows[0].a_token_version !== decoded.token_version) {
+          return res.status(401).json({ status: false, message: 'Session expired due to password change' });
+        }
+      }
+
+      // ── Stamp acting context onto req.admin ──────────────────────────────
+      req.admin = {
+        ...decoded,
+        role: effectiveRole,    // override with resolved (acting) role
+        isActing,
+        ...(isActing && appointment ? { actingAppointmentId: appointment.act_id } : {}),
+      };
+
+      return next();
     } catch {
       return res.status(401).json({ status: false, message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
     }

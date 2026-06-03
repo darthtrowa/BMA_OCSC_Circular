@@ -3,6 +3,7 @@ import { adminApi, agencyApi } from '../../api/apiService'
 import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
 import AgencyTreeSection from './AgencyTreeSection'
+import DelegationModal from './DelegationModal'
 moment.locale('th')
 
 export default function UserSection({ permiss }) {
@@ -12,6 +13,8 @@ export default function UserSection({ permiss }) {
   const [saving, setSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
+  const [showDelegationModal, setShowDelegationModal] = useState(false)
+  const [actingUser, setActingUser] = useState<any>(null)
 
   const [formData, setFormData] = useState({
     a_name: '',
@@ -265,6 +268,16 @@ export default function UserSection({ permiss }) {
                       >
                         <i className='bx bx-edit-alt text-lg'></i>
                       </button>
+                      {/* ปุ่มแต่งตั้งรักษาการ — เฉพาะ SUPERADMIN */}
+                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && (
+                        <button
+                          className="w-8 h-8 rounded-full bg-violet-50 text-violet-600 hover:bg-violet-100 transition flex items-center justify-center"
+                          title="แต่งตั้งผู้รักษาการ"
+                          onClick={() => { setActingUser(u); setShowDelegationModal(true); }}
+                        >
+                          <i className='bx bx-shield-plus text-lg'></i>
+                        </button>
+                      )}
                       {u.a_permiss !== 'superadmin' && (
                         <button
                           className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center"
@@ -464,6 +477,14 @@ export default function UserSection({ permiss }) {
           </div>
         </div>
       )}
+
+      {/* DelegationModal — แต่งตั้งผู้รักษาการ */}
+      <DelegationModal
+        isOpen={showDelegationModal}
+        onClose={() => { setShowDelegationModal(false); setActingUser(null); }}
+        onSuccess={() => { setShowDelegationModal(false); setActingUser(null); }}
+        assigneeUser={actingUser}
+      />
     </div>
   )
 }

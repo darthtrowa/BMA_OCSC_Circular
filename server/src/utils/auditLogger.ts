@@ -9,6 +9,12 @@ export interface AuditLogData {
   payload: any;
   ipAddress: string | null;
   userAgent: string | null;
+  /** Set to true when the action was performed under an acting appointment */
+  isActing?: boolean;
+  /** 'SELF' = ลงนามในนามตนเอง, 'ACTING' = ลงนามในฐานะรักษาการ */
+  approval_context?: 'SELF' | 'ACTING';
+  /** FK ไปยัง c_workflow_delegations.delegation_id (เฉพาะเมื่อ approval_context = 'ACTING') */
+  delegation_id?: number | null;
 }
 
 /**
@@ -45,8 +51,8 @@ export async function recordAuditLog(data: AuditLogData) {
     
     await pool.query(
       `INSERT INTO audit_logs 
-        (user_id, user_name, action, target_resource, target_id, payload, ip_address, user_agent) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        (user_id, user_name, action, target_resource, target_id, payload, ip_address, user_agent, is_acting, approval_context, delegation_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         data.userId,
         data.userName,
@@ -55,7 +61,10 @@ export async function recordAuditLog(data: AuditLogData) {
         data.targetId,
         redactedPayload ? JSON.stringify(redactedPayload) : null,
         data.ipAddress,
-        data.userAgent
+        data.userAgent,
+        data.isActing ?? false,
+        data.approval_context ?? 'SELF',
+        data.delegation_id ?? null,
       ]
     );
   } catch (err: any) {
