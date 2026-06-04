@@ -26,5 +26,15 @@ module.exports = {
       autorestart: true,
       max_memory_restart: "500M", // Vite dev server uses more memory
     },
+    // ===== Admin Frontend (Development Mode) =====
+    {
+      name: "circular-admin",
+      script: "./node_modules/vite/bin/vite.js",
+      cwd: path.join(baseDir, "client-admin"),
+      exec_mode: "fork",
+      watch: false,
+      autorestart: true,
+      max_memory_restart: "500M",
+    },
   ],
 };

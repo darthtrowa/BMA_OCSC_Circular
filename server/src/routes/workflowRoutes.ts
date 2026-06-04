@@ -22,6 +22,12 @@ const submitToHrSchema = z.object({
   comments: z.string().optional().default(''),
 });
 
+const submitToGrpLeaderSchema = z.object({
+  docId: z.number(),
+  grpLeaderId: z.number(),
+  comments: z.string().optional().default(''),
+});
+
 const delegateSchema = z.object({
   docId: z.number(),
   toUserId: z.number(),
@@ -33,7 +39,15 @@ const submitReviewSchema = z.object({
   comments: z.string().optional().default(''),
 });
 
-const approveRejectSchema = z.object({
+const approveSchema = z.object({
+  docId: z.number().int().positive(),
+  nextOwnerId: z.number().int().positive(),
+  comments: z.string().optional().default(''),
+  approval_context: z.enum(['SELF', 'ACTING']).optional().default('SELF'),
+  delegation_id: z.number().int().positive().optional(),
+});
+
+const rejectSchema = z.object({
   docId:            z.number(),
   comments:         z.string().optional().default(''),
   rejectToUserId:   z.number().optional(), // Required only for reject
@@ -63,7 +77,7 @@ router.post(
 );
 
 /**
- * 1. COORDINATOR submits to HR_DIRECTOR
+ * 1. COORDINATOR submits to HR_DIRECTOR (Legacy)
  */
 router.post(
   '/submit-to-hr',
@@ -75,6 +89,25 @@ router.post(
 
       await WorkflowService.submitToHR(docId, coordinatorId, hrDirectorId, comments);
       return res.json({ success: true, message: 'Submitted to HR Director successfully' });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
+/**
+ * 1b. COORDINATOR submits to GRP_LEADER
+ */
+router.post(
+  '/submit-to-grp-leader',
+  requireRole(['COORDINATOR']),
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const { docId, grpLeaderId, comments } = submitToGrpLeaderSchema.parse(req.body);
+      const coordinatorId = req.admin!.id;
+
+      await WorkflowService.submitToGrpLeader(docId, coordinatorId, grpLeaderId, comments);
+      return res.json({ success: true, message: 'Submitted to Group Leader successfully' });
     } catch (error: any) {
       return res.status(400).json({ success: false, message: error.message });
     }
@@ -126,10 +159,10 @@ router.post(
  */
 router.post(
   '/approve',
-  requireRole(['GRP_LEADER', 'SEC_DIRECTOR', 'DIV_DIRECTOR', 'HR_DIRECTOR']),
+  requireAdmin,
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, comments, approval_context, delegation_id } = approveRejectSchema.parse(req.body);
+      const { docId, nextOwnerId, comments, approval_context, delegation_id } = approveSchema.parse(req.body);
       const reviewerId = req.admin!.id;
 
       // ── ACTING context: ตรวจสอบ delegation ก่อน ──────────────────────────
@@ -154,7 +187,7 @@ router.post(
       }
 
       // ── ดำเนินการ approve ──────────────────────────────────────────────
-      await WorkflowService.approve(docId, reviewerId, comments);
+      await WorkflowService.approve(docId, reviewerId, nextOwnerId, comments, resolvedDelegationId);
 
       // ── บันทึก audit log พร้อม delegation context ─────────────────────
       recordAuditLog({
@@ -183,17 +216,53 @@ router.post(
  */
 router.post(
   '/reject',
-  requireRole(['GRP_LEADER', 'SEC_DIRECTOR', 'DIV_DIRECTOR', 'HR_DIRECTOR']),
+  requireAdmin,
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, comments, rejectToUserId } = approveRejectSchema.parse(req.body);
+      const { docId, comments, rejectToUserId, approval_context, delegation_id } = rejectSchema.parse(req.body);
       const reviewerId = req.admin!.id;
 
       if (!rejectToUserId) {
         return res.status(400).json({ success: false, message: 'rejectToUserId is required' });
       }
 
-      await WorkflowService.reject(docId, reviewerId, rejectToUserId, comments);
+      // ── ACTING context: ตรวจสอบ delegation ก่อน ──────────────────────────
+      let resolvedDelegationId: number | null = null;
+      if (approval_context === 'ACTING') {
+        if (!delegation_id) {
+          return res.status(400).json({ success: false, message: 'ต้องระบุ delegation_id เมื่อตีกลับในฐานะรักษาการ' });
+        }
+        const { rows: delRows } = await db.query(
+          `SELECT delegation_id
+           FROM   c_workflow_delegations
+           WHERE  delegation_id = $1
+             AND  assignee_id   = $2
+             AND  is_active     = TRUE`,
+          [delegation_id, reviewerId]
+        );
+        if (!delRows.length) {
+          return res.status(403).json({ success: false, message: 'ไม่พบการมอบอำนาจที่ถูกต้อง หรือถูกยกเลิกแล้ว' });
+        }
+        resolvedDelegationId = delRows[0].delegation_id;
+      }
+
+      await WorkflowService.reject(docId, reviewerId, rejectToUserId, comments, resolvedDelegationId);
+
+      // ── บันทึก audit log พร้อม delegation context ─────────────────────
+      recordAuditLog({
+        userId:           reviewerId,
+        userName:         req.admin!.name,
+        action:           'WORKFLOW_REJECT',
+        targetResource:   'workflow',
+        targetId:         String(docId),
+        payload:          { docId, comments, rejectToUserId, approval_context },
+        ipAddress:        (req.ip as string) || null,
+        userAgent:        (req.headers['user-agent'] as string) || null,
+        isActing:         approval_context === 'ACTING',
+        approval_context: approval_context,
+        delegation_id:    resolvedDelegationId,
+      });
+
       return res.json({ success: true, message: 'Rejected successfully' });
     } catch (error: any) {
       return res.status(400).json({ success: false, message: error.message });

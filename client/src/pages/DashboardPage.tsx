@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { adminApi } from '../api/apiService'
+import { adminApi, delegationApi } from '../api/apiService'
 import Sidebar from '../components/admin/Sidebar'
 import DashboardStats from '../components/admin/DashboardStats'
 import CircularSection from '../components/admin/CircularSection'
@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [activeResultId, setActiveResultId]   = useState<string | number>('all')
   const [baseFilteredData, setBaseFilteredData] = useState<any>(null)  // ข้อมูลกรองจาก CircularSection
   const [allData, setAllData]                 = useState<any>(null)
+  const [activeDelegations, setActiveDelegations] = useState<any[]>([])
   const [loading, setLoading]                 = useState(true)
   const profileRef  = useRef<any>(null)
   const passwordRef = useRef<any>(null)
@@ -56,6 +57,9 @@ export default function DashboardPage() {
   useEffect(() => { 
     loadData()
     syncProfile()
+    delegationApi.getMyActive()
+      .then(data => setActiveDelegations(data || []))
+      .catch(() => setActiveDelegations([]))
   }, [])
 
   // ── Sync Profile to ensure role is always up-to-date in AuthContext ──
@@ -105,7 +109,11 @@ export default function DashboardPage() {
   }
 
   const info = allData?.information || []
-  const pendingTasksCount = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id)).length
+  const actingAssignerIds = activeDelegations.map(d => d.assigner_id)
+  const pendingTasksCount = info.filter((item: any) => 
+    (Number(item.in_current_owner_id) === Number(admin?.id)) ||
+    (actingAssignerIds.includes(Number(item.in_current_owner_id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT')
+  ).length
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-saochingcha text-slate-800">

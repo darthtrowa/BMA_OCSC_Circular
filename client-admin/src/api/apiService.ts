@@ -1,6 +1,6 @@
 /**
  * apiService.ts
- * Admin-only API layer — no public endpoints
+ * Service layer สำหรับเชื่อมต่อกับ REST API จริง (Database)
  */
 
 import axios from 'axios'
@@ -26,7 +26,7 @@ http.interceptors.response.use(
       localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_name')
       localStorage.removeItem('admin_permiss')
-      window.location.href = '/circular/admin/'
+      window.location.href = '/circular/admin/login'
     }
     return Promise.reject(err)
   }
@@ -36,6 +36,31 @@ export interface ApiResponse<T> {
   status: boolean;
   message: string;
   response: T;
+}
+
+export const publicApi = {
+  getFilters: async (): Promise<any> => {
+    const { data } = await http.get<ApiResponse<any>>('/api/filters')
+    if (!data.status) throw new Error(data.message)
+    return data.response
+  },
+
+  getStats: async (): Promise<any> => {
+    const { data } = await http.get<ApiResponse<any>>('/api/stats')
+    if (!data.status) throw new Error(data.message)
+    return data.response
+  },
+
+  search: async (payload: any): Promise<any[]> => {
+    const { data } = await http.post<ApiResponse<any>>('/api/search', payload)
+    return data.response?.circular_kp ?? []
+  },
+
+  getCircular: async (id: number | string): Promise<any> => {
+    const { data } = await http.get<ApiResponse<any>>(`/api/circular/${id}`)
+    if (!data.status) throw new Error(data.message)
+    return data.response
+  },
 }
 
 export const adminApi = {
@@ -118,8 +143,12 @@ export const adminApi = {
   },
 
   getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/api/admin/users').then(res => res.data.response),
-  getUsersByRole: (roles: string[]): Promise<any[]> =>
-    http.get<ApiResponse<any[]>>(`/api/admin/users/by-role?roles=${roles.join(',')}`).then(res => res.data.response),
+  getUsersByRole: (roles: string[], approvalContext?: string, delegationId?: number): Promise<any[]> => {
+    let url = `/api/admin/users/by-role?roles=${roles.join(',')}`;
+    if (approvalContext) url += `&approval_context=${approvalContext}`;
+    if (delegationId) url += `&delegation_id=${delegationId}`;
+    return http.get<ApiResponse<any[]>>(url).then(res => res.data.response);
+  },
   createUser: (payload: any): Promise<any> => http.post('/api/admin/users', payload).then(res => res.data),
   updateUser: (id: string | number, payload: any): Promise<any> => http.put(`/api/admin/users/${id}`, payload).then(res => res.data),
   deleteUser: (id: string | number): Promise<any> => http.delete(`/api/admin/users/${id}`).then(res => res.data),
@@ -176,6 +205,11 @@ export const workflowApi = {
     return data;
   },
 
+  submitToGrpLeader: async (docId: number, grpLeaderId: number, comments?: string): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/submit-to-grp-leader', { docId, grpLeaderId, comments });
+    return data;
+  },
+
   delegate: async (docId: number, toUserId: number, comments?: string): Promise<any> => {
     const { data } = await http.post('/api/admin/workflow/delegate', { docId, toUserId, comments });
     return data;
@@ -186,9 +220,10 @@ export const workflowApi = {
     return data;
   },
 
-  approve: async (docId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
+  approve: async (docId: number, nextOwnerId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
     const { data } = await http.post('/api/admin/workflow/approve', {
       docId,
+      nextOwnerId,
       comments,
       approval_context: approval_context ?? 'SELF',
       delegation_id: delegation_id ?? undefined,
@@ -196,8 +231,8 @@ export const workflowApi = {
     return data;
   },
 
-  reject: async (docId: number, rejectToUserId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/reject', { docId, rejectToUserId, comments });
+  reject: async (docId: number, rejectToUserId: number, comments?: string, approval_context?: string, delegation_id?: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/reject', { docId, rejectToUserId, comments, approval_context, delegation_id });
     return data;
   },
 
@@ -266,7 +301,6 @@ export const agencyApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 export interface DelegationItem {
   delegation_id:    number;
-  order_number:     string;
   delegated_role:   string;
   is_active?:       boolean;
   notes?:           string;
@@ -286,20 +320,35 @@ export const delegationApi = {
   getAll: (): Promise<DelegationItem[]> =>
     http.get<ApiResponse<DelegationItem[]>>('/api/admin/delegations').then(res => res.data.response),
 
-  /** ดึง delegation ที่ active ของ user ที่ login อยู่ */
+  /** ดึง delegation ของ Assigner คนใดคนหนึ่ง */
+  getByAssigner: (assignerId: number): Promise<DelegationItem[]> =>
+    http.get<ApiResponse<DelegationItem[]>>(`/api/admin/delegations/assigner/${assignerId}`).then(res => res.data.response),
+
+  /** จัดลำดับผู้รักษาการ */
+  reorder: (delegation_ids: number[]): Promise<any> =>
+    http.put('/api/admin/delegations/reorder', { delegation_ids }).then(res => res.data),
+
+  /** ดึง delegation ที่ active ของ user ที่ login อยู่ (เป็นผู้รับมอบ - Assignee) */
   getMyActive: (): Promise<DelegationItem[]> =>
     http.get<ApiResponse<DelegationItem[]>>('/api/admin/delegations/my-active').then(res => res.data.response),
 
+  /** ดึง delegation ที่ user ที่ login อยู่ได้มอบอำนาจให้คนอื่น (เป็นผู้มอบ - Assigner) */
+  getMyDelegated: (): Promise<DelegationItem[]> =>
+    http.get<ApiResponse<DelegationItem[]>>('/api/admin/delegations/my-delegated').then(res => res.data.response),
+
   /** แต่งตั้งผู้รักษาการ (SUPERADMIN) */
   assign: (payload: {
-    assigner_id:  number;
-    assignee_id:  number;
-    order_number: string;
-    notes?:       string;
+    assigner_id:   number;
+    assignee_id:   number;
+    notes?:        string;
   }): Promise<any> =>
     http.post('/api/admin/delegations/assign', payload).then(res => res.data),
 
   /** เปิด/ปิด delegation */
   toggle: (id: number, is_active: boolean): Promise<any> =>
     http.patch(`/api/admin/delegations/${id}/toggle`, { is_active }).then(res => res.data),
+
+  /** ลบ delegation ถาวร */
+  remove: (id: number): Promise<any> =>
+    http.delete(`/api/admin/delegations/${id}`).then(res => res.data),
 };

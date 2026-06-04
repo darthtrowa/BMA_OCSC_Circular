@@ -42,12 +42,42 @@ export class WorkflowService {
         `UPDATE c_information 
          SET in_workflow_status = 'PENDING_HR_APPROVAL', 
              in_current_owner_id = $1 
-         WHERE in_id = $2 AND (in_workflow_status = 'DRAFT' OR in_workflow_status IS NULL)`,
+         WHERE in_id = $2 AND (in_workflow_status = 'DRAFT' OR in_workflow_status IS NULL OR in_workflow_status = 'REJECTED')`,
         [hrDirectorId, docId]
       );
 
       // Record history
       await this.addHistory(client, docId, coordinatorId, hrDirectorId, 'SUBMITTED', comments);
+
+      await client.query('COMMIT');
+      return { success: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Starts the workflow by submitting a document from COORDINATOR to GRP_LEADER
+   */
+  static async submitToGrpLeader(docId: number, coordinatorId: number, grpLeaderId: number, comments: string) {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Update document
+      await client.query(
+        `UPDATE c_information 
+         SET in_workflow_status = 'PENDING_REVIEW', 
+             in_current_owner_id = $1 
+         WHERE in_id = $2 AND (in_workflow_status = 'DRAFT' OR in_workflow_status IS NULL OR in_workflow_status = 'REJECTED')`,
+        [grpLeaderId, docId]
+      );
+
+      // Record history
+      await this.addHistory(client, docId, coordinatorId, grpLeaderId, 'SUBMITTED', comments);
 
       await client.query('COMMIT');
       return { success: true };
@@ -137,30 +167,27 @@ export class WorkflowService {
    * Approve a review. Moves the document up to the manager's manager, 
    * or finalizes it if approved by HR_DIRECTOR.
    */
-  static async approve(docId: number, reviewerId: number, comments: string) {
+  static async approve(docId: number, reviewerId: number, nextOwnerId: number, comments: string, delegationId?: number | null) {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
 
-      const userRes = await client.query('SELECT a_role, a_parent_id FROM admin WHERE a_id = $1', [reviewerId]);
-      if (userRes.rows.length === 0) throw new Error('Reviewer not found');
-      
-      const { a_role: role, a_parent_id: parentId } = userRes.rows[0];
+      let currentOwnerId = reviewerId;
 
+      if (delegationId) {
+        // ACTING: use the assigner's role and parent
+        const delRes = await client.query('SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1', [delegationId]);
+        if (delRes.rows.length === 0) throw new Error('Delegation not found');
+        currentOwnerId = delRes.rows[0].assigner_id;
+      }
       let newStatus: WorkflowStatus = 'PENDING_REVIEW';
-      let nextOwnerId = parentId;
       let action: WorkflowAction = 'APPROVED';
 
-      // If HR_DIRECTOR approves, it goes back to COORDINATOR (the creator)
-      if (role === 'HR_DIRECTOR') {
-        const docRes = await client.query('SELECT in_creator_id FROM c_information WHERE in_id = $1', [docId]);
-        if (docRes.rows.length > 0 && docRes.rows[0].in_creator_id) {
-          nextOwnerId = docRes.rows[0].in_creator_id;
-          newStatus = 'COMPLETED'; // Ready for Coordinator to finalize
-          action = 'FINALIZED';
-        } else {
-          throw new Error('Original Coordinator not found');
-        }
+      // If the selected next owner is the COORDINATOR, it means the workflow is completed
+      const targetRes = await client.query('SELECT a_role FROM admin WHERE a_id = $1', [nextOwnerId]);
+      if (targetRes.rows.length > 0 && targetRes.rows[0].a_role === 'COORDINATOR') {
+        newStatus = 'COMPLETED';
+        action = 'FINALIZED';
       }
 
       if (!nextOwnerId) throw new Error('Next workflow recipient not found');
@@ -171,7 +198,7 @@ export class WorkflowService {
          SET in_workflow_status = $1, 
              in_current_owner_id = $2 
          WHERE in_id = $3 AND in_current_owner_id = $4`,
-        [newStatus, nextOwnerId, docId, reviewerId]
+        [newStatus, nextOwnerId, docId, currentOwnerId]
       );
 
       // Record history
@@ -190,10 +217,18 @@ export class WorkflowService {
   /**
    * Reject a review. Pushes the document back to the person who submitted it.
    */
-  static async reject(docId: number, reviewerId: number, rejectToUserId: number, comments: string) {
+  static async reject(docId: number, reviewerId: number, rejectToUserId: number, comments: string, delegationId?: number | null) {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
+
+      let currentOwnerId = reviewerId;
+      if (delegationId) {
+        const delRes = await client.query('SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1', [delegationId]);
+        if (delRes.rows.length > 0) {
+          currentOwnerId = delRes.rows[0].assigner_id;
+        }
+      }
 
       const targetUserRes = await client.query('SELECT a_role FROM admin WHERE a_id = $1', [rejectToUserId]);
       if (targetUserRes.rows.length === 0) throw new Error('Target user not found');
@@ -207,7 +242,7 @@ export class WorkflowService {
          SET in_workflow_status = $1, 
              in_current_owner_id = $2 
          WHERE in_id = $3 AND in_current_owner_id = $4`,
-        [newStatus, rejectToUserId, docId, reviewerId]
+        [newStatus, rejectToUserId, docId, currentOwnerId]
       );
 
       // Record history
@@ -228,14 +263,25 @@ export class WorkflowService {
    */
   static async getHistory(docId: number) {
     const res = await db.query(
-      `SELECT h.*
+      `SELECT
+         h.*,
+         -- ตรวจว่า from_user กำลังรักษาการแทนใครอยู่ในปัจจุบัน
+         d.is_active                          AS from_user_is_acting,
+         assigner.a_name                     AS from_user_acting_for,
+         assigner.a_position                 AS from_user_acting_for_position
        FROM c_workflow_history h
+       LEFT JOIN c_workflow_delegations d
+              ON d.assignee_id = h.from_user_id
+             AND d.is_active = true
+       LEFT JOIN admin assigner
+              ON assigner.a_id = d.assigner_id
        WHERE h.in_id = $1
        ORDER BY h.created_at ASC`,
       [docId]
     );
     return res.rows;
   }
+
 
   /**
    * Helper to insert history with embedded text
@@ -264,6 +310,19 @@ export class WorkflowService {
       if (res.rows.length > 0) {
         toName = res.rows[0].a_name;
         toPos = res.rows[0].a_position || res.rows[0].a_role;
+
+        // Check if the target user has an active delegation (they are the assigner)
+        const delRes = await client.query(`
+          SELECT assignee.a_name AS assignee_name
+          FROM c_workflow_delegations d
+          JOIN admin assignee ON assignee.a_id = d.assignee_id
+          WHERE d.assigner_id = $1 AND d.is_active = TRUE
+        `, [toUserId]);
+
+        if (delRes.rows.length > 0) {
+          const assigneeName = delRes.rows[0].assignee_name;
+          toName = `${assigneeName} (รักษาการแทน ${toName})`;
+        }
       }
     }
 

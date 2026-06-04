@@ -163,8 +163,7 @@ export async function runMigrations() {
         -- Role ที่ assignee จะได้รับชั่วคราว (ต้องตรงกับ AdminRole ใน auth.ts)
         delegated_role  VARCHAR(50) NOT NULL,
 
-        -- เลขที่คำสั่งราชการ สำหรับอ้างอิง
-        order_number    VARCHAR(100) NOT NULL,
+
 
         -- สถานะ: ปิด/เปิดการมอบอำนาจ (ไม่มีวันหมดอายุ — ต้อง toggle เอง)
         is_active       BOOLEAN NOT NULL DEFAULT TRUE,

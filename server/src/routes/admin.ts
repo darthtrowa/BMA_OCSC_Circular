@@ -401,14 +401,20 @@ router.patch('/profile/2fa', requireAdmin, async (req: AdminRequest, res: Respon
 router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   try {
     let sql = `
-      SELECT a_id, a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id, a_last_login, created_at 
-      FROM admin 
+      SELECT 
+        a.a_id, a.a_name, a.a_username, a.a_email, a.a_permiss, a.a_role, 
+        a.a_position, a.a_status, a.a_agency, a.a_agency_id, a.a_last_login, a.created_at,
+        MIN(d.delegation_id) AS active_delegation_id,
+        STRING_AGG(assignee.a_name, ', ') AS active_assignee_name
+      FROM admin a
+      LEFT JOIN c_workflow_delegations d ON d.assigner_id = a.a_id AND d.is_active = TRUE
+      LEFT JOIN admin assignee ON assignee.a_id = d.assignee_id
     `;
     const params: any[] = [];
     if (req.admin?.permiss !== 'superadmin') {
-      sql += ` WHERE a_permiss != 'superadmin' `;
+      sql += ` WHERE a.a_permiss != 'superadmin' `;
     }
-    sql += ` ORDER BY a_id DESC `;
+    sql += ` GROUP BY a.a_id ORDER BY a.a_id DESC `;
     const { rows } = await db.query(sql, params);
     return res.json(ok(rows));
   } catch (e) {
@@ -417,16 +423,57 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
   }
 });
 
-/** 1b. ดึงรายชื่อผู้ใช้ที่ Active กรองตาม role (สำหรับ Workflow dropdowns) */
+/** 1b. ดึงรายชื่อผู้ใช้ที่ Active กรองตาม role + hierarchy (สำหรับ Workflow dropdowns) */
 router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
-    const roles = req.query.roles as string; // comma-separated: e.g. "HR_DIRECTOR"
+    const approvalContext = req.query.approval_context as string; // 'SELF' | 'ACTING'
+    const delegationId = req.query.delegation_id ? parseInt(req.query.delegation_id as string, 10) : undefined;
+    const roles = req.query.roles as string; // comma-separated e.g. "HR_DIRECTOR,GRP_LEADER"
+
+    // --- Determine effective user (could be the assigner if acting) ---
+    let effectiveUserId: number = req.admin!.id;
+    let effectiveUserRole: string = req.admin!.role ?? '';
+
+    if (approvalContext === 'ACTING' && delegationId) {
+      const { rows: delRows } = await db.query(
+        'SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1 AND assignee_id = $2 AND is_active = TRUE',
+        [delegationId, req.admin!.id]
+      );
+      if (delRows.length > 0) {
+        effectiveUserId = delRows[0].assigner_id;
+      }
+    }
+
+    // --- Get effective user's agency + role ---
+    const { rows: effRows } = await db.query(
+      `SELECT a.a_role, a.a_agency_id, ag.parent_ag_id
+       FROM admin a
+       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+       WHERE a.a_id = $1`,
+      [effectiveUserId]
+    );
+
+    let effectiveUserAgencyId: number | null = null;
+    let effectiveUserAgencyParentId: number | null = null;
+    if (effRows.length > 0) {
+      effectiveUserRole = effRows[0].a_role;
+      effectiveUserAgencyId = effRows[0].a_agency_id;
+      effectiveUserAgencyParentId = effRows[0].parent_ag_id;
+    }
+
+    // --- Get child agencies (subordinates) ---
+    let childAgencyIds: number[] = [];
+    if (effectiveUserAgencyId) {
+      const { rows: childRows } = await db.query(
+        'SELECT ag_id FROM c_agency WHERE parent_ag_id = $1',
+        [effectiveUserAgencyId]
+      );
+      childAgencyIds = childRows.map((r: any) => r.ag_id);
+    }
+
+    // --- Fetch all active users (filtered by role if provided) ---
     const params: any[] = ['1'];
-    let sql = `
-      SELECT a_id, a_name, a_role, a_position, a_agency_id 
-      FROM admin 
-      WHERE a_status = $1
-    `;
+    let sql = `SELECT a_id, a_name, a_role, a_position, a_agency_id FROM admin WHERE a_status = $1`;
     if (roles) {
       const roleList = roles.split(',').map(r => r.trim()).filter(Boolean);
       if (roleList.length > 0) {
@@ -436,7 +483,66 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
       }
     }
     sql += ` ORDER BY a_name ASC`;
-    const { rows } = await db.query(sql, params);
+    let { rows } = await db.query(sql, params);
+
+    // --- Always strip SYSTEM_ADMIN and SUPERADMIN ---
+    rows = rows.filter((r: any) => r.a_role !== 'SYSTEM_ADMIN' && r.a_role !== 'SUPERADMIN');
+
+    // --- Apply hierarchy filter based on agency structure ---
+    if (effectiveUserRole !== 'SUPERADMIN' && effectiveUserRole !== 'SYSTEM_ADMIN') {
+      if (effectiveUserRole === 'DIV_DIRECTOR' || effectiveUserRole === 'HR_DIRECTOR') {
+        // Directors can see: other directors, coordinator, and their subordinate agencies
+        rows = rows.filter((r: any) =>
+          r.a_role === 'DIV_DIRECTOR' ||
+          r.a_role === 'HR_DIRECTOR' ||
+          childAgencyIds.includes(Number(r.a_agency_id))
+        );
+      } else {
+        // Others: can see parent-agency users (supervisor) + child-agency users (subordinates)
+        // NOT peers (same agency)
+        rows = rows.filter((r: any) =>
+          (effectiveUserAgencyParentId && Number(r.a_agency_id) === Number(effectiveUserAgencyParentId)) ||
+          childAgencyIds.includes(Number(r.a_agency_id))
+        );
+      }
+      // Exclude self always
+      rows = rows.filter((r: any) => r.a_id !== effectiveUserId);
+    }
+
+    console.log('--- BY-ROLE ---', { effectiveUserId, effectiveUserRole, effectiveUserAgencyId, effectiveUserAgencyParentId, childAgencyIds, resultCount: rows.length });
+
+    // --- Attach acting delegates for each visible user ---
+    if (rows.length > 0) {
+      const userIds = rows.map((r: any) => r.a_id);
+      const placeholders2 = userIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
+      const { rows: delegations } = await db.query(
+        `SELECT d.assigner_id, assignee.a_id AS assignee_id, assignee.a_name AS assignee_name
+         FROM c_workflow_delegations d
+         JOIN admin assignee ON assignee.a_id = d.assignee_id
+         WHERE d.is_active = TRUE AND d.assigner_id IN (${placeholders2})`,
+        userIds
+      );
+
+      const delegationMap = new Map<number, any>();
+      delegations.forEach((d: any) => delegationMap.set(d.assigner_id, d));
+
+      const finalRows: any[] = [];
+      rows.forEach((r: any) => {
+        finalRows.push(r);
+        if (delegationMap.has(r.a_id)) {
+          const del = delegationMap.get(r.a_id);
+          finalRows.push({
+            ...r,
+            a_id: del.assignee_id,
+            a_name: `${del.assignee_name} (รักษาการแทน ${r.a_name})`,
+            isActing: true,
+            actingFor: r.a_name
+          });
+        }
+      });
+      return res.json(ok(finalRows));
+    }
+
     return res.json(ok(rows));
   } catch (e) {
     console.error(e);
@@ -548,6 +654,7 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
     const { rows: [{ total_count }] } = await db.query('SELECT COUNT(*) AS total_count FROM c_information');
     const total = parseInt(total_count);
 
+    const adminId = req.admin!.id;
     const sql = `
       SELECT
         c_information.in_id, c_information.in_num_date, c_information.in_doc_date, c_information.in_detail,
@@ -556,6 +663,13 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
         c_information.in_workflow_status, c_information.in_current_owner_id, c_information.in_creator_id,
+        c_information.in_is_parallel,
+        EXISTS (
+          SELECT 1 FROM c_workflow_history wh
+          WHERE wh.in_id = c_information.in_id
+            AND wh.from_user_id = $3
+            AND wh.action IN ('SUBMITTED','APPROVED','REJECTED','DELEGATED')
+        ) AS in_processed_by_me,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,'|#|',c_mati_work.mw_name,'|#|',c_mati_work.mw_date), ',') AS mati_work,
         STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color,'|#|',c_results.results_etc), ',') AS results,
@@ -580,7 +694,7 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
       ORDER BY c_year.year_value DESC, c_information.in_id DESC
       LIMIT $1 OFFSET $2
     `;
-    const { rows: infoRows } = await db.query(sql, [limit, offset]);
+    const { rows: infoRows } = await db.query(sql, [limit, offset, adminId]);
     const information = infoRows.map((r: any) => ({
       ...r,
       mati_kk: parseFirst(r.mati_kk, ['mkk_id', 'mkk_name', 'mkk_date']),

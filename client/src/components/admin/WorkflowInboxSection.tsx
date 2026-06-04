@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import WorkflowActionModal, { WorkflowActionType } from './WorkflowActionModal';
 import WorkflowHistoryModal from './WorkflowHistoryModal';
 import CircularModal from './CircularModal';
 import ParallelAssignModal from './ParallelAssignModal';
 import ParallelTracksPanel from './ParallelTracksPanel';
-import { adminApi, workflowApi } from '../../api/apiService';
+import { adminApi, workflowApi, delegationApi, DelegationItem } from '../../api/apiService';
 
 interface WorkflowInboxSectionProps {
   allData: any;
@@ -20,6 +20,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
   const [actionType, setActionType] = useState<WorkflowActionType>('submitToHr');
+  const [selectedTaskDelegationId, setSelectedTaskDelegationId] = useState<number | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -28,35 +29,73 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
   const [showParallelModal, setShowParallelModal] = useState(false);
   const [parallelDocId, setParallelDocId] = useState<number | null>(null);
 
+  // Active delegations ของ user ที่ login — ใช้แสดง Acting Inbox และส่งเข้า WorkflowActionModal
+  const [activeDelegations, setActiveDelegations] = useState<DelegationItem[]>([]);
+  // Delegations ที่ user ที่ login เป็นผู้มอบอำนาจ (Assigner) — ใช้สำหรับซ่อนปุ่ม Action
+  const [myDelegated, setMyDelegated] = useState<DelegationItem[]>([]);
+
+  useEffect(() => {
+    delegationApi.getMyActive()
+      .then(data => setActiveDelegations(data || []))
+      .catch(() => setActiveDelegations([]));
+
+    delegationApi.getMyDelegated()
+      .then(data => setMyDelegated(data || []))
+      .catch(() => setMyDelegated([]));
+  }, []);
+
   // Role map for each action type
   const ACTION_ROLE_MAP: Record<string, string[]> = {
     submitToHr: ['HR_DIRECTOR'],
+    submitToGrpLeader: ['GRP_LEADER'],
     delegate: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF'],
     reject: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR'],
     submitReview: [],
-    approve: [],
+    approve: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
+    actingApprove: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
   };
 
-  const handleAction = async (docId: number, type: WorkflowActionType) => {
+  const handleAction = async (docId: number, type: WorkflowActionType, delegationId?: number) => {
     setSelectedDocId(docId);
     setActionType(type);
+    setSelectedTaskDelegationId(delegationId || null);
     
-    if (type === 'reject') {
+    if (type === 'reject' || type === 'actingReject') {
       setUsersLoading(true);
       try {
-        const res = await workflowApi.getHistory(docId);
-        const historyList = res.data || [];
-        // Find the last history item where this admin received it
-        const myLastReceive = [...historyList].reverse().find((h: any) => Number(h.to_user_id) === Number(admin?.id));
+        const historyRes = await workflowApi.getHistory(docId);
+        const historyList: any[] = historyRes.data || [];
+
+        // backend enriches each row with from_user_is_acting / from_user_acting_for
+        const tagUser = (h: any) => ({
+          a_id:      h.from_user_id,
+          a_name:    h.from_user_name,
+          a_position: h.from_user_position,
+          a_role:    'ผู้ดำเนินการก่อนหน้า',
+          isActing:  h.from_user_is_acting === true,
+          actingFor: h.from_user_acting_for || null,
+        });
+
+        // Find the last entry where the doc was sent TO current user (or their assigner)
+        const myLastReceive = [...historyList].reverse().find(h =>
+          Number(h.to_user_id) === Number(admin?.id) ||
+          activeDelegations.some(d => Number(d.assigner_id) === Number(h.to_user_id))
+        );
+
         if (myLastReceive && myLastReceive.from_user_id) {
-          setUsers([{
-            a_id: myLastReceive.from_user_id,
-            a_name: myLastReceive.from_user_name,
-            a_position: myLastReceive.from_user_position,
-            a_role: 'ผู้ดำเนินการก่อนหน้า'
-          }]);
+          setUsers([tagUser(myLastReceive)]);
         } else {
-          setUsers([]);
+          // Fallback: unique senders from full history, excluding self
+          const seen = new Set<number>();
+          const prevActors: any[] = [];
+          [...historyList].reverse().forEach(h => {
+            const uid = Number(h.from_user_id);
+            if (uid && uid !== Number(admin?.id) && !seen.has(uid)) {
+              seen.add(uid);
+              prevActors.push(tagUser(h));
+            }
+          });
+          setUsers(prevActors);
         }
       } catch (e) {
         console.error('Failed to load history for reject', e);
@@ -65,29 +104,24 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
         setUsersLoading(false);
       }
     } else {
-      const roles = ACTION_ROLE_MAP[type] || [];
-      if (roles.length > 0) {
-        setUsersLoading(true);
-        try {
-          const u = await adminApi.getUsersByRole(roles);
-          setUsers(u || []);
-        } catch (e) {
-          console.error('Failed to load users', e);
-          setUsers([]);
-        } finally {
-          setUsersLoading(false);
-        }
-      } else {
-        setUsers([]);
-      }
+      setUsers([]);
     }
     setShowActionModal(true);
   };
+
+
 
   const info = allData?.information || [];
   
   // Filter only documents currently assigned to the logged-in user
   const myTasks = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id));
+
+  // Tasks already processed by me (sent/returned) but no longer in my inbox — for tracking
+  const myProcessedTasks = info.filter((item: any) =>
+    item.in_processed_by_me === true &&
+    Number(item.in_current_owner_id) !== Number(admin?.id) &&
+    !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)
+  );
 
   // Documents created by COORDINATOR that are not DRAFT (to monitor)
   const myCreatedTasks = info.filter((item: any) => 
@@ -99,6 +133,24 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
   const isSuper = admin?.role === 'SYSTEM_ADMIN' || admin?.permiss === 'superadmin';
   const systemAdminTasks = isSuper 
     ? info.filter((item: any) => item.in_workflow_status && item.in_workflow_status !== 'DRAFT')
+    : [];
+
+  // ── Acting Inbox ──────────────────────────────────────────────────────────────────────────
+  // งานที่ผู้มอบอำนาจ (assigner) เป็น current_owner — ผู้รักษาการจะมองเห็นและดำเนินการแทนได้
+  const actingAssignerIds = activeDelegations.map(d => d.assigner_id);
+  const actingTasks = actingAssignerIds.length > 0
+    ? info
+        .filter((item: any) =>
+          actingAssignerIds.includes(Number(item.in_current_owner_id)) &&
+          item.in_workflow_status && item.in_workflow_status !== 'DRAFT'
+        )
+        .map((item: any) => {
+          // หา delegation ที่ตรงกับ owner ของ item นี้
+          const matchedDelegation = activeDelegations.find(
+            d => Number(d.assigner_id) === Number(item.in_current_owner_id)
+          );
+          return { ...item, _delegationId: matchedDelegation?.delegation_id ?? null };
+        })
     : [];
 
   const handleHistory = (docId: number) => {
@@ -123,7 +175,11 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
     return <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${s.color}`}>{s.label}</span>;
   };
 
-  const renderTaskRow = (item: any, isOwner: boolean) => (
+  const renderTaskRow = (item: any, isOwner: boolean) => {
+    const isDelegating = myDelegated.length > 0;
+    const canAct = isOwner && !isDelegating;
+
+    return (
     <tr key={item.in_id} className="hover:bg-slate-50 border-b border-slate-100 transition last:border-0">
       <td className="px-6 py-4 align-top">
         <div className="font-bold text-slate-800">{item.in_num_date}</div>
@@ -146,7 +202,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
           </button>
 
           {/* Pencil edit button: shown for COORDINATOR on their own DRAFT or REJECTED items */}
-          {isOwner && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
+          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
             <button
               className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition text-xs font-semibold flex items-center gap-1"
               onClick={() => { setEditItem(item); setShowEditModal(true); }}
@@ -156,13 +212,13 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
             </button>
           )}
           
-          {isOwner && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
-            <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'submitToHr')}>
-              ส่งให้ ผอ.ศูนย์ฯ
+          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
+            <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'submitToGrpLeader')}>
+              ส่งให้ หัวหน้าฝ่าย
             </button>
           )}
 
-          {isOwner && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
+          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
             <button
               className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition text-xs font-semibold flex items-center gap-1"
               onClick={() => { setParallelDocId(item.in_id); setShowParallelModal(true); }}
@@ -172,31 +228,31 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
             </button>
           )}
 
-          {isOwner && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && (
+          {canAct && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && (
             <button className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'delegate')}>
               มอบหมาย
             </button>
           )}
 
-          {isOwner && admin?.role === 'STAFF' && (
+          {canAct && admin?.role === 'STAFF' && (
             <button className="px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'submitReview')}>
               ส่งผลการดำเนินงาน
             </button>
           )}
 
-          {isOwner && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && item.in_workflow_status === 'PENDING_REVIEW' && (
+          {canAct && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && item.in_workflow_status === 'PENDING_REVIEW' && (
             <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'approve')}>
               อนุมัติ
             </button>
           )}
 
-          {isOwner && admin?.role !== 'COORDINATOR' && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && (
+          {canAct && admin?.role !== 'COORDINATOR' && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && (
             <button className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'reject')}>
               ตีกลับ
             </button>
           )}
 
-          {isOwner && admin?.role === 'COORDINATOR' && item.in_workflow_status === 'COMPLETED' && (
+          {canAct && admin?.role === 'COORDINATOR' && item.in_workflow_status === 'COMPLETED' && (
             <button className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition text-xs font-semibold" onClick={() => {
                // In a real app, this might just acknowledge or archive the task.
                // For now we just show it's completed.
@@ -209,7 +265,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
         </div>
       </td>
     </tr>
-  );
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -280,6 +337,152 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
         </div>
       )}
 
+      {/* Processed Tasks Tracking — งานที่ดำเนินการไปแล้ว (ติดตามสถานะ) */}
+      {admin?.permiss !== 'superadmin' && myProcessedTasks.length > 0 && (
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-sky-100">
+          <div className="p-6 border-b border-sky-100 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center text-xl">
+              <i className="bx bx-send"></i>
+            </div>
+            <div>
+              <h4 className="text-lg font-bold text-slate-800 m-0 font-saochingcha">งานที่ดำเนินการแล้ว (ติดตาม)</h4>
+              <p className="text-slate-500 m-0 text-sm">งานที่คุณเคยส่งหรือตีกลับ และยังอยู่ระหว่างดำเนินการในระบบ</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-sky-50 text-xs uppercase text-sky-600 tracking-wide border-b border-sky-200">
+                <tr>
+                  <th className="px-6 py-4 font-semibold">เลขที่หนังสือ / วันที่</th>
+                  <th className="px-6 py-4 font-semibold">เรื่อง</th>
+                  <th className="px-6 py-4 font-semibold">สถานะปัจจุบัน</th>
+                  <th className="px-6 py-4 font-semibold text-right">เครื่องมือ</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {myProcessedTasks.map((item: any) => (
+                  <tr key={`processed-${item.in_id}`} className="hover:bg-sky-50/40 border-b border-sky-100 transition last:border-0">
+                    <td className="px-6 py-4 align-top">
+                      <div className="font-bold text-slate-800">{item.in_num_date}</div>
+                      <div className="text-xs text-slate-500 mt-1">{item.in_doc_date ? `ลงวันที่ ${item.in_doc_date}` : ''}</div>
+                    </td>
+                    <td className="px-6 py-4 align-top">
+                      <div className="text-slate-700 line-clamp-2 max-w-[350px]">{item.in_detail}</div>
+                    </td>
+                    <td className="px-6 py-4 align-top">
+                      {renderStatusBadge(item.in_workflow_status)}
+                    </td>
+                    <td className="px-6 py-4 align-top text-right">
+                      <button
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition text-xs font-semibold flex items-center gap-1 ml-auto"
+                        onClick={() => handleHistory(item.in_id)}
+                      >
+                        <i className="bx bx-history"></i> ประวัติ
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Acting Inbox — งานรักษาการ (amber theme) */}
+      {actingTasks.length > 0 && (
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden border-2 border-amber-200 animate__animated animate__fadeIn">
+          <div className="p-6 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl">
+                <i className="bx bx-shield-quarter"></i>
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-amber-800 m-0 font-saochingcha flex items-center gap-2">
+                  กล่องงานรักษาการ (Acting Inbox)
+                  <span className="px-2.5 py-0.5 bg-amber-500 text-white text-xs font-bold rounded-full">
+                    {actingTasks.length}
+                  </span>
+                </h4>
+                <p className="text-amber-600 m-0 text-sm">งานที่คุณรักษาการแทนผู้มอบอำนาจ</p>
+              </div>
+            </div>
+            {/* แสดง delegation badge ทั้งหมด */}
+            <div className="flex flex-wrap gap-2">
+              {activeDelegations.map(d => (
+                <span key={d.delegation_id} className="px-2.5 py-1 bg-amber-100 text-amber-700 text-[11px] font-semibold rounded-lg flex items-center gap-1">
+                  <i className="bx bx-shield-check text-sm"></i>
+                  รักษาการแทน: {d.assigner_name} ({d.delegated_role})
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="flex justify-center items-center py-20">
+                <i className="bx bx-loader-alt animate-spin text-3xl text-amber-500"></i>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-amber-50 text-xs uppercase text-amber-600 tracking-wide border-b border-amber-200">
+                  <tr>
+                    <th className="px-6 py-4 font-semibold">เลขที่หนังสือ / วันที่</th>
+                    <th className="px-6 py-4 font-semibold">เรื่อง</th>
+                    <th className="px-6 py-4 font-semibold">สถานะ</th>
+                    <th className="px-6 py-4 font-semibold text-right">เครื่องมือ</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {actingTasks.map(item => (
+                    <tr key={`acting-${item.in_id}`} className="hover:bg-amber-50/50 border-b border-amber-100 transition last:border-0">
+                      <td className="px-6 py-4 align-top">
+                        <div className="font-bold text-slate-800">{item.in_num_date}</div>
+                        <div className="text-xs text-slate-500 mt-1">{item.in_doc_date ? `ลงวันที่ ${item.in_doc_date}` : ''}</div>
+                      </td>
+                      <td className="px-6 py-4 align-top">
+                        <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
+                        <ParallelTracksPanel docId={item.in_id} isParallel={!!item.in_is_parallel} />
+                      </td>
+                      <td className="px-6 py-4 align-top">
+                        {renderStatusBadge(item.in_workflow_status)}
+                      </td>
+                      <td className="px-6 py-4 align-top text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition text-xs font-semibold flex items-center gap-1"
+                            onClick={() => handleHistory(item.in_id)}
+                          >
+                            <i className="bx bx-history"></i> ประวัติ
+                          </button>
+                          {/* ผู้รักษาการสามารถ approve (เหมือนผู้มอบอำนาจ) */}
+                          {item.in_workflow_status === 'PENDING_REVIEW' && (
+                            <button
+                              className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition text-xs font-semibold flex items-center gap-1"
+                              onClick={() => handleAction(item.in_id, 'actingApprove', item._delegationId)}
+                            >
+                              <i className="bx bx-shield-check"></i> ดำเนินการ
+                            </button>
+                          )}
+                          
+                          {/* ผู้รักษาการสามารถ reject */}
+                          {!['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && (
+                            <button
+                              className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition text-xs font-semibold flex items-center gap-1"
+                              onClick={() => handleAction(item.in_id, 'actingReject', item._delegationId)}
+                            >
+                              <i className="bx bx-undo"></i> ส่งงานกลับ
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* For System Admin: Show all active workflow tasks for monitoring */}
       {isSuper && (
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden opacity-75 hover:opacity-100 transition-opacity">
@@ -322,10 +525,15 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
       <WorkflowActionModal 
         isOpen={showActionModal}
         onClose={() => setShowActionModal(false)}
-        onSuccess={onReload}
+        onSuccess={() => {
+          setShowActionModal(false);
+          onReload();
+        }}
         actionType={actionType}
         docId={selectedDocId}
         users={users}
+        activeDelegations={activeDelegations}
+        preSelectedDelegationId={selectedTaskDelegationId}
       />
 
       <WorkflowHistoryModal

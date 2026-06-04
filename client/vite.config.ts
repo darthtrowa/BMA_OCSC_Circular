@@ -8,7 +8,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '127.0.0.1',
-    // ไม่มี proxy → app ทำงานแบบ standalone ด้วย mock data
+    proxy: {
+      '^/circular/admin/.*': {
+        target: 'http://127.0.0.1:5175',
+        changeOrigin: true
+      }
+    }
   },
   build: {
     outDir: 'dist',

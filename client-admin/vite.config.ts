@@ -7,6 +7,7 @@ export default defineConfig({
   base: '/circular/admin/',
   server: {
     port: 5175,
+    host: '127.0.0.1',
   },
   build: {
     outDir: 'dist',

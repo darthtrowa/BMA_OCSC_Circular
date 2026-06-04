@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
-import { adminApi, agencyApi } from '../../api/apiService'
+import { adminApi, agencyApi, delegationApi } from '../../api/apiService'
 import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
 import AgencyTreeSection from './AgencyTreeSection'
 import DelegationModal from './DelegationModal'
+import AssignDelegationModal from './AssignDelegationModal'
+import ManageDelegationModal from './ManageDelegationModal'
+import { useAuth } from '../../context/AuthContext'
 moment.locale('th')
 
 export default function UserSection({ permiss }) {
@@ -13,8 +16,12 @@ export default function UserSection({ permiss }) {
   const [saving, setSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
-  const [showDelegationModal, setShowDelegationModal] = useState(false)
+  
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [showManageModal, setShowManageModal] = useState(false)
+  
   const [actingUser, setActingUser] = useState<any>(null)
+  const [assignerUser, setAssignerUser] = useState<any>(null)
 
   const [formData, setFormData] = useState({
     a_name: '',
@@ -180,6 +187,30 @@ export default function UserSection({ permiss }) {
     })
   }
 
+  const handleRevokeDelegation = (delegationId: number) => {
+    Swal.fire({
+      title: 'ยืนยันการลบ?',
+      text: 'ต้องการลบการเป็นรักษาการนี้ใช่หรือไม่?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ใช่, ลบเลย!',
+      cancelButtonText: 'ยกเลิก'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await delegationApi.remove(delegationId)
+          Swal.fire('สำเร็จ!', 'ลบการเป็นรักษาการเรียบร้อยแล้ว', 'success')
+          loadUsers()
+        } catch (err: any) {
+          console.error(err)
+          Swal.fire('Error', err.response?.data?.message || err.message || 'ไม่สามารถลบข้อมูลได้', 'error')
+        }
+      }
+    })
+  }
+
   return (
     <div className="bg-white rounded-3xl shadow-sm mb-8 overflow-hidden animate__animated animate__fadeIn">
       <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -228,6 +259,11 @@ export default function UserSection({ permiss }) {
                   <td className="px-6 py-4">
                     <span className="font-semibold text-slate-800">{u.a_name}</span>
                     <div className="text-[11px] text-slate-400 mt-0.5">{u.a_position || 'ไม่ระบุตำแหน่ง'}</div>
+                    {u.active_delegation_id && (
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-violet-600 bg-violet-50 px-2 py-0.5 rounded-md w-fit border border-violet-100">
+                        <i className='bx bx-user-pin'></i> รักษาการโดย: {u.active_assignee_name}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-slate-600">{u.a_agency || <span className="text-slate-400">-</span>}</td>
                   <td className="px-6 py-4">
@@ -268,14 +304,24 @@ export default function UserSection({ permiss }) {
                       >
                         <i className='bx bx-edit-alt text-lg'></i>
                       </button>
-                      {/* ปุ่มแต่งตั้งรักษาการ — เฉพาะ SUPERADMIN */}
-                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && (
+                      {/* ปุ่มแต่งตั้งให้คนอื่นมารักษาการ (Assignee-centric) */}
+                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && !['DIV_DIRECTOR', 'HR_DIRECTOR'].includes(u.a_role) && (
+                        <button
+                          className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition flex items-center justify-center"
+                          title="แต่งตั้งให้ไปรักษาการ..."
+                          onClick={() => { setActingUser(u); setShowAssignModal(true); }}
+                        >
+                          <i className='bx bx-user-plus text-lg'></i>
+                        </button>
+                      )}
+                      {/* ปุ่มจัดการผู้รักษาการแทน (Assigner-centric) */}
+                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && !['COORDINATOR', 'STAFF'].includes(u.a_role) && (
                         <button
                           className="w-8 h-8 rounded-full bg-violet-50 text-violet-600 hover:bg-violet-100 transition flex items-center justify-center"
-                          title="แต่งตั้งผู้รักษาการ"
-                          onClick={() => { setActingUser(u); setShowDelegationModal(true); }}
+                          title="จัดการลำดับ/ลบผู้รักษาการแทน"
+                          onClick={() => { setAssignerUser(u); setShowManageModal(true); }}
                         >
-                          <i className='bx bx-shield-plus text-lg'></i>
+                          <i className='bx bx-list-ol text-lg'></i>
                         </button>
                       )}
                       {u.a_permiss !== 'superadmin' && (
@@ -478,12 +524,24 @@ export default function UserSection({ permiss }) {
         </div>
       )}
 
-      {/* DelegationModal — แต่งตั้งผู้รักษาการ */}
-      <DelegationModal
-        isOpen={showDelegationModal}
-        onClose={() => { setShowDelegationModal(false); setActingUser(null); }}
-        onSuccess={() => { setShowDelegationModal(false); setActingUser(null); }}
+      {/* AssignDelegationModal — แต่งตั้งให้ไปรักษาการ */}
+      <AssignDelegationModal
+        isOpen={showAssignModal}
+        onClose={() => { setShowAssignModal(false); setActingUser(null); }}
+        onSuccess={() => { 
+          loadUsers(); 
+        }}
         assigneeUser={actingUser}
+      />
+
+      {/* ManageDelegationModal — จัดการลำดับ/ลบผู้รักษาการแทน */}
+      <ManageDelegationModal
+        isOpen={showManageModal}
+        onClose={() => { setShowManageModal(false); setAssignerUser(null); }}
+        onSuccess={() => { 
+          loadUsers(); 
+        }}
+        assignerUser={assignerUser}
       />
     </div>
   )

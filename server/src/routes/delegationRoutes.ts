@@ -47,7 +47,6 @@ function isOneLevelBelow(assignerRole: AdminRole, assigneeRole: AdminRole): bool
 const assignSchema = z.object({
   assigner_id:  z.number({ required_error: 'ต้องระบุ assigner_id' }).int().positive(),
   assignee_id:  z.number({ required_error: 'ต้องระบุ assignee_id' }).int().positive(),
-  order_number: z.string({ required_error: 'ต้องระบุเลขที่คำสั่ง' }).min(1, 'เลขที่คำสั่งต้องไม่ว่าง'),
   notes:        z.string().optional(),
 });
 
@@ -58,10 +57,14 @@ const assignSchema = z.object({
 router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
   const parsed = assignSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ status: false, message: 'ข้อมูลไม่ถูกต้อง', errors: parsed.error.format() });
+    const details = Object.entries(parsed.error.format())
+      .filter(([k]) => k !== '_errors')
+      .map(([k, v]: [string, any]) => `${k}: ${v?._errors?.join(', ')}`)
+      .join(' | ');
+    return res.status(400).json({ status: false, message: `ข้อมูลไม่ถูกต้อง: ${details}`, errors: parsed.error.format() });
   }
 
-  const { assigner_id, assignee_id, order_number, notes } = parsed.data;
+  const { assigner_id, assignee_id, notes } = parsed.data;
 
   if (assigner_id === assignee_id) {
     return res.status(400).json(err('ผู้มอบอำนาจและผู้รับมอบอำนาจต้องไม่ใช่บุคคลเดียวกัน'));
@@ -70,7 +73,10 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
   try {
     // ดึง role ของทั้งสองคน
     const { rows: admins } = await db.query(
-      `SELECT a_id, a_name, a_role FROM admin WHERE a_id = ANY($1::int[]) AND a_status = '1'`,
+      `SELECT a.a_id, a.a_name, a.a_role, a.a_agency_id, ag.parent_ag_id 
+       FROM admin a 
+       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+       WHERE a.a_id = ANY($1::int[]) AND a.a_status = '1'`,
       [[assigner_id, assignee_id]]
     );
 
@@ -82,25 +88,50 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
     if (!assigner.a_role) return res.status(400).json(err(`ผู้มอบอำนาจ (${assigner.a_name}) ยังไม่มีบทบาทในสายงาน`));
     if (!assignee.a_role) return res.status(400).json(err(`ผู้รับมอบอำนาจ (${assignee.a_name}) ยังไม่มีบทบาทในสายงาน`));
 
-    // ── Rule: Assignee ต้องต่ำกว่า Assigner พอดี 1 ระดับ ──────────────────
-    if (!isOneLevelBelow(assigner.a_role as AdminRole, assignee.a_role as AdminRole)) {
-      const aLevel = ROLE_HIERARCHY[assigner.a_role as AdminRole];
-      const bLevel = ROLE_HIERARCHY[assignee.a_role as AdminRole];
-      return res.status(400).json(err(
-        `ผู้รักษาการต้องมีระดับต่ำกว่าผู้มอบอำนาจพอดี 1 ระดับ ` +
-        `(${assigner.a_role} = ระดับ ${aLevel}, ${assignee.a_role} = ระดับ ${bLevel})`
-      ));
+    // ห้าม DIV_DIRECTOR, HR_DIRECTOR เป็นผู้รับมอบอำนาจ (Assignee)
+    if (['DIV_DIRECTOR', 'HR_DIRECTOR'].includes(assignee.a_role)) {
+      return res.status(400).json(err(`ไม่สามารถแต่งตั้งให้ ${assignee.a_role} เป็นผู้รับมอบอำนาจเพื่อรักษาการแทนได้`));
+    }
+
+    // ── Rule: ตรวจสอบระดับจากโครงสร้างส่วนราชการ ──────────────────
+    if (['STAFF', 'COORDINATOR'].includes(assignee.a_role)) {
+      if (assigner.a_role !== 'GRP_LEADER' || assigner.a_agency_id !== assignee.a_agency_id) {
+        return res.status(400).json(err('สำหรับระดับปฏิบัติการ ต้องเลือกผู้รักษาการเป็นหัวหน้าฝ่าย (GRP_LEADER) ในสังกัดเดียวกันเท่านั้น'));
+      }
+    } else {
+      if (assignee.parent_ag_id) {
+        if (assigner.a_agency_id !== assignee.parent_ag_id && assigner.a_role !== 'SUPERADMIN') {
+          return res.status(400).json(err('ต้องเลือกผู้รักษาการที่อยู่ในสังกัดระดับเหนือขึ้นไป 1 ระดับ (ตามโครงสร้างส่วนราชการ) เท่านั้น'));
+        }
+      }
+    }
+
+    // ── Rule: ห้ามแต่งตั้งซ้ำซ้อน ──────────────────
+    // 1. ตรวจสอบว่า assignee_id กำลังรักษาการให้ assigner_id นี้อยู่แล้วหรือไม่
+    const { rows: duplicateCheck } = await db.query(
+      `SELECT delegation_id FROM c_workflow_delegations WHERE assigner_id = $1 AND assignee_id = $2 AND is_active = TRUE`,
+      [assigner_id, assignee_id]
+    );
+    if (duplicateCheck.length > 0) {
+      return res.status(400).json(err(`ผู้ใช้งานนี้กำลังรักษาการแทน ${assigner.a_name} อยู่แล้ว`));
     }
 
     // delegated_role = assigner.a_role (ผู้รักษาการจะทำหน้าที่ในตำแหน่งของ assigner)
     const delegated_role = assigner.a_role;
 
+    // ── Rule: กำหนดลำดับรักษาการ (delegation_order) ถัดไป ──────────────────
+    const { rows: orderCheck } = await db.query(
+      `SELECT COALESCE(MAX(delegation_order), 0) + 1 AS next_order FROM c_workflow_delegations WHERE assigner_id = $1 AND is_active = TRUE`,
+      [assigner_id]
+    );
+    const next_order = orderCheck[0].next_order;
+
     const { rows: [inserted] } = await db.query(
       `INSERT INTO c_workflow_delegations
-         (assigner_id, assignee_id, delegated_role, order_number, is_active, created_by, notes, created_at, updated_at)
+         (assigner_id, assignee_id, delegated_role, delegation_order, is_active, created_by, notes, created_at, updated_at)
        VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW(), NOW())
        RETURNING delegation_id`,
-      [assigner_id, assignee_id, delegated_role, order_number, req.admin!.id, notes || null]
+      [assigner_id, assignee_id, delegated_role, next_order, req.admin!.id, notes || null]
     );
 
     recordAuditLog({
@@ -109,7 +140,7 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
       action:         'DELEGATION_ASSIGN',
       targetResource: 'delegations',
       targetId:       String(inserted.delegation_id),
-      payload:        { assigner_id, assignee_id, delegated_role, order_number },
+      payload:        { assigner_id, assignee_id, delegated_role },
       ipAddress:      (req.ip as string) || null,
       userAgent:      (req.headers['user-agent'] as string) || null,
     });
@@ -128,6 +159,70 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/delegations/assigner/:id
+// ดึงรายการรักษาการทั้งหมดของเจ้าของตำแหน่งที่ระบุ
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/assigner/:id', requireAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
+  const assigner_id = parseInt(String(req.params.id), 10);
+  if (isNaN(assigner_id)) return res.status(400).json(err('assigner_id ไม่ถูกต้อง'));
+
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        d.delegation_id,
+        d.delegation_order,
+        d.is_active,
+        assignee.a_id       AS assignee_id,
+        assignee.a_name     AS assignee_name,
+        assignee.a_role     AS assignee_role,
+        assignee.a_position AS assignee_position
+      FROM   c_workflow_delegations d
+      JOIN   admin assignee ON assignee.a_id = d.assignee_id
+      WHERE  d.assigner_id = $1 AND d.is_active = TRUE
+      ORDER BY d.delegation_order ASC, d.created_at ASC
+    `, [assigner_id]);
+    
+    return res.json(ok(rows));
+  } catch (e: any) {
+    console.error('[DelegationRoutes] getByAssigner error:', e.message);
+    return res.status(500).json(err('ไม่สามารถโหลดข้อมูลรักษาการได้'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/admin/delegations/reorder
+// จัดลำดับผู้รักษาการใหม่
+// ─────────────────────────────────────────────────────────────────────────────
+router.put('/reorder', requireAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
+  const { delegation_ids } = req.body;
+  
+  if (!Array.isArray(delegation_ids)) {
+    return res.status(400).json(err('รูปแบบข้อมูลไม่ถูกต้อง (ต้องเป็น array ของ delegation_id)'));
+  }
+
+  try {
+    await db.query('BEGIN');
+    
+    for (let i = 0; i < delegation_ids.length; i++) {
+      const del_id = parseInt(delegation_ids[i], 10);
+      if (!isNaN(del_id)) {
+        await db.query(
+          'UPDATE c_workflow_delegations SET delegation_order = $1, updated_at = NOW() WHERE delegation_id = $2',
+          [i + 1, del_id]
+        );
+      }
+    }
+    
+    await db.query('COMMIT');
+    return res.json(ok(null, 'บันทึกลำดับรักษาการเรียบร้อยแล้ว'));
+  } catch (e: any) {
+    await db.query('ROLLBACK');
+    console.error('[DelegationRoutes] reorder error:', e.message);
+    return res.status(500).json(err('ไม่สามารถบันทึกลำดับใหม่ได้'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/delegations
 // ดึงรายการ delegation ทั้งหมด (สำหรับ Management UI — SUPERADMIN)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,7 +231,6 @@ router.get('/', requireSuperAdmin, async (_req: AdminRequest, res: Response): Pr
     const { rows } = await db.query(`
       SELECT
         d.delegation_id,
-        d.order_number,
         d.delegated_role,
         d.is_active,
         d.notes,
@@ -173,7 +267,6 @@ router.get('/my-active', requireAdmin, async (req: AdminRequest, res: Response):
     const { rows } = await db.query(`
       SELECT
         d.delegation_id,
-        d.order_number,
         d.delegated_role,
         d.notes,
         assigner.a_id       AS assigner_id,
@@ -191,6 +284,65 @@ router.get('/my-active', requireAdmin, async (req: AdminRequest, res: Response):
   } catch (e: any) {
     console.error('[DelegationRoutes] myActive error:', e.message);
     return res.status(500).json(err('โหลดข้อมูล delegation ไม่สำเร็จ'));
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/delegations/active-by-role/:role
+// ดึง delegation ที่ active สำหรับ role ที่กำหนด (ใช้ใน Workflow Builder)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/active-by-role/:role', requireAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
+  const role = req.params.role;
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        d.delegation_id,
+        d.delegated_role,
+        d.notes,
+        assignee.a_id       AS assignee_id,
+        assignee.a_name     AS assignee_name,
+        assignee.a_role     AS assignee_role,
+        assigner.a_id       AS assigner_id,
+        assigner.a_name     AS assigner_name,
+        assigner.a_role     AS assigner_role
+      FROM   c_workflow_delegations d
+      JOIN   admin assignee ON assignee.a_id = d.assignee_id
+      JOIN   admin assigner ON assigner.a_id = d.assigner_id
+      WHERE  d.delegated_role = $1
+        AND  d.is_active = TRUE
+      ORDER BY d.created_at DESC
+    `, [role]);
+    return res.json(ok(rows));
+  } catch (e: any) {
+    console.error('[DelegationRoutes] activeByRole error:', e.message);
+    return res.status(500).json(err('โหลดข้อมูล delegation ไม่สำเร็จ'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/delegations/my-delegated
+// ดึง delegation ที่ user ที่ login อยู่เป็นผู้มอบอำนาจ (Assigner)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/my-delegated', requireAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        d.delegation_id,
+        d.delegated_role,
+        d.notes,
+        assignee.a_id       AS assignee_id,
+        assignee.a_name     AS assignee_name,
+        assignee.a_role     AS assignee_role,
+        assignee.a_position AS assignee_position
+      FROM   c_workflow_delegations d
+      JOIN   admin assignee ON assignee.a_id = d.assignee_id
+      WHERE  d.assigner_id = $1
+        AND  d.is_active = TRUE
+      ORDER BY d.created_at DESC
+    `, [req.admin!.id]);
+    return res.json(ok(rows));
+  } catch (e: any) {
+    console.error('[DelegationRoutes] getMyDelegated error:', e.message);
+    return res.status(500).json(err('โหลดข้อมูล delegation ของคุณไม่สำเร็จ'));
   }
 });
 
@@ -233,6 +385,39 @@ router.patch('/:id/toggle', requireSuperAdmin, async (req: AdminRequest, res: Re
   } catch (e: any) {
     console.error('[DelegationRoutes] toggle error:', e.message);
     return res.status(500).json(err('ไม่สามารถเปลี่ยนสถานะ delegation ได้'));
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/admin/delegations/:id
+// ลบรายการ delegation ถาวร (SUPERADMIN only)
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', requireSuperAdmin, async (req: AdminRequest, res: Response): Promise<any> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) return res.status(400).json(err('delegation_id ไม่ถูกต้อง'));
+
+  try {
+    const { rowCount } = await db.query(
+      'DELETE FROM c_workflow_delegations WHERE delegation_id = $1', [id]
+    );
+
+    if (rowCount === 0) return res.status(404).json(err('ไม่พบข้อมูล delegation'));
+
+    recordAuditLog({
+      userId:         req.admin!.id,
+      userName:       req.admin!.name,
+      action:         'DELEGATION_DELETE',
+      targetResource: 'delegations',
+      targetId:       String(id),
+      payload:        null,
+      ipAddress:      (req.ip as string) || null,
+      userAgent:      (req.headers['user-agent'] as string) || null,
+    });
+
+    return res.json(ok(null, 'ลบการเป็นรักษาการเรียบร้อยแล้ว'));
+  } catch (e: any) {
+    console.error('[DelegationRoutes] delete error:', e.message);
+    return res.status(500).json(err('ไม่สามารถลบข้อมูล delegation ได้'));
   }
 });
 

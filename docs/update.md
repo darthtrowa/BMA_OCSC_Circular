@@ -1,5 +1,44 @@
 # Project Update Log
 
+## [1.3.1] - 2026-06-04
+
+### Feature: Workflow Builder Acting Delegation Integration
+
+#### 🎨 Frontend Changes
+- **WorkflowBuilder.tsx**: Integrated "Situational Awareness" UI for Acting Roles. When a user clicks a node assigned to a `ROLE` (e.g. `HR_DIRECTOR`), the right sidebar fetches and displays a real-time list of personnel currently acting in that role.
+- **WorkflowBuilder.tsx**: Added a shortcut button "ตั้งค่า ➕" that links directly to `/circular/admin/dashboard/users` for seamless delegation management without breaking the Template workflow.
+- **workflowEngineApi.ts**: Added `getActiveDelegationsByRole` method to fetch active acting personnel.
+
+#### ⚙️ Backend Changes
+- **delegationRoutes.ts**: Created `GET /api/admin/delegations/active-by-role/:role` endpoint to fetch active delegations filtered by `delegated_role`.
+- **Build & PM2**: Re-compiled TS backend (`npm run build`) and restarted PM2 instance (`circular-api`) to apply route changes.
+
+## [1.3.0] - 2026-06-04
+
+### Feature: Dynamic Workflow Engine Implementation & Architecture
+
+#### 🗄️ Database Changes
+- **Migration Script**: Altered `c_workflow_inbox` via `ALTER TABLE ADD COLUMN IF NOT EXISTS` to safely migrate the existing legacy table without losing data.
+- **Workflow Engine Schema**: Added and ensured tables for `workflow_templates`, `workflow_nodes`, and `workflow_edges` for a dynamic node-based approval engine.
+- **Template Seeding**: Created and executed `seed_workflow.cjs` to seed the default "OCSC Circular Workflow (Standard)" template (U-Shape flow with 10 steps).
+
+#### ⚙️ Backend Changes
+- **workflowTemplateRoutes.ts**: Implemented full REST API CRUD for managing workflow templates, nodes, and edges (`/api/admin/workflows/templates`).
+- **Circular Approval Endpoint**: Created `/api/admin/workflows/circular/approve` supporting both `SELF` and `ACTING` contexts, safely verifying active delegations.
+- **index.ts**: Mounted the new `workflowTemplateRoutes` under `/api/admin/workflows`.
+- **Build & PM2**: Successfully built the TypeScript backend (`npm run build`) and restarted the `circular-api` PM2 instance to register the new routes.
+
+#### 🎨 Frontend Changes
+- **WorkflowBuilderPage.tsx**: Connected the Workflow Builder React Flow UI to the new backend API endpoints (`listTemplates`, `createTemplate`, etc.).
+- **Error Handling**: Enhanced `loadTemplates` function to explicitly catch and display loading errors in the UI, replacing silent failures.
+- **Vite Configuration**: Updated proxy configuration in `client/vite.config.ts` to correctly route `/circular/admin/.*` to `http://127.0.0.1:5175`.
+- **IPv4 Binding**: Enforced `host: '127.0.0.1'` inside `client-admin/vite.config.ts` to fix IPv4/IPv6 mismatches causing `ECONNREFUSED` 500 HTTP Proxy Errors.
+
+#### ✅ Verification
+- React Frontend (Admin & Client) build: **Passed**
+- API Endpoints: Verified 401 Unauthorized returns correctly when accessed without token.
+- PM2 Status: **circular-api restarted and fully online.**
+
 ## [1.2.3] - 2026-05-27
 
 ### Bug Fix: Resolved 'err' is of type 'unknown' in test_login.ts
@@ -1229,8 +1268,34 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 #### ✅ Verification
 - Production build: **Passed with 0 errors**
 
+## [1.1.58] - 2026-06-03
 
+### Build & Deploy: Production Compile and PM2 Local Deployment
 
+#### ⚙️ Build Process
+- Compiled backend Express/TypeScript API in `server` (`npm run build` -> `server/dist`).
+- Built the React frontend applications:
+  - Main unified frontend in `client` (`npm run build` -> `client/dist`).
+  - Split admin frontend in `client-admin` (`npm run build` -> `client-admin/dist`).
+  - Split public frontend in `client-public` (`npm run build` -> `client-public/dist`).
 
+#### 🚀 Deployment
+- Started all local dev services using PM2 via `powershell -ExecutionPolicy Bypass -File .\start-circular.ps1`.
+- Verified API service is healthy and online at `http://localhost:3000/health`.
+- Verified Frontend service is online and serving at `http://127.0.0.1:5173/circular/` (mapped to port 80 proxy).
 
+## [1.1.59] - 2026-06-03
+
+### Feature & Sync: Unified Client Delegation (Acting/Interim) Feature Integration
+
+#### 🎨 Frontend Changes
+- **apiService.ts**: Added `delegationApi` helper endpoints and updated `workflowApi.approve` signature.
+- **DelegationModal.tsx** [NEW]: Copied the acting appointment modal component from `client-admin` to `client`.
+- **UserSection.tsx**: Added the purple shield button (`bx-shield-plus`) to allow Superadmins to appoint an acting officer.
+- **WorkflowActionModal.tsx**: Added signature context selection (`SELF` or `ACTING`) when signing documents.
+- **WorkflowInboxSection.tsx**: Added the "กล่องงานรักษาการ (Acting Inbox)" container to display acting tasks and enable approval in acting capacity.
+
+#### ✅ Verification
+- Checked that `client` compiles and builds successfully via Vite with 0 errors.
+- Restarted PM2 services.
 
