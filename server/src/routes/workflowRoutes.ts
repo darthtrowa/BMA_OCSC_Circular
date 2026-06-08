@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { requireAdmin, requireRole, AdminRequest } from '../middleware/auth.js';
 import { WorkflowService } from '../services/workflowService.js';
 import { ParallelWorkflowService } from '../services/parallelWorkflowService.js';
+import { DynamicWorkflowService } from '../services/dynamicWorkflowService.js';
 import { z } from 'zod';
 import db from '../config/database.js';
 import { recordAuditLog } from '../utils/auditLogger.js';
@@ -16,32 +17,9 @@ export const StartWorkflowSchema = z.object({
   docId: z.number(),
 });
 
-const submitToHrSchema = z.object({
-  docId: z.number(),
-  hrDirectorId: z.number(),
-  comments: z.string().optional().default(''),
-});
-
-const submitToGrpLeaderSchema = z.object({
-  docId: z.number(),
-  grpLeaderId: z.number(),
-  comments: z.string().optional().default(''),
-});
-
-const delegateSchema = z.object({
-  docId: z.number(),
-  toUserId: z.number(),
-  comments: z.string().optional().default(''),
-});
-
-const submitReviewSchema = z.object({
-  docId: z.number(),
-  comments: z.string().optional().default(''),
-});
-
-const approveSchema = z.object({
+export const forwardSchema = z.object({
   docId: z.number().int().positive(),
-  nextOwnerId: z.number().int().positive(),
+  toUserId: z.number().int().positive(),
   comments: z.string().optional().default(''),
   approval_context: z.enum(['SELF', 'ACTING']).optional().default('SELF'),
   delegation_id: z.number().int().positive().optional(),
@@ -77,92 +55,14 @@ router.post(
 );
 
 /**
- * 1. COORDINATOR submits to HR_DIRECTOR (Legacy)
+ * Forward a document (Rank-based routing)
  */
 router.post(
-  '/submit-to-hr',
-  requireRole(['COORDINATOR']),
-  async (req: AdminRequest, res: Response): Promise<any> => {
-    try {
-      const { docId, hrDirectorId, comments } = submitToHrSchema.parse(req.body);
-      const coordinatorId = req.admin!.id;
-
-      await WorkflowService.submitToHR(docId, coordinatorId, hrDirectorId, comments);
-      return res.json({ success: true, message: 'Submitted to HR Director successfully' });
-    } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-  }
-);
-
-/**
- * 1b. COORDINATOR submits to GRP_LEADER
- */
-router.post(
-  '/submit-to-grp-leader',
-  requireRole(['COORDINATOR']),
-  async (req: AdminRequest, res: Response): Promise<any> => {
-    try {
-      const { docId, grpLeaderId, comments } = submitToGrpLeaderSchema.parse(req.body);
-      const coordinatorId = req.admin!.id;
-
-      await WorkflowService.submitToGrpLeader(docId, coordinatorId, grpLeaderId, comments);
-      return res.json({ success: true, message: 'Submitted to Group Leader successfully' });
-    } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-  }
-);
-
-/**
- * 2. Delegate downwards (HR -> DIV -> SEC -> GRP -> STAFF)
- */
-router.post(
-  '/delegate',
-  requireRole(['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER']),
-  async (req: AdminRequest, res: Response): Promise<any> => {
-    try {
-      const { docId, toUserId, comments } = delegateSchema.parse(req.body);
-      const fromUserId = req.admin!.id;
-
-      await WorkflowService.delegate(docId, fromUserId, toUserId, comments);
-      return res.json({ success: true, message: 'Delegated successfully' });
-    } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-  }
-);
-
-/**
- * 3. STAFF submits review results up to GRP_LEADER
- */
-router.post(
-  '/submit-review',
-  requireRole(['STAFF']),
-  async (req: AdminRequest, res: Response): Promise<any> => {
-    try {
-      const { docId, comments } = submitReviewSchema.parse(req.body);
-      const staffId = req.admin!.id;
-
-      await WorkflowService.submitReview(docId, staffId, comments);
-      return res.json({ success: true, message: 'Review submitted successfully' });
-    } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-  }
-);
-
-/**
- * 4. Approve review (moves up the chain)
- * รองรับ approval_context: 'SELF' | 'ACTING'
- * เมื่อ ACTING: ตรวจสอบ c_workflow_delegations ก่อน แล้วบันทึก context ลง audit_logs
- */
-router.post(
-  '/approve',
+  '/forward',
   requireAdmin,
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, nextOwnerId, comments, approval_context, delegation_id } = approveSchema.parse(req.body);
+      const { docId, toUserId, comments, approval_context, delegation_id } = forwardSchema.parse(req.body);
       const reviewerId = req.admin!.id;
 
       // ── ACTING context: ตรวจสอบ delegation ก่อน ──────────────────────────
@@ -186,25 +86,29 @@ router.post(
         resolvedDelegationId = delRows[0].delegation_id;
       }
 
-      // ── ดำเนินการ approve ──────────────────────────────────────────────
-      await WorkflowService.approve(docId, reviewerId, nextOwnerId, comments, resolvedDelegationId);
-
+      await WorkflowService.forward(
+        docId, 
+        reviewerId, 
+        toUserId, 
+        comments, 
+        resolvedDelegationId
+      );
+      
       // ── บันทึก audit log พร้อม delegation context ─────────────────────
       recordAuditLog({
         userId:           reviewerId,
         userName:         req.admin!.name,
-        action:           'WORKFLOW_APPROVE',
+        action:           'WORKFLOW_FORWARD',
         targetResource:   'workflow',
         targetId:         String(docId),
-        payload:          { docId, comments, approval_context },
+        payload:          { docId, toUserId, comments, approval_context },
         ipAddress:        (req.ip as string) || null,
         userAgent:        (req.headers['user-agent'] as string) || null,
         isActing:         approval_context === 'ACTING',
-        approval_context: approval_context,
-        delegation_id:    resolvedDelegationId,
+        delegation_id:    resolvedDelegationId || undefined
       });
 
-      return res.json({ success: true, message: 'Approved successfully' });
+      return res.json({ success: true, message: 'Document forwarded successfully' });
     } catch (error: any) {
       return res.status(400).json({ success: false, message: error.message });
     }
@@ -246,7 +150,13 @@ router.post(
         resolvedDelegationId = delRows[0].delegation_id;
       }
 
-      await WorkflowService.reject(docId, reviewerId, rejectToUserId, comments, resolvedDelegationId);
+      await WorkflowService.reject(
+        docId,
+        reviewerId,
+        rejectToUserId!,
+        comments,
+        resolvedDelegationId
+      );
 
       // ── บันทึก audit log พร้อม delegation context ─────────────────────
       recordAuditLog({
@@ -289,24 +199,90 @@ router.get(
 );
 
 // ─────────────────────────────────────────────────────────────
+// DYNAMIC WORKFLOW ENDPOINTS
+// ─────────────────────────────────────────────────────────────
+
+router.get(
+  '/:docId/next-assignees',
+  requireAdmin,
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const docId = parseInt(req.params.docId as string, 10);
+      if (isNaN(docId)) return res.status(400).json({ success: false, message: 'Invalid docId' });
+
+      const context = req.query.context as string || 'SELF';
+      const delegationIdStr = req.query.delegationId as string;
+      const delegationId = delegationIdStr ? parseInt(delegationIdStr, 10) : undefined;
+      
+      const assignees = await WorkflowService.getNextAssignees(
+        req.admin!.id, 
+        context === 'ACTING' && delegationId ? delegationId : undefined
+      );
+
+      return res.json({ success: true, data: assignees });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
+router.post(
+  '/dynamic-approve',
+  requireAdmin,
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const { docId, nextNodeId, nextOwnerId, comments, delegation_id, paId } = req.body;
+      const reviewerId = req.admin!.id;
+
+      await DynamicWorkflowService.approve(docId, reviewerId, nextNodeId, nextOwnerId, comments || '', delegation_id, paId);
+      return res.json({ success: true, message: 'ดำเนินการสำเร็จ' });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
+/**
+ * POST /api/admin/workflow/close
+ * COORDINATOR ปิดงานพิจารณาหนังสือเวียน
+ */
+router.post(
+  '/close',
+  requireRole(['COORDINATOR']),
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const { docId } = z.object({ docId: z.number() }).parse(req.body);
+      const coordinatorId = req.admin!.id;
+      await WorkflowService.closeWorkflow(docId, coordinatorId, '');
+      return res.json({ success: true, message: 'ปิดงานสำเร็จ' });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
 // PARALLEL WORKFLOW ENDPOINTS
 // ─────────────────────────────────────────────────────────────
 
 /**
  * POST /api/admin/workflow/parallel-assign
- * COORDINATOR มอบให้หลาย Track พร้อมกัน
+ * COORDINATOR/HR_DIRECTOR มอบให้หลาย Track พร้อมกัน
  */
 router.post(
   '/parallel-assign',
   requireRole(['COORDINATOR']),
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, hrDirectorId, tracks, comments } = req.body;
-      if (!docId || !hrDirectorId || !Array.isArray(tracks) || tracks.length === 0) {
-        return res.status(400).json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' });
+      const { docId, tracks } = req.body;
+      if (!docId || !Array.isArray(tracks) || tracks.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `ข้อมูลไม่ครบถ้วน: docId=${docId}, tracks_is_array=${Array.isArray(tracks)}, tracks_length=${tracks?.length}` 
+        });
       }
       const coordinatorId = req.admin!.id;
-      const result = await ParallelWorkflowService.assignParallel(docId, coordinatorId, hrDirectorId, tracks, comments || '');
+      const result = await ParallelWorkflowService.assignParallel(docId, coordinatorId, tracks);
       return res.json({ success: true, message: `มอบหมายสำเร็จ (${tracks.length} Track)`, data: result });
     } catch (error: any) {
       return res.status(400).json({ success: false, message: error.message });

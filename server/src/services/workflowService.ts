@@ -29,236 +29,156 @@ export class WorkflowService {
     }
   }
 
-  /**
-   * Starts the workflow by submitting a document from COORDINATOR to HR_DIRECTOR
-   */
-  static async submitToHR(docId: number, coordinatorId: number, hrDirectorId: number, comments: string) {
-    const client = await db.connect();
-    try {
-      await client.query('BEGIN');
-      
-      // Update document
-      await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = 'PENDING_HR_APPROVAL', 
-             in_current_owner_id = $1 
-         WHERE in_id = $2 AND (in_workflow_status = 'DRAFT' OR in_workflow_status IS NULL OR in_workflow_status = 'REJECTED')`,
-        [hrDirectorId, docId]
-      );
+    private static getNextStatus(fromRole: string, toRole: string): WorkflowStatus {
+    if (toRole === "COORDINATOR") return "PENDING_CLOSE";
+    if (toRole === "STAFF") return "PENDING_EXECUTION";
+    
+    const roleRank: Record<string, number> = {
+      "STAFF": 1,
+      "GRP_LEADER": 2,
+      "SEC_DIRECTOR": 3,
+      "DIV_DIRECTOR": 4,
+      "HR_DIRECTOR": 4,
+      "COORDINATOR": 0
+    };
 
-      // Record history
-      await this.addHistory(client, docId, coordinatorId, hrDirectorId, 'SUBMITTED', comments);
+    const fromRank = roleRank[fromRole] || 0;
+    const toRank = roleRank[toRole] || 0;
 
-      await client.query('COMMIT');
-      return { success: true };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    if (fromRank > toRank) {
+      return "PENDING_DELEGATION";
+    } else {
+      if (toRole === "GRP_LEADER") return "PENDING_GRP_REVIEW";
+      if (toRole === "SEC_DIRECTOR") return "PENDING_SEC_APPROVAL";
+      if (toRole === "HR_DIRECTOR") return "PENDING_HR_APPROVAL";
+      if (toRole === "DIV_DIRECTOR") return "PENDING_DIRECTOR_APPROVAL";
+      return "PENDING_GRP_REVIEW";
     }
   }
 
-  /**
-   * Starts the workflow by submitting a document from COORDINATOR to GRP_LEADER
-   */
-  static async submitToGrpLeader(docId: number, coordinatorId: number, grpLeaderId: number, comments: string) {
+  static async forward(docId: number, fromUserId: number, toUserId: number, comments: string, fromDelegationId?: number | null) {
+    const db = await import("../config/database.js").then(m => m.default);
     const client = await db.connect();
     try {
-      await client.query('BEGIN');
-      
-      // Update document
-      await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = 'PENDING_REVIEW', 
-             in_current_owner_id = $1 
-         WHERE in_id = $2 AND (in_workflow_status = 'DRAFT' OR in_workflow_status IS NULL OR in_workflow_status = 'REJECTED')`,
-        [grpLeaderId, docId]
-      );
+      await client.query("BEGIN");
 
-      // Record history
-      await this.addHistory(client, docId, coordinatorId, grpLeaderId, 'SUBMITTED', comments);
-
-      await client.query('COMMIT');
-      return { success: true };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Delegate a document downwards (e.g., HR -> DIV, DIV -> SEC/GRP, GRP -> STAFF)
-   */
-  static async delegate(docId: number, fromUserId: number, toUserId: number, comments: string) {
-    const client = await db.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Check the role of the target user to determine status
-      const userRes = await client.query('SELECT a_role FROM admin WHERE a_id = $1', [toUserId]);
-      if (userRes.rows.length === 0) throw new Error('Target user not found');
-      
-      const targetRole = userRes.rows[0].a_role;
-      const newStatus: WorkflowStatus = targetRole === 'STAFF' ? 'PENDING_EXECUTION' : 'PENDING_DELEGATION';
-
-      // Update document
-      await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = $1, 
-             in_current_owner_id = $2 
-         WHERE in_id = $3 AND in_current_owner_id = $4`,
-        [newStatus, toUserId, docId, fromUserId]
-      );
-
-      // Record history
-      await this.addHistory(client, docId, fromUserId, toUserId, 'DELEGATED', comments);
-
-      await client.query('COMMIT');
-      return { success: true };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * STAFF submits review results back to their manager
-   */
-  static async submitReview(docId: number, staffId: number, comments: string) {
-    const client = await db.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Find staff's parent (manager)
-      const userRes = await client.query('SELECT a_parent_id FROM admin WHERE a_id = $1', [staffId]);
-      if (userRes.rows.length === 0 || !userRes.rows[0].a_parent_id) {
-        throw new Error('Manager not found for this staff');
-      }
-      const managerId = userRes.rows[0].a_parent_id;
-
-      // Update document
-      await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = 'PENDING_REVIEW', 
-             in_current_owner_id = $1 
-         WHERE in_id = $2 AND in_current_owner_id = $3`,
-        [managerId, docId, staffId]
-      );
-
-      // Record history
-      await this.addHistory(client, docId, staffId, managerId, 'REVIEWED', comments);
-
-      await client.query('COMMIT');
-      return { success: true };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Approve a review. Moves the document up to the manager's manager, 
-   * or finalizes it if approved by HR_DIRECTOR.
-   */
-  static async approve(docId: number, reviewerId: number, nextOwnerId: number, comments: string, delegationId?: number | null) {
-    const client = await db.connect();
-    try {
-      await client.query('BEGIN');
-
-      let currentOwnerId = reviewerId;
-
-      if (delegationId) {
-        // ACTING: use the assigner's role and parent
-        const delRes = await client.query('SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1', [delegationId]);
-        if (delRes.rows.length === 0) throw new Error('Delegation not found');
+      let currentOwnerId = fromUserId;
+      if (fromDelegationId) {
+        const delRes = await client.query("SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1", [fromDelegationId]);
+        if (delRes.rows.length === 0) throw new Error("Delegation not found");
         currentOwnerId = delRes.rows[0].assigner_id;
       }
-      let newStatus: WorkflowStatus = 'PENDING_REVIEW';
-      let action: WorkflowAction = 'APPROVED';
 
-      // If the selected next owner is the COORDINATOR, it means the workflow is completed
-      const targetRes = await client.query('SELECT a_role FROM admin WHERE a_id = $1', [nextOwnerId]);
-      if (targetRes.rows.length > 0 && targetRes.rows[0].a_role === 'COORDINATOR') {
-        newStatus = 'COMPLETED';
-        action = 'FINALIZED';
+      const fromRes = await client.query("SELECT a_role FROM admin WHERE a_id = $1", [currentOwnerId]);
+      const toRes = await client.query("SELECT a_role FROM admin WHERE a_id = $1", [toUserId]);
+      if (fromRes.rows.length === 0 || toRes.rows.length === 0) throw new Error("User not found");
+
+      const fromRole = fromRes.rows[0].a_role;
+      const toRole = toRes.rows[0].a_role;
+      let newStatus = this.getNextStatus(fromRole, toRole);
+      let action: WorkflowAction = "APPROVED";
+      let newFlowState: string | null = null;
+
+      if (toRole === "COORDINATOR") {
+        newStatus = "PENDING_CLOSE";
+        action = "FINALIZED";
       }
 
-      if (!nextOwnerId) throw new Error('Next workflow recipient not found');
+      if (fromRole === 'COORDINATOR') {
+        newFlowState = 'out';
+      } else if (fromRole === 'HR_DIRECTOR' && toRole === 'DIV_DIRECTOR') {
+        newFlowState = 'in';
+      } else if (fromRole === 'STAFF') {
+        newFlowState = 'out';
+      } else if (fromRole === 'DIV_DIRECTOR' && toRole === 'HR_DIRECTOR') {
+        newFlowState = 'in';
+      }
 
-      // Update document
-      await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = $1, 
-             in_current_owner_id = $2 
-         WHERE in_id = $3 AND in_current_owner_id = $4`,
-        [newStatus, nextOwnerId, docId, currentOwnerId]
-      );
+      let query = "UPDATE c_information SET in_workflow_status = $1, in_current_owner_id = $2";
+      const params: any[] = [newStatus, toUserId];
+      
+      if (newFlowState) {
+        query += ", in_flow_state = $3";
+        params.push(newFlowState);
+      }
+      query += ` WHERE in_id = $${params.length + 1}`;
+      params.push(docId);
 
-      // Record history
-      await this.addHistory(client, docId, reviewerId, nextOwnerId, action, comments);
+      await client.query(query, params);
 
-      await client.query('COMMIT');
+      await this.addHistory(client, docId, fromUserId, toUserId, action, comments, fromDelegationId);
+
+      await client.query("COMMIT");
       return { success: true };
     } catch (error) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
     }
   }
 
-  /**
-   * Reject a review. Pushes the document back to the person who submitted it.
-   */
   static async reject(docId: number, reviewerId: number, rejectToUserId: number, comments: string, delegationId?: number | null) {
+    const db = await import("../config/database.js").then(m => m.default);
     const client = await db.connect();
     try {
-      await client.query('BEGIN');
+      await client.query("BEGIN");
 
       let currentOwnerId = reviewerId;
       if (delegationId) {
-        const delRes = await client.query('SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1', [delegationId]);
+        const delRes = await client.query("SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1", [delegationId]);
         if (delRes.rows.length > 0) {
           currentOwnerId = delRes.rows[0].assigner_id;
         }
       }
 
-      const targetUserRes = await client.query('SELECT a_role FROM admin WHERE a_id = $1', [rejectToUserId]);
-      if (targetUserRes.rows.length === 0) throw new Error('Target user not found');
+      const targetUserRes = await client.query("SELECT a_role FROM admin WHERE a_id = $1", [rejectToUserId]);
+      if (targetUserRes.rows.length === 0) throw new Error("Target user not found");
       const targetRole = targetUserRes.rows[0].a_role;
       
-      const newStatus: WorkflowStatus = targetRole === 'STAFF' ? 'PENDING_EXECUTION' : 'REJECTED';
+      const newStatus: WorkflowStatus = "REJECTED";
 
-      // Update document
       await client.query(
-        `UPDATE c_information 
-         SET in_workflow_status = $1, 
-             in_current_owner_id = $2 
-         WHERE in_id = $3 AND in_current_owner_id = $4`,
-        [newStatus, rejectToUserId, docId, currentOwnerId]
+        "UPDATE c_information SET in_workflow_status = $1, in_current_owner_id = $2 WHERE in_id = $3",
+        [newStatus, rejectToUserId, docId]
       );
 
-      // Record history
-      await this.addHistory(client, docId, reviewerId, rejectToUserId, 'REJECTED', comments);
+      await this.addHistory(client, docId, reviewerId, rejectToUserId, "REJECTED", comments, delegationId);
 
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       return { success: true };
     } catch (error) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
     }
   }
 
-  /**
+  static async closeWorkflow(docId: number, coordinatorId: number, comments: string) {
+    const db = await import("../config/database.js").then(m => m.default);
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      
+      await client.query(
+        "UPDATE c_information SET in_workflow_status = $1, in_flow_state = $2 WHERE in_id = $3",
+        ["COMPLETED", "end", docId]
+      );
+      
+      await this.addHistory(client, docId, coordinatorId, null, "FINALIZED", comments);
+      
+      await client.query("COMMIT");
+      return { success: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+/**
    * Fetch workflow history for a document
    */
   static async getHistory(docId: number) {
@@ -292,36 +212,45 @@ export class WorkflowService {
     fromUserId: number | null,
     toUserId: number | null,
     action: string,
-    comments: string
+    comments: string,
+    fromDelegationId?: number | null,
+    toDelegationId?: number | null
   ) {
     let fromName = null, fromPos = null;
     let toName = null, toPos = null;
 
     if (fromUserId) {
-      const res = await client.query('SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1', [fromUserId]);
+      const res = await client.query("SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1", [fromUserId]);
       if (res.rows.length > 0) {
         fromName = res.rows[0].a_name;
         fromPos = res.rows[0].a_position || res.rows[0].a_role;
+
+        if (fromDelegationId) {
+          const delRes = await client.query("SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1", [fromDelegationId]);
+          if (delRes.rows.length > 0) {
+            const assignerRes = await client.query("SELECT a_name FROM admin WHERE a_id = $1", [delRes.rows[0].assigner_id]);
+            if (assignerRes.rows.length > 0) {
+              fromName = `${fromName} (�ѡ�ҡ��᷹ ${assignerRes.rows[0].a_name})`;
+            }
+          }
+        }
       }
     }
     
     if (toUserId) {
-      const res = await client.query('SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1', [toUserId]);
+      const res = await client.query("SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1", [toUserId]);
       if (res.rows.length > 0) {
         toName = res.rows[0].a_name;
         toPos = res.rows[0].a_position || res.rows[0].a_role;
 
-        // Check if the target user has an active delegation (they are the assigner)
-        const delRes = await client.query(`
-          SELECT assignee.a_name AS assignee_name
-          FROM c_workflow_delegations d
-          JOIN admin assignee ON assignee.a_id = d.assignee_id
-          WHERE d.assigner_id = $1 AND d.is_active = TRUE
-        `, [toUserId]);
-
-        if (delRes.rows.length > 0) {
-          const assigneeName = delRes.rows[0].assignee_name;
-          toName = `${assigneeName} (รักษาการแทน ${toName})`;
+        if (toDelegationId) {
+          const delRes = await client.query("SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1", [toDelegationId]);
+          if (delRes.rows.length > 0) {
+            const assignerRes = await client.query("SELECT a_name FROM admin WHERE a_id = $1", [delRes.rows[0].assigner_id]);
+            if (assignerRes.rows.length > 0) {
+              toName = `${toName} (�ѡ�ҡ��᷹ ${assignerRes.rows[0].a_name})`;
+            }
+          }
         }
       }
     }
@@ -333,5 +262,144 @@ export class WorkflowService {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [docId, fromUserId, fromName, fromPos, toUserId, toName, toPos, action, comments]
     );
+  }
+
+  /**
+   * Smart Auto-Routing logic to find next assignees
+   */
+  static async getNextAssignees(currentUserId: number, delegationId?: number) {
+    const db = await import("../config/database.js").then(m => m.default);
+    
+    // 1. Get effective user ID
+    let effectiveUserId = currentUserId;
+    if (delegationId) {
+      const delRes = await db.query("SELECT assigner_id FROM c_workflow_delegations WHERE delegation_id = $1", [delegationId]);
+      if (delRes.rows.length > 0) {
+        effectiveUserId = delRes.rows[0].assigner_id;
+      }
+    }
+
+    const userRes = await db.query(`
+      SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type
+      FROM admin a
+      LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+      WHERE a.a_id = $1
+    `, [effectiveUserId]);
+
+    if (userRes.rows.length === 0) throw new Error("User not found");
+    const user = userRes.rows[0];
+
+    const roleRank: Record<string, number> = {
+      "STAFF": 1,
+      "COORDINATOR": 1,
+      "GRP_LEADER": 2,
+      "SEC_DIRECTOR": 3,
+      "DIV_DIRECTOR": 4,
+      "HR_DIRECTOR": 4
+    };
+    const currentRank = roleRank[user.a_role] ?? 0;
+
+    const allUsersRes = await db.query(`
+      SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
+      FROM admin a
+      LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+      WHERE a.a_role IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
+        AND a.a_id != $1
+    `, [effectiveUserId]);
+
+    const allUsers = allUsersRes.rows;
+
+    let autoUpAssignee = null;
+    let manualAssignees: any[] = [];
+
+    // Auto UP Logic: Traverse up the tree starting from the user's CURRENT agency
+    let currentLookupAgency = user.a_agency_id;
+    while (currentLookupAgency) {
+      const higherRankUsers = allUsers.filter(u => 
+        (u.a_agency_id === currentLookupAgency || (u.parent_ag_id === currentLookupAgency && u.ag_type === 'POSITION')) &&
+        (roleRank[u.a_role] ?? 0) > currentRank
+      );
+
+      if (higherRankUsers.length > 0) {
+        higherRankUsers.sort((a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0));
+        autoUpAssignee = higherRankUsers[0];
+        break;
+      }
+
+      const parentRes = await db.query("SELECT parent_ag_id FROM c_agency WHERE ag_id = $1", [currentLookupAgency]);
+      if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
+        break;
+      }
+      currentLookupAgency = parentRes.rows[0].parent_ag_id;
+    }
+
+    // Manual Logic (Cross or Down)
+    // Fetch descendant agencies for Forward Down
+    const startAgencyId = user.ag_type === 'POSITION' && user.parent_ag_id 
+      ? user.parent_ag_id 
+      : user.a_agency_id;
+
+    const descRes = await db.query(`
+      WITH RECURSIVE agency_tree AS (
+        SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1
+        UNION ALL
+        SELECT a.ag_id FROM c_agency a
+        INNER JOIN agency_tree t ON a.parent_ag_id = t.ag_id
+      )
+      SELECT ag_id FROM agency_tree
+    `, [startAgencyId]);
+    const childAgencyIds = descRes.rows.map((r: any) => Number(r.ag_id));
+
+    manualAssignees = allUsers.filter(u => {
+      const uRank = roleRank[u.a_role] ?? 0;
+      
+      // 1. Cross-Agency Forwarding (Only Rank 4 to Rank 4)
+      if (currentRank === 4 && uRank === 4) return true;
+
+      // 2. Forward Down (Must be within own or child agencies)
+      if (childAgencyIds.includes(Number(u.a_agency_id))) {
+        if (uRank < currentRank) return true;
+      }
+
+      return false;
+    });
+
+    // Acting Delegation injection
+    const processActing = async (targetUser: any) => {
+      if (!targetUser) return null;
+      const actingRes = await db.query(`
+        SELECT d.delegation_id, d.assignee_id, a.a_name as acting_name, a.a_position as acting_position, a.a_role as acting_role
+        FROM c_workflow_delegations d
+        JOIN admin a ON a.a_id = d.assignee_id
+        WHERE d.assigner_id = $1 AND d.is_active = true
+      `, [targetUser.a_id]);
+      
+      if (actingRes.rows.length > 0) {
+        const acting = actingRes.rows[0];
+        return {
+          ...targetUser,
+          acting_info: {
+            id: acting.assignee_id,
+            name: acting.acting_name,
+            position: acting.acting_position
+          }
+        };
+      }
+      return targetUser;
+    };
+
+    autoUpAssignee = await processActing(autoUpAssignee);
+    const finalManualAssignees = [];
+    for (const u of manualAssignees) {
+      finalManualAssignees.push(await processActing(u));
+    }
+
+    // Sort manualAssignees by rank descending
+    finalManualAssignees.sort((a, b) => (roleRank[b.a_role] ?? 0) - (roleRank[a.a_role] ?? 0));
+
+    return {
+      autoUpAssignee,
+      manualAssignees: finalManualAssignees
+    };
   }
 }

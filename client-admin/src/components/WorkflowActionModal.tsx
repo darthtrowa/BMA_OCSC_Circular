@@ -128,7 +128,7 @@ const WorkflowActionModal: React.FC<WorkflowActionModalProps> = ({
       await onConfirm(payload);
       onClose();
     } catch (err: any) {
-      setError(err.message ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+      setError(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
     } finally {
       setSubmitting(false);
     }

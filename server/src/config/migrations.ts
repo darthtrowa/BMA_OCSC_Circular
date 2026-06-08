@@ -24,7 +24,9 @@ export async function runMigrations() {
       ALTER TABLE c_agency
         ADD COLUMN IF NOT EXISTS parent_ag_id INT REFERENCES c_agency(ag_id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS ag_status    VARCHAR(20)  DEFAULT 'active' NOT NULL,
-        ADD COLUMN IF NOT EXISTS ag_code      VARCHAR(50)  DEFAULT NULL;
+        ADD COLUMN IF NOT EXISTS ag_code      VARCHAR(50)  DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS ag_type      VARCHAR(20)  DEFAULT 'AGENCY' NOT NULL,
+        ADD COLUMN IF NOT EXISTS ag_role      VARCHAR(50)  DEFAULT NULL;
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_agency_parent ON c_agency(parent_ag_id);`);
     await db.query(`ALTER TABLE admin ADD COLUMN IF NOT EXISTS a_agency_id INT REFERENCES c_agency(ag_id) ON DELETE SET NULL;`);
@@ -215,6 +217,18 @@ export async function runMigrations() {
     await db.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_context VARCHAR(10) DEFAULT 'SELF';`);
     await db.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS delegation_id BIGINT REFERENCES c_workflow_delegations(delegation_id) ON DELETE SET NULL;`);
     console.log('✅ audit_logs delegation columns ensured');
+
+    // 11. Remove Dynamic Workflow Builder Tables and Columns
+    await db.query(`ALTER TABLE c_agency DROP COLUMN IF EXISTS ag_template_id;`);
+    await db.query(`ALTER TABLE c_parallel_assignments DROP COLUMN IF EXISTS pa_template_id;`);
+    await db.query(`ALTER TABLE c_parallel_assignments DROP COLUMN IF EXISTS pa_active_node_id;`);
+    await db.query(`ALTER TABLE c_information DROP COLUMN IF EXISTS in_template_id;`);
+    await db.query(`ALTER TABLE c_information DROP COLUMN IF EXISTS in_active_node_id;`);
+    await db.query(`DROP TABLE IF EXISTS workflow_edges CASCADE;`);
+    await db.query(`DROP TABLE IF EXISTS workflow_nodes CASCADE;`);
+    await db.query(`DROP TABLE IF EXISTS workflow_templates CASCADE;`);
+    await db.query(`DROP TYPE IF EXISTS wf_assignee_type CASCADE;`).catch(() => {});
+    console.log('✅ Dynamic Workflow Builder tables and columns removed');
 
     console.log('🎉 Database migrations completed successfully.');
   } catch (e: any) {

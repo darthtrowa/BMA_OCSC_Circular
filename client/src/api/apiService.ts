@@ -200,30 +200,15 @@ export const workflowApi = {
     return data;
   },
 
-  submitToHr: async (docId: number, hrDirectorId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-to-hr', { docId, hrDirectorId, comments });
+  closeWorkflow: async (docId: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/close', { docId });
     return data;
   },
 
-  submitToGrpLeader: async (docId: number, grpLeaderId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-to-grp-leader', { docId, grpLeaderId, comments });
-    return data;
-  },
-
-  delegate: async (docId: number, toUserId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/delegate', { docId, toUserId, comments });
-    return data;
-  },
-
-  submitReview: async (docId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-review', { docId, comments });
-    return data;
-  },
-
-  approve: async (docId: number, nextOwnerId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/approve', {
+  forward: async (docId: number, toUserId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/forward', {
       docId,
-      nextOwnerId,
+      toUserId,
       comments,
       approval_context: approval_context ?? 'SELF',
       delegation_id: delegation_id ?? undefined,
@@ -238,6 +223,13 @@ export const workflowApi = {
 
   getHistory: async (docId: number): Promise<any> => {
     const { data } = await http.get(`/api/admin/workflow/${docId}/history`);
+    return data;
+  },
+
+  getNextAssignees: async (docId: number, context: 'SELF'|'ACTING' = 'SELF', delegationId?: number): Promise<any> => {
+    let url = `/api/admin/workflow/${docId}/next-assignees?context=${context}`;
+    if (delegationId) url += `&delegationId=${delegationId}`;
+    const { data } = await http.get(url);
     return data;
   },
 
@@ -303,8 +295,9 @@ export interface DelegationItem {
   delegation_id:    number;
   delegated_role:   string;
   is_active?:       boolean;
+  is_position_delegation?: boolean;
   notes?:           string;
-  assigner_id:      number;
+  assigner_id?:      number;
   assigner_name:    string;
   assigner_role:    string;
   assigner_position?: string;

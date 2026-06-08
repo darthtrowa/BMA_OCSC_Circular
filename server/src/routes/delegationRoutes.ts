@@ -45,9 +45,12 @@ function isOneLevelBelow(assignerRole: AdminRole, assigneeRole: AdminRole): bool
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 const assignSchema = z.object({
-  assigner_id:  z.number({ required_error: 'ต้องระบุ assigner_id' }).int().positive(),
+  assigner_id:  z.number().int().positive().optional(),
+  assigner_ag_id: z.number().int().positive().optional(),
   assignee_id:  z.number({ required_error: 'ต้องระบุ assignee_id' }).int().positive(),
   notes:        z.string().optional(),
+}).refine(data => data.assigner_id || data.assigner_ag_id, {
+  message: 'ต้องระบุอย่างน้อย assigner_id หรือ assigner_ag_id',
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,29 +67,49 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
     return res.status(400).json({ status: false, message: `ข้อมูลไม่ถูกต้อง: ${details}`, errors: parsed.error.format() });
   }
 
-  const { assigner_id, assignee_id, notes } = parsed.data;
+  const { assigner_id, assigner_ag_id, assignee_id, notes } = parsed.data;
 
   if (assigner_id === assignee_id) {
     return res.status(400).json(err('ผู้มอบอำนาจและผู้รับมอบอำนาจต้องไม่ใช่บุคคลเดียวกัน'));
   }
 
   try {
-    // ดึง role ของทั้งสองคน
     const { rows: admins } = await db.query(
       `SELECT a.a_id, a.a_name, a.a_role, a.a_agency_id, ag.parent_ag_id 
        FROM admin a 
        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
-       WHERE a.a_id = ANY($1::int[]) AND a.a_status = '1'`,
-      [[assigner_id, assignee_id]]
+       WHERE a.a_id = $1 AND a.a_status = '1'`,
+      [assignee_id]
     );
+    const assignee = admins[0];
 
-    const assigner = admins.find((a: any) => a.a_id === assigner_id);
-    const assignee = admins.find((a: any) => a.a_id === assignee_id);
-
-    if (!assigner) return res.status(404).json(err('ไม่พบบัญชีผู้มอบอำนาจ หรือบัญชีถูกระงับ'));
     if (!assignee) return res.status(404).json(err('ไม่พบบัญชีผู้รับมอบอำนาจ หรือบัญชีถูกระงับ'));
-    if (!assigner.a_role) return res.status(400).json(err(`ผู้มอบอำนาจ (${assigner.a_name}) ยังไม่มีบทบาทในสายงาน`));
     if (!assignee.a_role) return res.status(400).json(err(`ผู้รับมอบอำนาจ (${assignee.a_name}) ยังไม่มีบทบาทในสายงาน`));
+
+    let assigner_name = '';
+    let assigner_role = '';
+
+    if (assigner_id) {
+      const { rows: assigners } = await db.query(
+        `SELECT a.a_id, a.a_name, a.a_role FROM admin a WHERE a.a_id = $1 AND a.a_status = '1'`,
+        [assigner_id]
+      );
+      const assigner = assigners[0];
+      if (!assigner) return res.status(404).json(err('ไม่พบบัญชีผู้มอบอำนาจ หรือบัญชีถูกระงับ'));
+      if (!assigner.a_role) return res.status(400).json(err(`ผู้มอบอำนาจ (${assigner.a_name}) ยังไม่มีบทบาทในสายงาน`));
+      assigner_role = assigner.a_role;
+      assigner_name = assigner.a_name;
+    } else if (assigner_ag_id) {
+      const { rows: agencies } = await db.query(
+        `SELECT ag_name, ag_role FROM c_agency WHERE ag_id = $1`,
+        [assigner_ag_id]
+      );
+      const agency = agencies[0];
+      if (!agency) return res.status(404).json(err('ไม่พบข้อมูลตำแหน่งนี้'));
+      if (!agency.ag_role) return res.status(400).json(err(`ตำแหน่ง (${agency.ag_name}) ยังไม่มีบทบาทระบบ`));
+      assigner_role = agency.ag_role;
+      assigner_name = agency.ag_name;
+    }
 
     // ห้าม DIV_DIRECTOR, HR_DIRECTOR เป็นผู้รับมอบอำนาจ (Assignee)
     if (['DIV_DIRECTOR', 'HR_DIRECTOR'].includes(assignee.a_role)) {
@@ -94,44 +117,47 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
     }
 
     // ── Rule: ตรวจสอบระดับจากโครงสร้างส่วนราชการ ──────────────────
-    if (['STAFF', 'COORDINATOR'].includes(assignee.a_role)) {
-      if (assigner.a_role !== 'GRP_LEADER' || assigner.a_agency_id !== assignee.a_agency_id) {
-        return res.status(400).json(err('สำหรับระดับปฏิบัติการ ต้องเลือกผู้รักษาการเป็นหัวหน้าฝ่าย (GRP_LEADER) ในสังกัดเดียวกันเท่านั้น'));
-      }
-    } else {
-      if (assignee.parent_ag_id) {
-        if (assigner.a_agency_id !== assignee.parent_ag_id && assigner.a_role !== 'SUPERADMIN') {
-          return res.status(400).json(err('ต้องเลือกผู้รักษาการที่อยู่ในสังกัดระดับเหนือขึ้นไป 1 ระดับ (ตามโครงสร้างส่วนราชการ) เท่านั้น'));
-        }
-      }
+    const allowedAssignees: Record<string, string[]> = {
+      HR_DIRECTOR: ['SEC_DIRECTOR', 'GRP_LEADER'],
+      DIV_DIRECTOR: ['SEC_DIRECTOR', 'GRP_LEADER'],
+      SEC_DIRECTOR: ['GRP_LEADER'],
+      GRP_LEADER: ['COORDINATOR', 'STAFF'],
+      COORDINATOR: [],
+      STAFF: [],
+    };
+
+    const validRoles = allowedAssignees[assigner_role] || [];
+    if (!validRoles.includes(assignee.a_role)) {
+      return res.status(400).json(err(`ระดับ ${assigner_role} สามารถตั้งให้ ${validRoles.join(' หรือ ')} มารักษาการแทนได้เท่านั้น`));
     }
 
     // ── Rule: ห้ามแต่งตั้งซ้ำซ้อน ──────────────────
-    // 1. ตรวจสอบว่า assignee_id กำลังรักษาการให้ assigner_id นี้อยู่แล้วหรือไม่
+    const checkCond = assigner_id 
+      ? `assigner_id = $1` 
+      : `assigner_ag_id = $1 AND assigner_id IS NULL`;
     const { rows: duplicateCheck } = await db.query(
-      `SELECT delegation_id FROM c_workflow_delegations WHERE assigner_id = $1 AND assignee_id = $2 AND is_active = TRUE`,
-      [assigner_id, assignee_id]
+      `SELECT delegation_id FROM c_workflow_delegations WHERE ${checkCond} AND assignee_id = $2 AND is_active = TRUE`,
+      [assigner_id || assigner_ag_id, assignee_id]
     );
     if (duplicateCheck.length > 0) {
-      return res.status(400).json(err(`ผู้ใช้งานนี้กำลังรักษาการแทน ${assigner.a_name} อยู่แล้ว`));
+      return res.status(400).json(err(`ผู้ใช้งานนี้กำลังรักษาการแทน ${assigner_name} อยู่แล้ว`));
     }
 
-    // delegated_role = assigner.a_role (ผู้รักษาการจะทำหน้าที่ในตำแหน่งของ assigner)
-    const delegated_role = assigner.a_role;
+    const delegated_role = assigner_role;
 
     // ── Rule: กำหนดลำดับรักษาการ (delegation_order) ถัดไป ──────────────────
     const { rows: orderCheck } = await db.query(
-      `SELECT COALESCE(MAX(delegation_order), 0) + 1 AS next_order FROM c_workflow_delegations WHERE assigner_id = $1 AND is_active = TRUE`,
-      [assigner_id]
+      `SELECT COALESCE(MAX(delegation_order), 0) + 1 AS next_order FROM c_workflow_delegations WHERE ${checkCond} AND is_active = TRUE`,
+      [assigner_id || assigner_ag_id]
     );
     const next_order = orderCheck[0].next_order;
 
     const { rows: [inserted] } = await db.query(
       `INSERT INTO c_workflow_delegations
-         (assigner_id, assignee_id, delegated_role, delegation_order, is_active, created_by, notes, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW(), NOW())
+         (assigner_id, assigner_ag_id, assignee_id, delegated_role, delegation_order, is_active, created_by, notes, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, NOW(), NOW())
        RETURNING delegation_id`,
-      [assigner_id, assignee_id, delegated_role, next_order, req.admin!.id, notes || null]
+      [assigner_id || null, assigner_ag_id || null, assignee_id, delegated_role, next_order, req.admin!.id, notes || null]
     );
 
     recordAuditLog({
@@ -140,7 +166,7 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
       action:         'DELEGATION_ASSIGN',
       targetResource: 'delegations',
       targetId:       String(inserted.delegation_id),
-      payload:        { assigner_id, assignee_id, delegated_role },
+      payload:        { assigner_id, assigner_ag_id, assignee_id, delegated_role },
       ipAddress:      (req.ip as string) || null,
       userAgent:      (req.headers['user-agent'] as string) || null,
     });
@@ -148,9 +174,9 @@ router.post('/assign', requireSuperAdmin, async (req: AdminRequest, res: Respons
     return res.json(ok({
       delegation_id: inserted.delegation_id,
       delegated_role,
-      assigner_name:  assigner.a_name,
+      assigner_name:  assigner_name,
       assignee_name:  assignee.a_name,
-    }, `แต่งตั้ง ${assignee.a_name} รักษาการแทน ${assigner.a_name} (${delegated_role}) สำเร็จ`));
+    }, `แต่งตั้ง ${assignee.a_name} รักษาการแทน ${assigner_name} (${delegated_role}) สำเร็จ`));
 
   } catch (e: any) {
     console.error('[DelegationRoutes] assign error:', e.message);
@@ -236,20 +262,22 @@ router.get('/', requireSuperAdmin, async (_req: AdminRequest, res: Response): Pr
         d.notes,
         d.created_at,
         d.updated_at,
-        assigner.a_id       AS assigner_id,
-        assigner.a_name     AS assigner_name,
-        assigner.a_role     AS assigner_role,
-        assigner.a_position AS assigner_position,
+        d.assigner_id,
+        d.assigner_ag_id,
+        COALESCE(assigner.a_name, assigner_ag.ag_name) AS assigner_name,
+        COALESCE(assigner.a_role, assigner_ag.ag_role) AS assigner_role,
+        COALESCE(assigner.a_position, assigner_ag.ag_name) AS assigner_position,
         assignee.a_id       AS assignee_id,
         assignee.a_name     AS assignee_name,
         assignee.a_role     AS assignee_role,
         assignee.a_position AS assignee_position,
         creator.a_name      AS created_by_name
       FROM   c_workflow_delegations d
-      JOIN   admin assigner ON assigner.a_id = d.assigner_id
+      LEFT JOIN admin assigner ON assigner.a_id = d.assigner_id
+      LEFT JOIN c_agency assigner_ag ON assigner_ag.ag_id = d.assigner_ag_id
       JOIN   admin assignee ON assignee.a_id = d.assignee_id
       LEFT   JOIN admin creator ON creator.a_id = d.created_by
-      ORDER  BY d.is_active DESC, d.created_at DESC
+      ORDER  BY d.is_active DESC, d.delegation_order ASC, d.created_at ASC
     `);
     return res.json(ok(rows));
   } catch (e: any) {
@@ -269,12 +297,18 @@ router.get('/my-active', requireAdmin, async (req: AdminRequest, res: Response):
         d.delegation_id,
         d.delegated_role,
         d.notes,
-        assigner.a_id       AS assigner_id,
-        assigner.a_name     AS assigner_name,
-        assigner.a_role     AS assigner_role,
-        assigner.a_position AS assigner_position
+        COALESCE(d.assigner_id, ag_admin.a_id) AS assigner_id,
+        CASE WHEN d.assigner_id IS NULL THEN true ELSE false END AS is_position_delegation,
+        CASE 
+          WHEN d.assigner_id IS NOT NULL THEN assigner.a_name 
+          ELSE assigner_ag.ag_name 
+        END AS assigner_name,
+        COALESCE(assigner.a_role, assigner_ag.ag_role) AS assigner_role,
+        COALESCE(assigner.a_position, assigner_ag.ag_name) AS assigner_position
       FROM   c_workflow_delegations d
-      JOIN   admin assigner ON assigner.a_id = d.assigner_id
+      LEFT JOIN admin assigner ON assigner.a_id = d.assigner_id
+      LEFT JOIN c_agency assigner_ag ON assigner_ag.ag_id = d.assigner_ag_id
+      LEFT JOIN admin ag_admin ON ag_admin.a_agency_id = d.assigner_ag_id AND ag_admin.a_status = '1'
       WHERE  d.assignee_id = $1
         AND  d.is_active   = TRUE
       ORDER  BY d.created_at DESC
@@ -335,7 +369,8 @@ router.get('/my-delegated', requireAdmin, async (req: AdminRequest, res: Respons
         assignee.a_position AS assignee_position
       FROM   c_workflow_delegations d
       JOIN   admin assignee ON assignee.a_id = d.assignee_id
-      WHERE  d.assigner_id = $1
+      LEFT JOIN admin ag_admin ON ag_admin.a_agency_id = d.assigner_ag_id AND ag_admin.a_status = '1'
+      WHERE  (d.assigner_id = $1 OR ag_admin.a_id = $1)
         AND  d.is_active = TRUE
       ORDER BY d.created_at DESC
     `, [req.admin!.id]);

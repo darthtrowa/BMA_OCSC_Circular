@@ -38,7 +38,7 @@ http.interceptors.response.use(
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AssigneeType = 'USER' | 'ROLE' | 'AGENCY_HIERARCHY';
+export type AssigneeType = 'USER' | 'ROLE' | 'AGENCY_HIERARCHY' | 'POSITION' | 'SUPERVISOR';
 export type ApprovalContext = 'SELF' | 'ACTING';
 export type CircularAction = 'APPROVE' | 'REJECT' | 'REQUEST_REVISION';
 
@@ -50,6 +50,7 @@ export interface TemplateNodeInput {
   target_value?: string | null;
   ui_pos_x: number;
   ui_pos_y: number;
+  skip_if_no_assignee: boolean;
 }
 
 /** Matches the EdgeInput schema expected by POST /api/admin/workflows/templates */
@@ -85,10 +86,12 @@ export interface TemplateNode {
   target_role: string | null;
   target_agency_id: number | null;
   target_user_id: number | null;
+  target_position: string | null;
   target_user_name: string | null;
   target_agency_name: string | null;
   ui_pos_x: number;
   ui_pos_y: number;
+  skip_if_no_assignee: boolean;
 }
 
 export interface TemplateEdge {
@@ -118,6 +121,13 @@ export const workflowEngineApi = {
   /** Save a full workflow template (nodes + edges) in one atomic transaction */
   createTemplate: async (payload: CreateTemplatePayload): Promise<{ template_id: number; name: string }> => {
     const { data } = await http.post('/api/admin/workflows/templates', payload);
+    if (!data.status) throw new Error(data.message);
+    return data.response;
+  },
+
+  /** Update an existing workflow template */
+  updateTemplate: async (templateId: number, payload: CreateTemplatePayload): Promise<{ template_id: number; name: string }> => {
+    const { data } = await http.put(`/api/admin/workflows/templates/${templateId}`, payload);
     if (!data.status) throw new Error(data.message);
     return data.response;
   },
@@ -159,5 +169,12 @@ export const workflowEngineApi = {
   approveCircular: async (payload: CircularApprovePayload): Promise<void> => {
     const { data } = await http.post('/api/admin/workflows/circular/approve', payload);
     if (!data.status) throw new Error(data.message);
+  },
+
+  // ── Demo Helper ────────────────────────────────────────────────────────
+  seedDemoCircular: async (): Promise<number> => {
+    const { data } = await http.post('/api/admin/workflows/demo/seed');
+    if (!data.status) throw new Error(data.message);
+    return data.response.circular_id;
   },
 };

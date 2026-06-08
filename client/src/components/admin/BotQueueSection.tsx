@@ -384,7 +384,7 @@ export default function BotQueueSection({ allData }: { allData: any }) {
                           }}
                           className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
                         />
-                        <span className="text-sm text-slate-700 select-none">{cat.cat_name}</span>
+                        <span className="text-xs text-slate-700 select-none">{cat.cat_name}</span>
                       </label>
                     ))}
                   </div>

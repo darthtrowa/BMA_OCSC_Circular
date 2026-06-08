@@ -7,24 +7,19 @@ interface TrackRow {
   id: string; // temp UUID for UI keying
   ag_id?: number;
   ag_name?: string;
-  toUserId: number | '';
 }
 
 interface Props {
   isOpen: boolean;
   docId: number | null;
+  preSelectedAgencies?: { ag_id: number | string; ag_name: string }[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess }: Props) {
-  const [tracks, setTracks] = useState<TrackRow[]>([{ id: '1', toUserId: '' }]);
-  const [hrDirectorId, setHrDirectorId] = useState<number | ''>('');
-  const [comments, setComments] = useState('');
+export default function ParallelAssignModal({ isOpen, docId, preSelectedAgencies = [], onClose, onSuccess }: Props) {
+  const [tracks, setTracks] = useState<TrackRow[]>([{ id: '1' }]);
   const [agencies, setAgencies] = useState<any[]>([]);
-  const [hrList, setHrList] = useState<any[]>([]);
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,10 +29,7 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
 
     Promise.all([
       agencyApi.getTree().catch(() => []),
-      adminApi.getUsersByRole(['HR_DIRECTOR']).catch(() => []),
-      adminApi.getUsersByRole(['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR']).catch(() => []),
-      adminApi.getProfile().catch(() => null),
-    ]).then(([agTree, hr, users, profile]) => {
+    ]).then(([agTree]) => {
       // Get only the first level (root level) of the agency tree (where parent_ag_id is null)
       // Sorted by agency_ordering ascending to match organization tree management view
       const rootAgencies = (Array.isArray(agTree) ? agTree : [])
@@ -45,26 +37,25 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
         .map(n => ({ ...n, depth: 0 }))
         .sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0));
       setAgencies(rootAgencies);
-      setHrList(hr || []);
-      setAllUsers(users || []);
-
-      const prof = profile?.response || profile;
-      if (prof) {
-        setCurrentUserProfile(prof);
-      }
     }).finally(() => setLoading(false));
   }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
-      setTracks([{ id: Date.now().toString(), toUserId: '' }]);
-      setHrDirectorId('');
-      setComments('');
+      if (preSelectedAgencies && preSelectedAgencies.length > 0) {
+        setTracks(preSelectedAgencies.map((a, i) => ({
+          id: `${Date.now()}-${i}`,
+          ag_id: Number(a.ag_id),
+          ag_name: a.ag_name
+        })));
+      } else {
+        setTracks([{ id: Date.now().toString() }]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, preSelectedAgencies]);
 
   const addTrack = () =>
-    setTracks(prev => [...prev, { id: Date.now().toString(), toUserId: '' }]);
+    setTracks(prev => [...prev, { id: Date.now().toString() }]);
 
   const removeTrack = (id: string) =>
     setTracks(prev => prev.filter(t => t.id !== id));
@@ -81,24 +72,13 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
       return updated;
     }));
 
-  const getUsersByAgency = (agId?: number) => {
-    if (!agId) return [];
-    let filtered = allUsers.filter((u: any) => Number(u.a_agency_id) === Number(agId));
-
-    // Rule: Cross-department assignments must strictly be assigned to DIV_DIRECTOR or HR_DIRECTOR only.
-    if (currentUserProfile && Number(agId) !== Number(currentUserProfile.a_agency_id)) {
-      filtered = filtered.filter((u: any) => u.a_role === 'DIV_DIRECTOR' || u.a_role === 'HR_DIRECTOR');
-    }
-    return filtered;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!docId || !hrDirectorId) return;
+    if (!docId) return;
 
-    const validTracks = tracks.filter(t => t.toUserId !== '' && t.ag_id !== undefined && t.ag_id !== null);
+    const validTracks = tracks.filter(t => t.ag_id !== undefined && t.ag_id !== null);
     if (validTracks.length === 0) {
-      Swal.fire('แจ้งเตือน', 'กรุณาเลือกผู้รับมอบและส่วนราชการอย่างน้อย 1 ส่วนราชการ', 'warning');
+      Swal.fire('แจ้งเตือน', 'กรุณาเลือกส่วนราชการอย่างน้อย 1 ส่วนราชการ', 'warning');
       return;
     }
 
@@ -106,10 +86,9 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
     try {
       const payload = validTracks.map(t => ({
         ag_id: t.ag_id,
-        ag_name: t.ag_name,
-        toUserId: Number(t.toUserId),
+        ag_name: t.ag_name
       }));
-      await workflowApi.assignParallel(docId, Number(hrDirectorId), payload, comments);
+      await workflowApi.assignParallel(docId, payload);
       Swal.fire({ icon: 'success', text: `มอบหมายสำเร็จ (${validTracks.length} ส่วนราชการ)`, timer: 1800, showConfirmButton: false });
       onSuccess();
       onClose();
@@ -148,27 +127,6 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
             </div>
           ) : (
             <>
-              {/* HR Director Selector */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  ผู้อำนวยการ (HR Director) ผู้อนุมัติขั้นสุดท้าย <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={hrDirectorId}
-                  onChange={e => setHrDirectorId(Number(e.target.value))}
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-                >
-                  <option value="">-- เลือก HR Director --</option>
-                  {hrList.map((u: any) => (
-                    <option key={u.a_id} value={u.a_id}>
-                      {u.a_name} — {u.a_position || u.a_role}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Parallel Tracks */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-semibold text-slate-700">
@@ -188,7 +146,6 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
 
                 <div className="space-y-3">
                   {tracks.map((track, idx) => {
-                    const filteredUsers = getUsersByAgency(track.ag_id);
                     return (
                       <div key={track.id} className="p-4 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
                         <div className="flex items-center justify-between">
@@ -226,44 +183,10 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
                             ))}
                           </select>
                         </div>
-
-                        {/* Person Selector */}
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">
-                            ผู้รับมอบ <span className="text-red-500">*</span>
-                            {track.ag_id && filteredUsers.length === 0 && (
-                              <span className="ml-1 text-amber-500">(ไม่มีบัญชีในส่วนราชการนี้)</span>
-                            )}
-                          </label>
-                          <select
-                            value={track.toUserId}
-                            onChange={e => updateTrack(track.id, 'toUserId', e.target.value ? Number(e.target.value) : '')}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-                          >
-                            <option value="">-- เลือกผู้รับมอบ --</option>
-                            {filteredUsers.map((u: any) => (
-                              <option key={u.a_id} value={u.a_id}>
-                                {u.a_name} — {u.a_position || u.a_role}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Comments */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">เนื้อความ</label>
-                <textarea
-                  value={comments}
-                  onChange={e => setComments(e.target.value)}
-                  rows={2}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition resize-none"
-                  placeholder="ระบุข้อความเพิ่มเติม..."
-                />
               </div>
             </>
           )}
@@ -286,7 +209,7 @@ export default function ParallelAssignModal({ isOpen, docId, onClose, onSuccess 
             {submitting ? (
               <><i className="bx bx-loader-alt animate-spin"></i> กำลังส่ง...</>
             ) : (
-              <><i className="bx bx-git-branch"></i> ส่งไปพิจารณา ({tracks.filter(t => t.toUserId !== '').length} ส่วนราชการ)</>
+              <><i className="bx bx-git-branch"></i> ส่งไปพิจารณา ({tracks.filter(t => t.ag_id).length} ส่วนราชการ)</>
             )}
           </button>
         </div>

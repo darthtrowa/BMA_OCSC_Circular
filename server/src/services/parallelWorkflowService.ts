@@ -2,9 +2,8 @@ import db from '../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ParallelTrack {
-  ag_id?: number;
+  ag_id: number;
   ag_name?: string;
-  toUserId: number;
 }
 
 export class ParallelWorkflowService {
@@ -15,9 +14,7 @@ export class ParallelWorkflowService {
   static async assignParallel(
     docId: number,
     coordinatorId: number,
-    hrDirectorId: number,
-    tracks: ParallelTrack[],
-    comments: string
+    tracks: ParallelTrack[]
   ) {
     const client = await db.connect();
     try {
@@ -38,21 +35,54 @@ export class ParallelWorkflowService {
 
       // Create one row per track
       for (const track of tracks) {
-        const ownerRes = await client.query(
-          'SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1',
-          [track.toUserId]
+        if (!track.ag_id) throw new Error('เกิดข้อผิดพลาด: ไม่พบรหัสส่วนราชการใน Track');
+
+        let targetUserId: number | null = null;
+        // Hierarchy Fallback: Assign to DIV_DIRECTOR or HR_DIRECTOR in that agency (or its child positions)
+        const fallbackRes = await client.query(
+          `SELECT a.a_id 
+           FROM admin a
+           LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+           WHERE a.a_status IN ('1', 'true', 'active') 
+             AND (a.a_agency_id = $1 OR ag.parent_ag_id = $1) 
+             AND a.a_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR') 
+           ORDER BY a.a_role ASC 
+           LIMIT 1`,
+          [track.ag_id]
         );
-        if (ownerRes.rows.length === 0) throw new Error(`ไม่พบผู้ใช้ ID ${track.toUserId}`);
+        if (fallbackRes.rows.length > 0) {
+          targetUserId = fallbackRes.rows[0].a_id;
+        } else {
+          // Check Acting for DIV_DIRECTOR in Hierarchy Flow
+          const actingFallbackRes = await client.query(
+            `SELECT d.assignee_id 
+             FROM c_workflow_delegations d
+             LEFT JOIN c_agency ag ON d.assigner_ag_id = ag.ag_id
+             WHERE (d.assigner_ag_id = $1 OR ag.parent_ag_id = $1)
+               AND d.delegated_role = 'DIV_DIRECTOR' 
+               AND d.is_active = TRUE 
+             ORDER BY d.delegation_order ASC 
+             LIMIT 1`,
+            [track.ag_id]
+          );
+          if (actingFallbackRes.rows.length > 0) {
+            targetUserId = actingFallbackRes.rows[0].assignee_id;
+          } else {
+            throw new Error(`ไม่สามารถกระจายงานได้: ไม่พบผู้อำนวยการหรือผู้รักษาการในกอง ${track.ag_name || track.ag_id}`);
+          }
+        }
+
+        if (!targetUserId) throw new Error(`ไม่สามารถระบุผู้รับมอบงานสำหรับกอง ${track.ag_name || track.ag_id} ได้`);
 
         await client.query(
           `INSERT INTO c_parallel_assignments
             (in_id, batch_id, ag_id, ag_name, initial_owner_id, current_owner_id, pa_status, assigned_by, hr_director_id)
-           VALUES ($1, $2, $3, $4, $5, $5, 'PENDING', $6, $7)`,
-          [docId, batchId, track.ag_id || null, track.ag_name || null, track.toUserId, coordinatorId, hrDirectorId]
+           VALUES ($1, $2, $3, $4, $5, $5, 'PENDING', $6, NULL)`,
+          [docId, batchId, track.ag_id, track.ag_name || null, targetUserId, coordinatorId]
         );
 
         // Log history
-        await this.addHistory(client, docId, null, coordinatorId, track.toUserId, 'PARALLEL_ASSIGNED', comments);
+        await this.addHistory(client, docId, null, coordinatorId, targetUserId, 'PARALLEL_ASSIGNED', 'ส่งให้พิจารณา (ระบบมอบหมายอัตโนมัติ)');
       }
 
       await client.query('COMMIT');
@@ -120,13 +150,13 @@ export class ParallelWorkflowService {
       await client.query('BEGIN');
 
       const { rows } = await client.query(
-        `SELECT pa_id, hr_director_id FROM c_parallel_assignments
+        `SELECT pa_id, assigned_by FROM c_parallel_assignments
          WHERE pa_id = $1 AND in_id = $2 AND current_owner_id = $3 AND pa_status IN ('PENDING','IN_PROGRESS')`,
         [paId, docId, userId]
       );
       if (rows.length === 0) throw new Error('ไม่สามารถส่งผลใน Track นี้ได้');
 
-      const hrDirectorId = rows[0].hr_director_id;
+      const assignedBy = rows[0].assigned_by;
 
       await client.query(
         `UPDATE c_parallel_assignments SET pa_status = 'SUBMITTED', result_comments = $1, updated_at = NOW()
@@ -137,7 +167,7 @@ export class ParallelWorkflowService {
       await this.addHistory(client, docId, paId, userId, null, 'PARALLEL_SUBMITTED', resultComments);
 
       // Check if all tracks are terminal
-      await this.checkAndAdvance(client, docId, hrDirectorId);
+      await this.checkAndAdvance(client, docId, assignedBy);
 
       await client.query('COMMIT');
       return { success: true };
@@ -169,7 +199,7 @@ export class ParallelWorkflowService {
       );
       if (rows.length === 0) throw new Error('ไม่สามารถตีกลับ Track นี้ได้');
 
-      const hrDirectorId = rows[0].hr_director_id;
+      const assignedBy = rows[0].assigned_by;
 
       await client.query(
         `UPDATE c_parallel_assignments SET pa_status = 'REJECTED', result_comments = $1, updated_at = NOW()
@@ -180,7 +210,7 @@ export class ParallelWorkflowService {
       await this.addHistory(client, docId, paId, userId, null, 'PARALLEL_REJECTED', comments);
 
       // Check if all remaining tracks are terminal so we can advance
-      await this.checkAndAdvance(client, docId, hrDirectorId);
+      await this.checkAndAdvance(client, docId, assignedBy);
 
       await client.query('COMMIT');
       return { success: true };
@@ -193,9 +223,9 @@ export class ParallelWorkflowService {
   }
 
   /**
-   * If all tracks are terminal (SUBMITTED or REJECTED), move document to HR review
+   * If all tracks are terminal (SUBMITTED or REJECTED), move document back to Coordinator
    */
-  private static async checkAndAdvance(client: any, docId: number, hrDirectorId: number) {
+  private static async checkAndAdvance(client: any, docId: number, coordinatorId: number) {
     const { rows } = await client.query(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN pa_status IN ('SUBMITTED','REJECTED') THEN 1 ELSE 0 END) AS terminal
@@ -208,16 +238,39 @@ export class ParallelWorkflowService {
     const terminal = Number(rows[0].terminal);
 
     if (total > 0 && total === terminal) {
-      // All tracks done → move to HR
+      // Find the active HR_DIRECTOR
+      const hrRes = await client.query(
+        `SELECT a_id FROM admin WHERE a_status = 'active' AND a_role = 'HR_DIRECTOR' LIMIT 1`
+      );
+      
+      let targetHrId: number | null = null;
+      if (hrRes.rows.length > 0) {
+        targetHrId = hrRes.rows[0].a_id;
+      } else {
+        // Fallback: search c_workflow_delegations for active HR_DIRECTOR delegation (sorted by delegation_order)
+        const actingRes = await client.query(
+          `SELECT assignee_id FROM c_workflow_delegations 
+           WHERE delegated_role = 'HR_DIRECTOR' AND is_active = TRUE 
+           ORDER BY delegation_order ASC LIMIT 1`
+        );
+        if (actingRes.rows.length > 0) {
+          targetHrId = actingRes.rows[0].assignee_id;
+        }
+      }
+
+      // If no HR_DIRECTOR found at all, fallback to the coordinator
+      const finalOwnerId = targetHrId || coordinatorId;
+
+      // All tracks done → move back to HR_DIRECTOR
       await client.query(
         `UPDATE c_information
          SET in_workflow_status = 'PENDING_HR_APPROVAL',
              in_current_owner_id = $1
          WHERE in_id = $2`,
-        [hrDirectorId, docId]
+        [finalOwnerId, docId]
       );
-      await this.addHistory(client, docId, null, null, hrDirectorId, 'SUBMITTED',
-        'ทุก Track ส่งผลครบแล้ว — ส่งขึ้น HR Director เพื่ออนุมัติขั้นสุดท้าย');
+      await this.addHistory(client, docId, null, null, finalOwnerId, 'SUBMITTED',
+        'ทุกส่วนราชการปลายทางพิจารณาครบแล้ว — ส่งกลับ ผอ.ศูนย์ฯ (HR_DIRECTOR) เพื่อพิจารณา');
     }
   }
 
@@ -233,15 +286,17 @@ export class ParallelWorkflowService {
          pa.created_at, pa.updated_at,
          init.a_id   AS initial_owner_id,
          init.a_name AS initial_owner_name,
-         init.a_position AS initial_owner_position,
+         COALESCE(CASE WHEN init_ag.ag_type = 'POSITION' THEN init_ag.ag_name ELSE NULL END, init.a_position) AS initial_owner_position,
          cur.a_id    AS current_owner_id,
          cur.a_name  AS current_owner_name,
-         cur.a_position AS current_owner_position,
+         COALESCE(CASE WHEN cur_ag.ag_type = 'POSITION' THEN cur_ag.ag_name ELSE NULL END, cur.a_position) AS current_owner_position,
          assigner.a_name AS assigned_by_name,
          hr.a_name   AS hr_director_name
        FROM c_parallel_assignments pa
        LEFT JOIN admin init     ON pa.initial_owner_id  = init.a_id
+       LEFT JOIN c_agency init_ag ON init.a_agency_id = init_ag.ag_id
        LEFT JOIN admin cur      ON pa.current_owner_id  = cur.a_id
+       LEFT JOIN c_agency cur_ag  ON cur.a_agency_id  = cur_ag.ag_id
        LEFT JOIN admin assigner ON pa.assigned_by       = assigner.a_id
        LEFT JOIN admin hr       ON pa.hr_director_id    = hr.a_id
        WHERE pa.in_id = $1
@@ -266,11 +321,21 @@ export class ParallelWorkflowService {
     let fromName = null, fromPos = null, toName = null, toPos = null;
 
     if (fromUserId) {
-      const r = await client.query('SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1', [fromUserId]);
+      const r = await client.query(`
+        SELECT a.a_name, a.a_role, 
+               COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position 
+        FROM admin a 
+        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+        WHERE a.a_id = $1`, [fromUserId]);
       if (r.rows.length > 0) { fromName = r.rows[0].a_name; fromPos = r.rows[0].a_position || r.rows[0].a_role; }
     }
     if (toUserId) {
-      const r = await client.query('SELECT a_name, a_position, a_role FROM admin WHERE a_id = $1', [toUserId]);
+      const r = await client.query(`
+        SELECT a.a_name, a.a_role, 
+               COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position 
+        FROM admin a 
+        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+        WHERE a.a_id = $1`, [toUserId]);
       if (r.rows.length > 0) { toName = r.rows[0].a_name; toPos = r.rows[0].a_position || r.rows[0].a_role; }
     }
 

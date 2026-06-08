@@ -197,7 +197,7 @@ export default function CircularSection({
             <p className="text-slate-500 m-0 text-sm">จัดการและติดตามสถานะหนังสือเวียนทั้งหมดในระบบ</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(admin?.role === 'SYSTEM_ADMIN' || admin?.role === 'COORDINATOR') && (
+            {(admin?.role === 'SYSTEM_ADMIN' || admin?.role === 'COORDINATOR' || admin?.permiss === 'superadmin' || admin?.permiss === 'admin') && (
               <>
                 <button 
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow"
@@ -373,20 +373,24 @@ export default function CircularSection({
                             <i className='bx bx-play'></i>
                           </button>
                         )}
-                        <button 
-                          className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100 transition flex items-center justify-center" 
-                          onClick={() => { setEditItem(item); setShowModal(true) }}
-                          title="แก้ไข"
-                        >
-                          <i className='bx bx-edit-alt'></i>
-                        </button>
-                        <button 
-                          className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center" 
-                          onClick={() => handleDelete(item)}
-                          title="ลบ"
-                        >
-                          <i className='bx bx-trash'></i>
-                        </button>
+                        {(admin?.role === 'SYSTEM_ADMIN' || admin?.role === 'COORDINATOR' || admin?.permiss === 'superadmin' || admin?.permiss === 'admin') && (
+                          <>
+                            <button 
+                              className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100 transition flex items-center justify-center" 
+                              onClick={() => { setEditItem(item); setShowModal(true) }}
+                              title="แก้ไข"
+                            >
+                              <i className='bx bx-edit-alt'></i>
+                            </button>
+                            <button 
+                              className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center" 
+                              onClick={() => handleDelete(item)}
+                              title="ลบ"
+                            >
+                              <i className='bx bx-trash'></i>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

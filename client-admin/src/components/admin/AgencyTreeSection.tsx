@@ -10,6 +10,8 @@ interface AgencyNode {
   ag_name: string
   ag_code: string | null
   ag_status: string
+  ag_type?: string
+  ag_role?: string | null
   parent_ag_id: number | null
   ag_level: number
   ag_path: string
@@ -26,6 +28,7 @@ function buildTree(flat: AgencyNode[]): AgencyNode[] {
   flat.forEach(n => map.set(n.ag_id, { ...n, children: [] }))
   const roots: AgencyNode[] = []
   map.forEach(n => {
+    if (n.ag_type === 'POSITION') return; // Hide positions from the main tree
     if (n.parent_ag_id && map.has(n.parent_ag_id)) {
       map.get(n.parent_ag_id)!.children!.push(n)
     } else {
@@ -43,8 +46,15 @@ function getAllDescendantIds(node: AgencyNode): number[] {
   return ids
 }
 
-function countAllMembers(node: AgencyNode): number {
-  return Number(node.direct_member_count || 0) + (node.children?.reduce((s, c) => s + countAllMembers(c), 0) || 0)
+function countAllMembers(node: AgencyNode, allFlat: AgencyNode[]): number {
+  let count = Number(node.direct_member_count || 0)
+  // add direct positions' members
+  const positions = allFlat.filter(p => p.parent_ag_id === node.ag_id && p.ag_type === 'POSITION')
+  count += positions.reduce((s, p) => s + Number(p.direct_member_count || 0), 0)
+  
+  // recursive children (which already excluded positions from children array, but let's be safe)
+  count += (node.children?.reduce((s, c) => s + countAllMembers(c, allFlat), 0) || 0)
+  return count
 }
 
 // ─── TreeNode Component ───────────────────────────────────────
@@ -91,7 +101,7 @@ function TreeNode({
   const hasChildren = (node.children?.length ?? 0) > 0
   const isExpanded = expandedIds.has(node.ag_id)
   const isActive = node.ag_status === 'active'
-  const totalMembers = countAllMembers(node)
+  const totalMembers = countAllMembers(node, allFlat)
   const isMatch = matchesSearch(node, searchTerm)
 
   // Filter children for search
@@ -166,17 +176,21 @@ function TreeNode({
         {/* Icon */}
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
           isActive
-            ? node.ag_level === 1
-              ? 'bg-emerald-100 text-emerald-700'
-              : node.ag_level === 2
-                ? 'bg-blue-100 text-blue-600'
-                : 'bg-slate-100 text-slate-500'
+            ? node.ag_type === 'POSITION'
+              ? 'bg-teal-100 text-teal-700'
+              : node.ag_level === 1
+                ? 'bg-emerald-100 text-emerald-700'
+                : node.ag_level === 2
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'bg-slate-100 text-slate-500'
             : 'bg-slate-100 text-slate-400'
         }`}>
           <i className={`bx ${
-            hasChildren
-              ? (isExpanded ? 'bx-folder-open' : 'bx-folder')
-              : 'bx-buildings'
+            node.ag_type === 'POSITION'
+              ? 'bx-id-card'
+              : hasChildren
+                ? (isExpanded ? 'bx-folder-open' : 'bx-folder')
+                : 'bx-buildings'
           } text-base`}></i>
         </div>
 
@@ -189,6 +203,11 @@ function TreeNode({
             {node.ag_code && (
               <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
                 {node.ag_code}
+              </span>
+            )}
+            {node.ag_type === 'POSITION' && node.ag_role && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 font-bold rounded">
+                {node.ag_role}
               </span>
             )}
             {/* Status badge */}
@@ -237,38 +256,14 @@ function TreeNode({
             <i className="bx bx-plus"></i>
           </button>
 
-          {/* Toggle status */}
-          <button
-            type="button"
-            title={isActive ? 'ยุบเลิกส่วนราชการ' : 'เปิดใช้งานอีกครั้ง'}
-            className={`w-7 h-7 rounded-lg flex items-center justify-center transition text-sm ${
-              isActive
-                ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-                : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-            }`}
-            onClick={() => onToggleStatus(node)}
-          >
-            <i className={`bx ${isActive ? 'bx-pause-circle' : 'bx-play-circle'}`}></i>
-          </button>
-
           {/* Edit */}
           <button
             type="button"
             title="แก้ไข"
-            className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center transition text-sm"
+            className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition text-sm"
             onClick={() => onEdit(node)}
           >
             <i className="bx bx-edit-alt"></i>
-          </button>
-
-          {/* Delete */}
-          <button
-            type="button"
-            title="ลบถาวร"
-            className="w-7 h-7 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 flex items-center justify-center transition text-sm"
-            onClick={() => onDelete(node)}
-          >
-            <i className="bx bx-trash"></i>
           </button>
         </div>
       </div>
@@ -729,6 +724,9 @@ export default function AgencyTreeSection() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         node={drawerNode}
+        allNodes={flatNodes}
+        onReload={loadTree}
+        onEditNode={handleEdit}
       />
     </div>
   )

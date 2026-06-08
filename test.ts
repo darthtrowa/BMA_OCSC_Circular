@@ -1,0 +1,1 @@
+import { WorkflowService } from './server/src/services/workflowService.js'; WorkflowService.getNextAssignees(8).then(r => console.log(JSON.stringify(r, null, 2))).catch(e => console.error(e));

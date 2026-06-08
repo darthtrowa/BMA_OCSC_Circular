@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import WorkflowBuilderPage from './pages/WorkflowBuilderPage'
+
 
 // BP-05: Client-side JWT expiry check
 function isTokenExpired(token: string): boolean {
@@ -57,10 +57,7 @@ export default function App() {
             path="/dashboard"
             element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
           />
-          <Route
-            path="/dashboard/workflow-builder"
-            element={<ProtectedRoute><WorkflowBuilderPage /></ProtectedRoute>}
-          />
+
 
           {/* All unknown routes → redirect to login */}
           <Route path="*" element={<Navigate to="/" replace />} />

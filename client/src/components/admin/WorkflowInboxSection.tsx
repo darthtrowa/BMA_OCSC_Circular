@@ -11,15 +11,17 @@ interface WorkflowInboxSectionProps {
   allData: any;
   loading: boolean;
   onReload: () => void;
+  activeTabFromSidebar?: string;
 }
 
-export default function WorkflowInboxSection({ allData, loading, onReload }: WorkflowInboxSectionProps) {
+export default function WorkflowInboxSection({ allData, loading, onReload, activeTabFromSidebar = 'inbox' }: WorkflowInboxSectionProps) {
   const { admin } = useAuth();
   
   const [showActionModal, setShowActionModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
-  const [actionType, setActionType] = useState<WorkflowActionType>('submitToHr');
+  const [actionType, setActionType] = useState<WorkflowActionType>('forward');
+  const [actionContext, setActionContext] = useState<'SELF' | 'ACTING'>('SELF');
   const [selectedTaskDelegationId, setSelectedTaskDelegationId] = useState<number | null>(null);
   
   const [users, setUsers] = useState<any[]>([]);
@@ -46,13 +48,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
 
   // Role map for each action type
   const ACTION_ROLE_MAP: Record<string, string[]> = {
-    submitToHr: ['HR_DIRECTOR'],
-    submitToGrpLeader: ['GRP_LEADER'],
-    delegate: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF'],
-    reject: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR'],
-    submitReview: [],
-    approve: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
-    actingApprove: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
+    forward: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR'],
+    reject: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR']
   };
 
   const handleAction = async (docId: number, type: WorkflowActionType, delegationId?: number) => {
@@ -162,6 +159,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
     const statusMap: Record<string, { label: string, color: string }> = {
       'DRAFT': { label: 'ฉบับร่าง', color: 'bg-slate-100 text-slate-700' },
       'PENDING_HR_APPROVAL': { label: 'รอ ผอ.ศูนย์ฯ พิจารณา', color: 'bg-amber-100 text-amber-700' },
+      'PENDING_GRP_REVIEW': { label: 'อยู่ระหว่างหัวหน้าพิจารณา', color: 'bg-orange-100 text-orange-700' },
       'PENDING_DELEGATION': { label: 'รอมอบหมาย', color: 'bg-blue-100 text-blue-700' },
       'PENDING_EXECUTION': { label: 'รอเจ้าหน้าที่ดำเนินการ', color: 'bg-indigo-100 text-indigo-700' },
       'PENDING_REVIEW': { label: 'รอตรวจสอบผล', color: 'bg-purple-100 text-purple-700' },
@@ -212,37 +210,9 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
             </button>
           )}
           
-          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
-            <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'submitToGrpLeader')}>
-              ส่งให้ หัวหน้าฝ่าย
-            </button>
-          )}
-
-          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
-            <button
-              className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 transition text-xs font-semibold flex items-center gap-1"
-              onClick={() => { setParallelDocId(item.in_id); setShowParallelModal(true); }}
-              title="ส่งให้หลายส่วนราชการพิจารณาร่วมกัน"
-            >
-              <i className="bx bx-git-branch"></i> ส่งไปพิจารณา
-            </button>
-          )}
-
-          {canAct && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && (
-            <button className="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'delegate')}>
-              มอบหมาย
-            </button>
-          )}
-
-          {canAct && admin?.role === 'STAFF' && (
-            <button className="px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'submitReview')}>
-              ส่งผลการดำเนินงาน
-            </button>
-          )}
-
-          {canAct && ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER'].includes(admin?.role || '') && item.in_workflow_status === 'PENDING_REVIEW' && (
-            <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'approve')}>
-              อนุมัติ
+          {canAct && !['COMPLETED'].includes(item.in_workflow_status) && (
+            <button className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition text-xs font-semibold flex items-center gap-1" onClick={() => handleAction(item.in_id, 'forward')}>
+              <i className="bx bx-share"></i> เสนอเรื่อง / ส่งต่อ
             </button>
           )}
 
@@ -270,8 +240,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
 
   return (
     <div className="space-y-6">
-      {admin?.permiss !== 'superadmin' && (
-        <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
+      {admin?.permiss !== 'superadmin' && activeTabFromSidebar === 'inbox' && (
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden animate__animated animate__fadeIn">
           <div className="p-6 border-b border-slate-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl">
               <i className="bx bx-task"></i>
@@ -314,8 +284,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
       )}
 
       {/* For Coordinators: Show tasks they created that are currently in progress */}
-      {admin?.role === 'COORDINATOR' && myCreatedTasks.length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm overflow-hidden opacity-75 hover:opacity-100 transition-opacity">
+      {admin?.role === 'COORDINATOR' && activeTabFromSidebar === 'inbox' && myCreatedTasks.length > 0 && (
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden opacity-75 hover:opacity-100 transition-opacity animate__animated animate__fadeIn">
           <div className="p-6 border-b border-slate-100">
             <h4 className="text-lg font-bold text-slate-800 m-0 font-saochingcha">งานที่กำลังดำเนินการ (ติดตาม)</h4>
           </div>
@@ -338,8 +308,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
       )}
 
       {/* Processed Tasks Tracking — งานที่ดำเนินการไปแล้ว (ติดตามสถานะ) */}
-      {admin?.permiss !== 'superadmin' && myProcessedTasks.length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-sky-100">
+      {admin?.permiss !== 'superadmin' && activeTabFromSidebar === 'tracking' && (
+        <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-sky-100 animate__animated animate__fadeIn">
           <div className="p-6 border-b border-sky-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center text-xl">
               <i className="bx bx-send"></i>
@@ -350,6 +320,11 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
             </div>
           </div>
           <div className="overflow-x-auto">
+            {myProcessedTasks.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                ไม่มีงานที่กำลังติดตาม
+              </div>
+            ) : (
             <table className="w-full text-left border-collapse">
               <thead className="bg-sky-50 text-xs uppercase text-sky-600 tracking-wide border-b border-sky-200">
                 <tr>
@@ -384,12 +359,13 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       )}
 
       {/* Acting Inbox — งานรักษาการ (amber theme) */}
-      {actingTasks.length > 0 && (
+      {admin?.permiss !== 'superadmin' && activeTabFromSidebar === 'acting' && (
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden border-2 border-amber-200 animate__animated animate__fadeIn">
           <div className="p-6 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-center gap-3">
@@ -399,9 +375,6 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
               <div>
                 <h4 className="text-xl font-bold text-amber-800 m-0 font-saochingcha flex items-center gap-2">
                   กล่องงานรักษาการ (Acting Inbox)
-                  <span className="px-2.5 py-0.5 bg-amber-500 text-white text-xs font-bold rounded-full">
-                    {actingTasks.length}
-                  </span>
                 </h4>
                 <p className="text-amber-600 m-0 text-sm">งานที่คุณรักษาการแทนผู้มอบอำนาจ</p>
               </div>
@@ -411,7 +384,9 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
               {activeDelegations.map(d => (
                 <span key={d.delegation_id} className="px-2.5 py-1 bg-amber-100 text-amber-700 text-[11px] font-semibold rounded-lg flex items-center gap-1">
                   <i className="bx bx-shield-check text-sm"></i>
-                  รักษาการแทน: {d.assigner_name} ({d.delegated_role})
+                  {d.is_position_delegation
+                    ? `รักษาการ${d.assigner_name}`
+                    : `รักษาการแทน: ${d.assigner_name} (${d.delegated_role})`}
                 </span>
               ))}
             </div>
@@ -420,6 +395,10 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
             {loading ? (
               <div className="flex justify-center items-center py-20">
                 <i className="bx bx-loader-alt animate-spin text-3xl text-amber-500"></i>
+              </div>
+            ) : actingTasks.length === 0 ? (
+              <div className="text-center py-12 text-amber-600/70">
+                ไม่มีงานรักษาการที่ต้องดำเนินการ
               </div>
             ) : (
               <table className="w-full text-left border-collapse">
@@ -453,13 +432,13 @@ export default function WorkflowInboxSection({ allData, loading, onReload }: Wor
                           >
                             <i className="bx bx-history"></i> ประวัติ
                           </button>
-                          {/* ผู้รักษาการสามารถ approve (เหมือนผู้มอบอำนาจ) */}
-                          {item.in_workflow_status === 'PENDING_REVIEW' && (
+                          {/* ผู้รักษาการสามารถ forward (เหมือนผู้มอบอำนาจ) */}
+                          {!['COMPLETED'].includes(item.in_workflow_status) && (
                             <button
                               className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition text-xs font-semibold flex items-center gap-1"
-                              onClick={() => handleAction(item.in_id, 'actingApprove', item._delegationId)}
+                              onClick={() => handleAction(item.in_id, 'forward', item._delegationId)}
                             >
-                              <i className="bx bx-shield-check"></i> ดำเนินการ
+                              <i className="bx bx-share"></i> เสนอเรื่อง / ส่งต่อ
                             </button>
                           )}
                           

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import Swal from 'sweetalert2';
 import { workflowApi, adminApi, DelegationItem } from '../../api/apiService';
 
-export type WorkflowActionType = 'submitToHr' | 'submitToGrpLeader' | 'delegate' | 'submitReview' | 'approve' | 'reject' | 'actingApprove' | 'actingReject';
+export type WorkflowActionType = 'forward' | 'reject' | 'actingReject';
 
 interface WorkflowActionModalProps {
   isOpen: boolean;
@@ -16,10 +16,12 @@ interface WorkflowActionModalProps {
   activeDelegations?: DelegationItem[];
   /** delegation id ของ task ที่กดเข้ามา (สำหรับ Acting Inbox) */
   preSelectedDelegationId?: number | null;
+  /** บังคับบริบทของการกระทำ (เช่น มาจากกล่องข้อความส่วนตัว หรือ กล่องรักษาการ) */
+  initContext?: 'SELF' | 'ACTING';
 }
 
 export default function WorkflowActionModal({
-  isOpen, onClose, onSuccess, actionType, docId, users, activeDelegations = [], preSelectedDelegationId
+  isOpen, onClose, onSuccess, actionType, docId, users, activeDelegations = [], preSelectedDelegationId, initContext
 }: WorkflowActionModalProps) {
   const [comments, setComments]           = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | ''>('');
@@ -30,20 +32,45 @@ export default function WorkflowActionModal({
   // delegation ที่เลือก (เมื่อ approvalContext = 'ACTING')
   const [selectedDelegationId, setSelectedDelegationId] = useState<number | ''>('');
 
-  const [dynamicUsers, setDynamicUsers] = useState<any[]>([]);
+  // When modal opens, sync context based on initContext or preSelectedDelegationId
+  useEffect(() => {
+    if (isOpen) {
+      if (initContext) {
+        setApprovalContext(initContext);
+      } else if (actionType === 'actingReject') {
+        setApprovalContext('ACTING');
+      } else {
+        setApprovalContext('SELF');
+      }
+
+      if (preSelectedDelegationId) {
+        setSelectedDelegationId(preSelectedDelegationId);
+      } else if (activeDelegations.length > 0) {
+        setSelectedDelegationId(activeDelegations[0].delegation_id);
+      }
+    } else {
+      setComments('');
+      setSelectedUserId('');
+      setSubmitting(false);
+    }
+  }, [isOpen, actionType, initContext, preSelectedDelegationId, activeDelegations]);
+
+  const [autoUpAssignee, setAutoUpAssignee] = useState<any>(null);
+  const [manualAssignees, setManualAssignees] = useState<any[]>([]);
+  const [forwardMode, setForwardMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const hasActiveDelegations = activeDelegations.length > 0;
   // แสดงตัวเลือก delegation หรือ radio group
-  const isActingAction = actionType === 'actingApprove' || actionType === 'actingReject';
-  const showContextSelector  = (actionType === 'approve' || isActingAction) && hasActiveDelegations;
+  const isActingAction = actionType === 'actingReject';
+  const showContextSelector  = !initContext && (actionType === 'forward' || isActingAction) && hasActiveDelegations;
 
   useEffect(() => {
     if (!isOpen) return;
 
     // --- Step 1: resolve initial context & delegation ---
     setComments('');
-    const initContext = (actionType === 'actingApprove' || actionType === 'actingReject') ? 'ACTING' : 'SELF';
+    const initContext = (actionType === 'actingReject') ? 'ACTING' : 'SELF';
     setApprovalContext(initContext);
 
     let resolvedDelegationId: number | '' = '';
@@ -67,37 +94,38 @@ export default function WorkflowActionModal({
 
     // If ACTING but no delegation resolved yet, skip (user must pick manually)
     if (initContext === 'ACTING' && !resolvedDelegationId) {
-      setDynamicUsers([]);
+      setAutoUpAssignee(null);
+      setManualAssignees([]);
       return;
     }
 
-    const ACTION_ROLE_MAP: Record<string, string[]> = {
-      submitToHr: ['HR_DIRECTOR'],
-      submitToGrpLeader: ['GRP_LEADER'],
-      delegate: ['DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF'],
-      approve: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
-      actingApprove: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
-    };
-
-    const roles = ACTION_ROLE_MAP[actionType] || [];
-    if (roles.length > 0) {
+    if (actionType === 'forward') {
       setLoadingUsers(true);
-      adminApi.getUsersByRole(
-        roles,
+      workflowApi.getNextAssignees(
+        docId,
         initContext,
         initContext === 'ACTING' && resolvedDelegationId ? Number(resolvedDelegationId) : undefined
-      ).then(u => {
-        setDynamicUsers(u || []);
+      ).then(res => {
+        const { autoUpAssignee: upUser, manualAssignees: mUsers } = res.data;
+        setAutoUpAssignee(upUser);
+        setManualAssignees(mUsers || []);
+        if (upUser) {
+          setForwardMode('AUTO');
+          const idToUse = upUser.acting_info ? upUser.acting_info.id : upUser.a_id;
+          setSelectedUserId(`${idToUse}-0`);
+        } else {
+          setForwardMode('MANUAL');
+          setSelectedUserId('');
+        }
         setLoadingUsers(false);
       }).catch(e => {
-        console.error('Failed to load dynamic users', e);
-        setDynamicUsers([]);
+        console.error('Failed to load dynamic assignees', e);
+        setAutoUpAssignee(null);
+        setManualAssignees([]);
         setLoadingUsers(false);
       });
-    } else {
-      setDynamicUsers([]);
     }
-  }, [isOpen, actionType, activeDelegations, preSelectedDelegationId]);
+  }, [isOpen, actionType, activeDelegations, preSelectedDelegationId, docId]);
 
   // Re-load when user manually changes delegation (approve with context selector)
   useEffect(() => {
@@ -105,24 +133,32 @@ export default function WorkflowActionModal({
     if (actionType === 'reject' || actionType === 'actingReject') return;
     if (!showContextSelector) return; // only for manual selection flows
     if (approvalContext === 'ACTING' && !selectedDelegationId) {
-      setDynamicUsers([]);
+      setAutoUpAssignee(null);
+      setManualAssignees([]);
       return;
     }
-    const ACTION_ROLE_MAP: Record<string, string[]> = {
-      approve: ['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'COORDINATOR'],
-    };
-    const roles = ACTION_ROLE_MAP[actionType] || [];
-    if (roles.length > 0) {
+    if (actionType === 'forward') {
       setLoadingUsers(true);
-      adminApi.getUsersByRole(
-        roles,
+      workflowApi.getNextAssignees(
+        docId,
         approvalContext,
         approvalContext === 'ACTING' && selectedDelegationId ? Number(selectedDelegationId) : undefined
-      ).then(u => {
-        setDynamicUsers(u || []);
+      ).then(res => {
+        const { autoUpAssignee: upUser, manualAssignees: mUsers } = res.data;
+        setAutoUpAssignee(upUser);
+        setManualAssignees(mUsers || []);
+        if (upUser) {
+          setForwardMode('AUTO');
+          const idToUse = upUser.acting_info ? upUser.acting_info.id : upUser.a_id;
+          setSelectedUserId(`${idToUse}-0`);
+        } else {
+          setForwardMode('MANUAL');
+          setSelectedUserId('');
+        }
         setLoadingUsers(false);
       }).catch(() => {
-        setDynamicUsers([]);
+        setAutoUpAssignee(null);
+        setManualAssignees([]);
         setLoadingUsers(false);
       });
     }
@@ -132,12 +168,7 @@ export default function WorkflowActionModal({
 
   const getActionConfig = () => {
     switch (actionType) {
-      case 'submitToHr':    return { title: 'ส่งให้ ผอ. ศูนย์สารสนเทศฯ', buttonText: 'ส่งเรื่อง', requiresUser: true };
-      case 'submitToGrpLeader': return { title: 'ส่งให้ หัวหน้าฝ่าย (GRP_LEADER)', buttonText: 'ส่งเรื่อง', requiresUser: true };
-      case 'delegate':      return { title: 'มอบหมายงาน',                  buttonText: 'มอบหมาย',  requiresUser: true };
-      case 'submitReview':  return { title: 'ส่งผลการดำเนินงาน',           buttonText: 'ส่งผล',    requiresUser: false };
-      case 'approve':       return { title: 'อนุมัติ / เห็นชอบ',           buttonText: approvalContext === 'ACTING' ? 'อนุมัติในฐานะรักษาการ' : 'อนุมัติ', requiresUser: true };
-      case 'actingApprove': return { title: 'ดำเนินการ (ในฐานะรักษาการ)', buttonText: 'ดำเนินการ', requiresUser: true };
+      case 'forward':       return { title: 'เสนอเรื่อง / ส่งต่อ',           buttonText: approvalContext === 'ACTING' ? 'ส่งต่อ (รักษาการ)' : 'ส่งต่อ', requiresUser: true };
       case 'reject':        return { title: 'ตีกลับ / ส่งแก้ไข',           buttonText: 'ตีกลับ',   requiresUser: true };
       case 'actingReject':  return { title: 'ส่งงานกลับ (ในฐานะรักษาการ)', buttonText: 'ส่งกลับ',   requiresUser: true };
       default:              return { title: 'ดำเนินการ',                     buttonText: 'ยืนยัน',  requiresUser: false };
@@ -145,8 +176,7 @@ export default function WorkflowActionModal({
   };
 
   const config = getActionConfig();
-  
-  const effectiveUsers = (actionType === 'reject' || actionType === 'actingReject') ? users : dynamicUsers;
+  const effectiveUsers = users;
 
   // Dynamic button color: amber สำหรับ ACTING, emerald สำหรับ SELF
   const buttonColorClass = approvalContext === 'ACTING'
@@ -168,29 +198,21 @@ export default function WorkflowActionModal({
     try {
       const targetUserId = selectedUserId ? Number(String(selectedUserId).split('-')[0]) : 0;
 
-      if (actionType === 'submitToHr') {
-        await workflowApi.submitToHr(docId, targetUserId, comments);
-      } else if (actionType === 'submitToGrpLeader') {
-        await workflowApi.submitToGrpLeader(docId, targetUserId, comments);
-      } else if (actionType === 'delegate') {
-        await workflowApi.delegate(docId, targetUserId, comments);
-      } else if (actionType === 'submitReview') {
-        await workflowApi.submitReview(docId, comments);
-      } else if (actionType === 'approve' || actionType === 'actingApprove') {
-        await workflowApi.approve(
-          docId,
-          targetUserId,
-          comments,
-          approvalContext,
-          approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined,
-        );
-      } else if (actionType === 'reject' || actionType === 'actingReject') {
+      if (actionType === 'reject' || actionType === 'actingReject') {
         await workflowApi.reject(
           docId, 
           targetUserId, 
           comments, 
           approvalContext, 
           approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined
+        );
+      } else {
+        await workflowApi.forward(
+          docId,
+          targetUserId,
+          comments,
+          approvalContext,
+          approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined,
         );
       }
 
@@ -211,7 +233,7 @@ export default function WorkflowActionModal({
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <i className={`bx ${actionType === 'approve' || actionType === 'actingApprove' ? 'bx-check-circle text-emerald-500' : actionType === 'reject' || actionType === 'actingReject' ? 'bx-x-circle text-red-500' : 'bx-message-square-detail text-emerald-500'} text-xl`}></i>
+            <i className={`bx ${actionType === 'forward' ? 'bx-check-circle text-emerald-500' : actionType === 'reject' || actionType === 'actingReject' ? 'bx-x-circle text-red-500' : 'bx-message-square-detail text-emerald-500'} text-xl`}></i>
             {config.title}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-2 rounded-lg hover:bg-slate-100">
@@ -287,18 +309,14 @@ export default function WorkflowActionModal({
             </div>
           )}
 
-          {/* User selector (submitToHr, delegate, reject) */}
+          {/* User selector */}
           {config.requiresUser && (
             <div className="animate__animated animate__fadeInUp animate__faster animate__delay-1s">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                ผู้รับมอบหมาย / ผู้รับผิดชอบ <span className="text-emerald-600 font-normal text-xs ml-2">(พบ {effectiveUsers.length} รายชื่อ)</span>
-              </label>
-              {loadingUsers ? (
-                <div className="flex items-center gap-2 text-slate-500 py-2">
-                  <i className="bx bx-loader-alt animate-spin"></i> กำลังโหลดรายชื่อ...
-                </div>
-              ) : actionType === 'reject' || actionType === 'actingReject' ? (
+              {actionType === 'reject' || actionType === 'actingReject' ? (
                 <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    ผู้รับมอบหมาย / ผู้รับผิดชอบ <span className="text-emerald-600 font-normal text-xs ml-2">(พบ {effectiveUsers.length} รายชื่อ)</span>
+                  </label>
                   {users.length === 0 ? (
                     <div className="px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-sm">
                       <i className="bx bx-info-circle mr-2"></i>ไม่พบข้อมูลผู้ดำเนินการก่อนหน้า
@@ -317,7 +335,6 @@ export default function WorkflowActionModal({
                             <div className="font-semibold text-slate-800 text-sm">{u.a_name}</div>
                             <div className="text-xs text-slate-500">{u.a_position || u.a_role || 'ไม่ระบุตำแหน่ง'}</div>
                           </div>
-                          {/* Badge บอกฐานะของผู้รับงาน */}
                           {u.isActing ? (
                             <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 bg-amber-100 text-amber-700 rounded-full">
                               <i className="bx bx-shield-check"></i> รักษาการแทน {u.actingFor}
@@ -332,28 +349,97 @@ export default function WorkflowActionModal({
                     </div>
                   )}
                 </div>
-              ) : (
-                <div>
+              ) : actionType === 'forward' ? (
+                <div className="space-y-4">
+                  <label className="block text-sm font-semibold text-slate-700">รูปแบบการส่งต่อ</label>
+                  {loadingUsers ? (
+                    <div className="flex items-center gap-2 text-slate-500 py-2">
+                      <i className="bx bx-loader-alt animate-spin"></i> กำลังโหลดข้อมูลผู้รับ...
+                    </div>
+                  ) : (
+                    <>
+                      {autoUpAssignee && (
+                        <div 
+                          onClick={() => {
+                            setForwardMode('AUTO');
+                            const idToUse = autoUpAssignee.acting_info ? autoUpAssignee.acting_info.id : autoUpAssignee.a_id;
+                            setSelectedUserId(`${idToUse}-0`);
+                          }}
+                          className={`p-4 border rounded-xl cursor-pointer transition-colors ${
+                            forwardMode === 'AUTO' ? 'border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-500' : 'border-slate-200 hover:border-emerald-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${forwardMode === 'AUTO' ? 'border-emerald-500' : 'border-slate-300'}`}>
+                              {forwardMode === 'AUTO' && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full" />}
+                            </div>
+                            <div>
+                              <div className="font-medium text-slate-900 text-sm">
+                                เสนอเรื่องขึ้นไปที่: <span className="font-bold">
+                                  {autoUpAssignee.acting_info ? (
+                                    <>
+                                      <i className="bx bx-shield-check text-amber-500 mr-1"></i>
+                                      รักษาการแทน {autoUpAssignee.acting_info.position || 'หัวหน้ากลุ่มงาน'}
+                                    </>
+                                  ) : (
+                                    autoUpAssignee.a_position || (autoUpAssignee.a_role === 'GRP_LEADER' ? 'หัวหน้ากลุ่มงาน' : autoUpAssignee.a_role)
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
-                  <select
-                    value={selectedUserId}
-                    onChange={e => setSelectedUserId(e.target.value)}
-                    required
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                  >
-                    <option value="">-- เลือกบุคคล --</option>
-                    {effectiveUsers.length === 0 ? (
-                      <option disabled value="">ไม่พบบุคคลที่มีสิทธิ์รับมอบหมายในขณะนี้</option>
-                    ) : (
-                      effectiveUsers.map((u, i) => (
-                        <option key={`${u.a_id}-${i}`} value={`${u.a_id}-${i}`}>
-                          {u.a_name} ({u.a_position || u.a_role})
-                        </option>
-                      ))
-                    )}
-                  </select>
+                      {manualAssignees.length > 0 && (
+                        <div 
+                        onClick={() => {
+                          setForwardMode('MANUAL');
+                          setSelectedUserId('');
+                        }}
+                        className={`p-4 border rounded-xl cursor-pointer transition-colors ${
+                          forwardMode === 'MANUAL' ? 'border-amber-500 bg-amber-50/50 ring-1 ring-amber-500' : 'border-slate-200 hover:border-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${forwardMode === 'MANUAL' ? 'border-amber-500' : 'border-slate-300'}`}>
+                            {forwardMode === 'MANUAL' && <div className="w-2.5 h-2.5 bg-amber-500 rounded-full" />}
+                          </div>
+                          <div className="font-medium text-slate-900 text-sm">มอบหมายงาน / ส่งข้ามสายงาน</div>
+                        </div>
+
+                        {forwardMode === 'MANUAL' && (
+                          <div onClick={e => e.stopPropagation()}>
+                            <select
+                              value={selectedUserId}
+                              onChange={e => setSelectedUserId(e.target.value)}
+                              required={forwardMode === 'MANUAL'}
+                              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all text-sm"
+                            >
+                              <option value="">-- เลือกผู้รับมอบหมาย --</option>
+                              {manualAssignees.length === 0 ? (
+                                <option disabled value="">ไม่พบบุคคลที่สามารถมอบหมายได้</option>
+                              ) : (
+                                manualAssignees.map((u, i) => {
+                                  const idToUse = u.acting_info ? u.acting_info.id : u.a_id;
+                                  const nameToUse = u.acting_info ? u.acting_info.name : u.a_name;
+                                  const posToUse = u.acting_info ? u.acting_info.position : (u.a_position || u.ag_name || u.a_role);
+                                  return (
+                                    <option key={`${idToUse}-${i}`} value={`${idToUse}-0`}>
+                                      {nameToUse} ({posToUse}) {u.acting_info ? `[รักษาการแทน ${u.a_name}]` : ''}
+                                    </option>
+                                  );
+                                })
+                              )}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      )}
+                    </>
+                  )}
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 

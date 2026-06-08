@@ -161,6 +161,11 @@ async function runMigration() {
     `);
 
     await client.query(`
+      ALTER TABLE workflow_nodes
+        ADD COLUMN IF NOT EXISTS skip_if_no_assignee BOOLEAN NOT NULL DEFAULT FALSE;
+    `);
+
+    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_wf_nodes_template
         ON workflow_nodes (template_id);
     `);

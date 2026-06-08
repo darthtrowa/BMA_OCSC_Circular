@@ -9,7 +9,7 @@ import { rateLimit } from 'express-rate-limit';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import workflowRoutes from './routes/workflowRoutes.js';
-import workflowTemplateRoutes from './routes/workflowTemplateRoutes.js';
+
 import delegationRoutes from './routes/delegationRoutes.js';
 import pool from './config/database.js';
 import { runMigrations } from './config/migrations.js';
@@ -39,25 +39,6 @@ app.use(helmet({
   },
 }));
 
-// Rate limiter for public API (generous)
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { status: false, message: 'Too many requests, please try again later.' }
-});
-// Rate limiter for admin auth (strict — anti brute-force)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { status: false, message: 'Too many login attempts, please try again later.' }
-});
-app.use('/api', apiLimiter);
-app.use('/api/admin/auth', authLimiter);
-
 // ─── CORS ─────────────────────────────────────────────────────
 // SEC-06: Default to production-safe CORS (was permissive when NODE_ENV unset)
 const isProduction = process.env.NODE_ENV !== 'development';
@@ -79,6 +60,25 @@ app.use(cors({
   origin: corsOrigins,
   credentials: true,
 }));
+
+// Rate limiter for public API (generous)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000, // Increased limit from 200 to 2000 to prevent local dev blocking
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: false, message: 'Too many requests, please try again later.' }
+});
+// Rate limiter for admin auth (strict — anti brute-force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: false, message: 'Too many login attempts, please try again later.' }
+});
+app.use('/api', apiLimiter);
+app.use('/api/admin/auth', authLimiter);
 // ─── AdminJS Internal Control Panel (MUST BE BEFORE BODY PARSERS) ───
 await initAdminJS(app);
 
@@ -97,7 +97,7 @@ import { auditMiddleware } from './middleware/auditMiddleware.js';
 app.use('/api', publicRoutes);
 app.use('/api/admin', auditMiddleware, adminRoutes);
 app.use('/api/admin/workflow', auditMiddleware, workflowRoutes);
-app.use('/api/admin/workflows', auditMiddleware, workflowTemplateRoutes);
+
 app.use('/api/admin/delegations', auditMiddleware, delegationRoutes);
 
 // ─── Swagger Documentation ────────────────────────────────────

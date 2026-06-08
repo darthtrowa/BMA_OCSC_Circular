@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react'
-import { adminApi, agencyApi, delegationApi } from '../../api/apiService'
+import { createPortal } from 'react-dom'
+import { adminApi, agencyApi } from '../../api/apiService'
 import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
-import AgencyTreeSection from './AgencyTreeSection'
-import DelegationModal from './DelegationModal'
-import AssignDelegationModal from './AssignDelegationModal'
-import ManageDelegationModal from './ManageDelegationModal'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../contexts/AuthContext'
 moment.locale('th')
 
 export default function UserSection({ permiss }) {
@@ -17,12 +14,6 @@ export default function UserSection({ permiss }) {
   const [showModal, setShowModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   
-  const [showAssignModal, setShowAssignModal] = useState(false)
-  const [showManageModal, setShowManageModal] = useState(false)
-  
-  const [actingUser, setActingUser] = useState<any>(null)
-  const [assignerUser, setAssignerUser] = useState<any>(null)
-
   const [formData, setFormData] = useState({
     a_name: '',
     a_username: '',
@@ -187,29 +178,7 @@ export default function UserSection({ permiss }) {
     })
   }
 
-  const handleRevokeDelegation = (delegationId: number) => {
-    Swal.fire({
-      title: 'ยืนยันการลบ?',
-      text: 'ต้องการลบการเป็นรักษาการนี้ใช่หรือไม่?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'ใช่, ลบเลย!',
-      cancelButtonText: 'ยกเลิก'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          await delegationApi.remove(delegationId)
-          Swal.fire('สำเร็จ!', 'ลบการเป็นรักษาการเรียบร้อยแล้ว', 'success')
-          loadUsers()
-        } catch (err: any) {
-          console.error(err)
-          Swal.fire('Error', err.response?.data?.message || err.message || 'ไม่สามารถลบข้อมูลได้', 'error')
-        }
-      }
-    })
-  }
+
 
   return (
     <div className="bg-white rounded-3xl shadow-sm mb-8 overflow-hidden animate__animated animate__fadeIn">
@@ -259,11 +228,6 @@ export default function UserSection({ permiss }) {
                   <td className="px-6 py-4">
                     <span className="font-semibold text-slate-800">{u.a_name}</span>
                     <div className="text-[11px] text-slate-400 mt-0.5">{u.a_position || 'ไม่ระบุตำแหน่ง'}</div>
-                    {u.active_delegation_id && (
-                      <div className="mt-1 flex items-center gap-1 text-[11px] text-violet-600 bg-violet-50 px-2 py-0.5 rounded-md w-fit border border-violet-100">
-                        <i className='bx bx-user-pin'></i> รักษาการโดย: {u.active_assignee_name}
-                      </div>
-                    )}
                   </td>
                   <td className="px-6 py-4 text-slate-600">{u.a_agency || <span className="text-slate-400">-</span>}</td>
                   <td className="px-6 py-4">
@@ -277,12 +241,6 @@ export default function UserSection({ permiss }) {
                           'bg-slate-100 text-slate-700'
                         }`}>
                         {u.a_permiss === 'superadmin' ? 'SUPERADMIN' : u.a_permiss === 'admin' ? 'ADMIN' : 'USER'}
-                      </span>
-                      <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md w-fit border ${u.a_role === 'HR_DIRECTOR' ? 'border-primary text-primary' :
-                        u.a_role === 'DIV_DIRECTOR' ? 'border-success text-success' :
-                          'border-slate-300 text-slate-500'
-                        }`}>
-                        {u.a_role || 'STAFF'}
                       </span>
                     </div>
                   </td>
@@ -304,26 +262,7 @@ export default function UserSection({ permiss }) {
                       >
                         <i className='bx bx-edit-alt text-lg'></i>
                       </button>
-                      {/* ปุ่มแต่งตั้งให้คนอื่นมารักษาการ (Assignee-centric) */}
-                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && !['DIV_DIRECTOR', 'HR_DIRECTOR'].includes(u.a_role) && (
-                        <button
-                          className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition flex items-center justify-center"
-                          title="แต่งตั้งให้ไปรักษาการ..."
-                          onClick={() => { setActingUser(u); setShowAssignModal(true); }}
-                        >
-                          <i className='bx bx-user-plus text-lg'></i>
-                        </button>
-                      )}
-                      {/* ปุ่มจัดการผู้รักษาการแทน (Assigner-centric) */}
-                      {permiss === 'superadmin' && u.a_permiss !== 'superadmin' && !['COORDINATOR', 'STAFF'].includes(u.a_role) && (
-                        <button
-                          className="w-8 h-8 rounded-full bg-violet-50 text-violet-600 hover:bg-violet-100 transition flex items-center justify-center"
-                          title="จัดการลำดับ/ลบผู้รักษาการแทน"
-                          onClick={() => { setAssignerUser(u); setShowManageModal(true); }}
-                        >
-                          <i className='bx bx-list-ol text-lg'></i>
-                        </button>
-                      )}
+
                       {u.a_permiss !== 'superadmin' && (
                         <button
                           className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center"
@@ -342,14 +281,26 @@ export default function UserSection({ permiss }) {
         </table>
       </div>
 
-      {/* Modal เพิ่ม/แก้ไข */}
-      {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate__animated animate__zoomIn animate__faster">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h5 className="m-0 font-bold text-xl text-slate-800 font-saochingcha">
-                {editingUser ? 'แก้ไขข้อมูลผู้ใช้' : 'เพิ่มผู้ใช้งานใหม่'}
-              </h5>
+      {/* Sidebar เพิ่ม/แก้ไข */}
+      {showModal && createPortal(
+        <>
+          <div className="fixed inset-0 z-[299] bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="fixed right-0 top-0 h-full z-[300] w-full max-w-xl flex flex-col bg-slate-50 shadow-2xl animate__animated animate__slideInRight animate__faster">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+                  <i className={`bx ${editingUser ? 'bx-edit' : 'bx-user-plus'} text-xl`}></i>
+                </div>
+                <div>
+                  <h5 className="m-0 font-bold text-slate-800 text-base leading-tight">
+                    {editingUser ? 'แก้ไขข้อมูลผู้ใช้' : 'เพิ่มผู้ใช้งานใหม่'}
+                  </h5>
+                  <p className="text-xs text-emerald-600 mt-0.5 font-medium">
+                    {editingUser ? 'จัดการข้อมูลบัญชีและสิทธิ์การใช้งาน' : 'เพิ่มบัญชีผู้ใช้งานใหม่เข้าสู่ระบบ'}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 text-slate-500 hover:bg-rose-100 hover:text-rose-600 transition"
@@ -400,37 +351,20 @@ export default function UserSection({ permiss }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">สังกัด / หน่วยงาน</label>
-                    <select
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition appearance-none"
-                      value={formData.a_agency_id}
-                      onChange={e => {
-                        const selectedId = e.target.value;
-                        const selectedAg = agencies.find((a: any) => String(a.ag_id) === selectedId);
-                        setFormData({
-                          ...formData,
-                          a_agency_id: selectedId,
-                          a_agency: selectedAg ? selectedAg.ag_name : ''
-                        });
-                      }}
-                      required
-                    >
-                      <option value="" disabled>-- กรุณาเลือกสังกัด --</option>
-                      {agencies.map((ag: any) => (
-                        <option key={ag.ag_id} value={ag.ag_id}>
-                          {'\u00a0\u00a0\u00a0\u00a0'.repeat(Math.max(0, (ag.ag_level || 1) - 1))}
-                          {(ag.ag_level || 1) > 1 ? '└ ' : ''}{ag.ag_name}
-                        </option>
-                      ))}
-                    </select>
+                    <input
+                      type="text"
+                      readOnly
+                      className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
+                      value={formData.a_agency || 'ไม่ระบุสังกัด'}
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่ง (Position)</label>
                     <input
                       type="text"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
-                      value={formData.a_position}
-                      onChange={e => setFormData({ ...formData, a_position: e.target.value })}
-                      placeholder="เช่น ผู้อำนวยการส่วน..."
+                      readOnly
+                      className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
+                      value={formData.a_position || '-'}
                     />
                   </div>
                 </div>
@@ -450,23 +384,9 @@ export default function UserSection({ permiss }) {
                   />
                 </div>
 
+
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5 text-primary">บทบาทในสายงาน (Workflow Role)</label>
-                    <select
-                      className="w-full px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition appearance-none font-bold text-blue-800"
-                      value={formData.a_role}
-                      onChange={e => setFormData({ ...formData, a_role: e.target.value })}
-                    >
-                      <option value="HR_DIRECTOR">ผอ. ควบคุมการพิจารณาหนังสือเวียน (HR_DIRECTOR)</option>
-                      <option value="DIV_DIRECTOR">ผอ. กองที่พิจารณาหนังสือเวียน (DIV_DIRECTOR)</option>
-                      <option value="SEC_DIRECTOR">ผอ. ส่วนภายใต้กอง (SEC_DIRECTOR)</option>
-                      <option value="GRP_LEADER">หัวหน้าฝ่าย/กลุ่มงาน (GRP_LEADER)</option>
-                      <option value="STAFF">เจ้าหน้าที่พิจารณาหนังสือเวียน (STAFF)</option>
-                      <option value="COORDINATOR">เจ้าหน้าที่ประสานงาน (COORDINATOR)</option>
-                      <option value="SYSTEM_ADMIN">ผู้ดูแลระบบ (SYSTEM_ADMIN)</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">สิทธิ์การเข้าระบบ (Security)</label>
                     <select
@@ -474,10 +394,7 @@ export default function UserSection({ permiss }) {
                       value={formData.a_permiss}
                       onChange={e => setFormData({ ...formData, a_permiss: e.target.value })}
                     >
-                      {/* ซ่อนสิทธิ์ Staff User ถ้าเลือกบทบาทเป็น SYSTEM_ADMIN */}
-                      {formData.a_role !== 'SYSTEM_ADMIN' && (
-                        <option value="user">เจ้าหน้าที่ทั่วไป (Staff User)</option>
-                      )}
+                      <option value="user">เจ้าหน้าที่ทั่วไป (Staff User)</option>
                       <option value="admin">ผู้ดูแลระบบ (Admin)</option>
                       {permiss === 'superadmin' && (
                         <option value="superadmin">ผู้ดูแลระบบสูงสุด (Superadmin)</option>
@@ -521,28 +438,11 @@ export default function UserSection({ permiss }) {
               </button>
             </div>
           </div>
-        </div>
+        </>,
+        document.body
       )}
 
-      {/* AssignDelegationModal — แต่งตั้งให้ไปรักษาการ */}
-      <AssignDelegationModal
-        isOpen={showAssignModal}
-        onClose={() => { setShowAssignModal(false); setActingUser(null); }}
-        onSuccess={() => { 
-          loadUsers(); 
-        }}
-        assigneeUser={actingUser}
-      />
 
-      {/* ManageDelegationModal — จัดการลำดับ/ลบผู้รักษาการแทน */}
-      <ManageDelegationModal
-        isOpen={showManageModal}
-        onClose={() => { setShowManageModal(false); setAssignerUser(null); }}
-        onSuccess={() => { 
-          loadUsers(); 
-        }}
-        assignerUser={assignerUser}
-      />
     </div>
   )
 }

@@ -110,23 +110,25 @@ export default function DashboardPage() {
 
   const info = allData?.information || []
   const actingAssignerIds = activeDelegations.map(d => d.assigner_id)
-  const pendingTasksCount = info.filter((item: any) => 
-    (Number(item.in_current_owner_id) === Number(admin?.id)) ||
-    (actingAssignerIds.includes(Number(item.in_current_owner_id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT')
-  ).length
+  
+  const inboxCount = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id)).length
+  const actingCount = info.filter((item: any) => actingAssignerIds.includes(Number(item.in_current_owner_id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT').length
+  const trackingCount = info.filter((item: any) => item.in_processed_by_me === true && Number(item.in_current_owner_id) !== Number(admin?.id) && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)).length
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-saochingcha text-slate-800">
-      <Sidebar
-        activeSection={activeSection}
-        onNavigate={(sec) => { setActiveSection(sec); setActiveResultId('all') }}
-        permiss={admin?.permiss}
-        role={admin?.role}
-        inboxCount={pendingTasksCount}
-        onLogout={doLogout}
-        onProfile={() => profileRef.current?.open()}
-        onPassword={() => passwordRef.current?.open()}
-      />
+        <Sidebar
+          activeSection={activeSection}
+          onNavigate={(sec) => { setActiveSection(sec); setActiveResultId('all') }}
+          permiss={admin?.permiss}
+          role={admin?.role}
+          inboxCount={inboxCount}
+          actingCount={actingCount}
+          trackingCount={trackingCount}
+          onLogout={doLogout}
+          onProfile={() => profileRef.current?.open()}
+          onPassword={() => passwordRef.current?.open()}
+        />
       
       <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden ml-0 lg:ml-64">
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-end gap-x-4 border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
@@ -210,11 +212,12 @@ export default function DashboardPage() {
             {activeSection === 'sec-bot-queue' && (
               <BotQueueSection allData={allData} />
             )}
-            {activeSection === 'sec-workflow-inbox' && (
+            {activeSection.startsWith('sec-workflow-inbox') && (
               <WorkflowInboxSection
                 allData={allData}
                 loading={loading}
                 onReload={loadData}
+                activeTabFromSidebar={activeSection.replace('sec-workflow-inbox-', '')}
               />
             )}
             {activeSection.startsWith('sec-master-') && (

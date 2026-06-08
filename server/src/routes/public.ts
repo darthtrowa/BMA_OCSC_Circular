@@ -45,7 +45,7 @@ router.get('/filters', async (_req: Request, res: Response) => {
       getCachedQuery("SELECT results_id, results_detail FROM c_results ORDER BY results_ordering ASC"),
       getCachedQuery('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
       getCachedQuery('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
-      getCachedQuery('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
+      getCachedQuery("SELECT ag_id, ag_name FROM c_agency WHERE ag_status = 'active' ORDER BY agency_ordering ASC"),
       getCachedQuery('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
       getCachedQuery('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
     ]);

@@ -142,7 +142,13 @@ export const adminApi = {
     return data
   },
 
+  updateUserAgency: async (userId: number | string, a_agency_id: number | null): Promise<any> => {
+    const { data } = await http.patch(`/api/admin/users/${userId}/agency`, { a_agency_id })
+    return data
+  },
+
   getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/api/admin/users').then(res => res.data.response),
+  getPositions: (): Promise<string[]> => http.get<ApiResponse<string[]>>('/api/admin/users/positions').then(res => res.data.response),
   getUsersByRole: (roles: string[], approvalContext?: string, delegationId?: number): Promise<any[]> => {
     let url = `/api/admin/users/by-role?roles=${roles.join(',')}`;
     if (approvalContext) url += `&approval_context=${approvalContext}`;
@@ -200,30 +206,23 @@ export const workflowApi = {
     return data;
   },
 
-  submitToHr: async (docId: number, hrDirectorId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-to-hr', { docId, hrDirectorId, comments });
+  closeWorkflow: async (docId: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/close', { docId });
     return data;
   },
 
-  submitToGrpLeader: async (docId: number, grpLeaderId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-to-grp-leader', { docId, grpLeaderId, comments });
-    return data;
-  },
+  
 
-  delegate: async (docId: number, toUserId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/delegate', { docId, toUserId, comments });
-    return data;
-  },
+  
 
-  submitReview: async (docId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/submit-review', { docId, comments });
-    return data;
-  },
+  
 
-  approve: async (docId: number, nextOwnerId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/approve', {
+  
+
+  forward: async (docId: number, toUserId: number, comments?: string, approval_context?: 'SELF' | 'ACTING', delegation_id?: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/forward', {
       docId,
-      nextOwnerId,
+      toUserId,
       comments,
       approval_context: approval_context ?? 'SELF',
       delegation_id: delegation_id ?? undefined,
@@ -241,14 +240,19 @@ export const workflowApi = {
     return data;
   },
 
+  getNextAssignees: async (docId: number, context: 'SELF'|'ACTING' = 'SELF', delegationId?: number): Promise<any> => {
+    let url = `/api/admin/workflow/${docId}/next-assignees?context=${context}`;
+    if (delegationId) url += `&delegationId=${delegationId}`;
+    const { data } = await http.get(url);
+    return data;
+  },
+
   // ── Parallel Workflow ──────────────────────────────────────
   assignParallel: async (
     docId: number,
-    hrDirectorId: number,
-    tracks: { ag_id?: number; ag_name?: string; toUserId: number }[],
-    comments?: string
+    tracks: { ag_id?: number; ag_name?: string }[]
   ): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/parallel-assign', { docId, hrDirectorId, tracks, comments });
+    const { data } = await http.post('/api/admin/workflow/parallel-assign', { docId, tracks });
     return data;
   },
 
@@ -286,8 +290,8 @@ export const agencyApi = {
   updateStatus: (id: number, ag_status: 'active' | 'disbanded'): Promise<any> =>
     http.patch(`/api/admin/agency-tree/${id}/status`, { ag_status }).then(res => res.data),
 
-  remove: (id: number): Promise<any> =>
-    http.delete(`/api/admin/agency-tree/${id}`).then(res => res.data),
+  remove: (id: number, password?: string): Promise<any> =>
+    http.delete(`/api/admin/agency-tree/${id}`, { data: { password } }).then(res => res.data),
 
   getMembers: (id: number): Promise<any[]> =>
     http.get<ApiResponse<any[]>>(`/api/admin/agency-tree/${id}/members`).then(res => res.data.response),
@@ -303,8 +307,10 @@ export interface DelegationItem {
   delegation_id:    number;
   delegated_role:   string;
   is_active?:       boolean;
+  is_position_delegation?: boolean;
   notes?:           string;
-  assigner_id:      number;
+  assigner_id?:      number;
+  assigner_ag_id?:   number;
   assigner_name:    string;
   assigner_role:    string;
   assigner_position?: string;
@@ -338,7 +344,8 @@ export const delegationApi = {
 
   /** แต่งตั้งผู้รักษาการ (SUPERADMIN) */
   assign: (payload: {
-    assigner_id:   number;
+    assigner_id?:  number;
+    assigner_ag_id?: number;
     assignee_id:   number;
     notes?:        string;
   }): Promise<any> =>

@@ -1,5 +1,90 @@
 # Project Update Log
 
+## [1.4.2] - 2026-06-07
+
+### Removed Dynamic Workflow Builder System
+
+#### 🗄️ Database Changes
+- **Migration Script**: Removed dynamic workflow builder columns (`ag_template_id`, `pa_template_id`, `pa_active_node_id`, `in_template_id`, `in_active_node_id`) and completely dropped the `workflow_templates`, `workflow_nodes`, and `workflow_edges` tables as the system now relies entirely on the hierarchical workflow engine.
+
+#### ⚙️ Backend Changes
+- **index.ts & workflowTemplateRoutes.ts**: Removed all API routes and imports associated with the dynamic node-based builder (`/api/admin/workflows`).
+- **parallelWorkflowService.ts**: Removed dynamic template logic from the parallel assignment engine and fixed a runtime crash caused by querying the deleted `ag_template_id` column. The assignment now directly falls back to the active `DIV_DIRECTOR` or `HR_DIRECTOR` hierarchy logic. Additionally, fixed a major bug where the system could not find the `DIV_DIRECTOR` because they were assigned to a child "POSITION" agency (e.g. `ag_id=48` inside `ag_id=2`), and the query failed to account for `parent_ag_id`. Also fixed `a_status` matching (from `'active'` to `'1'`).
+
+#### 🎨 Frontend Changes
+- **App.tsx & Sidebar.tsx**: Removed the builder page from the client router and navigation menu.
+- **Components**: Deleted `WorkflowBuilderPage.tsx` and `WorkflowBuilder.tsx` components to clean up the codebase.
+- **AgencyFormModal.tsx**: Removed the "กระบวนการทำงานหลัก (Workflow Template)" dropdown field as the system no longer supports custom workflow bindings per agency.
+- **WorkflowInboxSection.tsx**: Fixed a critical workflow sequence bug where COORDINATORs were incorrectly bypassing the internal approval chain and distributing work directly to external agencies. The button for COORDINATOR is now strictly "เสนอหัวหน้ากลุ่ม" (submit to GRP_LEADER). The "กระจายงาน" (Parallel Assign) button has been rightfully shifted to the HR_DIRECTOR, who executes the distribution after internal approval.
+
+## [1.4.1] - 2026-06-07
+
+### Refactored Workflow Processing to Match Real-World Procedures
+
+#### ⚙️ Backend Changes
+- **workflow.ts**: Added `'PENDING_CLOSE'` status to the `WorkflowStatus` type union.
+- **workflowRoutes.ts**: Changed role check for `/parallel-assign` to allow both `COORDINATOR` and `HR_DIRECTOR` roles. Added POST `/close` route to close workflows in `'PENDING_CLOSE'` status.
+- **workflowService.ts**: Modified the `approve` method to set document status to `'PENDING_CLOSE'` instead of `'COMPLETED'` when approving to the `COORDINATOR`. Added the `closeWorkflow` method.
+- **parallelWorkflowService.ts**: Modified `checkAndAdvance` to route the document to the active `HR_DIRECTOR` (or their level-1 acting delegate) in `'PENDING_HR_APPROVAL'` status when all parallel tracks are finished, instead of completing it directly.
+
+#### 🎨 Frontend Changes
+- **ParallelAssignModal.tsx**: Added `preSelectedAgencies` prop and auto-populated the modal tracks when opened.
+- **WorkflowInboxSection.tsx**: Enabled `HR_DIRECTOR` to trigger the parallel tracks modal. Added the "Close Work" (ปิดงาน) button for the `COORDINATOR` when document status is `'PENDING_CLOSE'`. Passed `preSelectedAgencies` to `ParallelAssignModal`. Added `sweetalert2` import and `'PENDING_CLOSE'` badge style mapping.
+- **apiService.ts**: Added `closeWorkflow` method to `workflowApi`.
+- **WorkflowActionModal.tsx**: Fixed a bug where parallel-specific APIs (`parallelDelegate`, `parallelSubmit`, and `parallelReject`) were not called when `paId` was defined. Skipped user selector and validation for parallel rejections.
+
+## [1.4.0] - 2026-06-06
+
+### Feature: Position System & Account Role Refactoring
+
+#### 🗄️ Database Changes
+- **Migration Script**: Added `ag_type` (VARCHAR) and `ag_role` (VARCHAR) to `c_agency` table to support creating Positions directly inside the organizational hierarchy.
+
+#### ⚙️ Backend Changes
+- **admin.ts**: Updated agency CRUD endpoints to handle `ag_type` and `ag_role`.
+- **admin.ts**: Refactored user creation/update. System roles (`a_role`) are now automatically calculated. If `a_permiss` is admin/superadmin, the role is forced to `SYSTEM_ADMIN`. Otherwise, it inherits `ag_role` from the user's assigned position (defaulting to `STAFF`).
+- **admin.ts**: Added a new endpoint `PATCH /api/admin/users/:id/agency` to allow assigning users to positions or agencies via the organization chart.
+
+#### 🎨 Frontend Changes
+- **AgencyFormModal.tsx**: Added toggles to specify if a new hierarchy node is a "ส่วนราชการ (Agency)" or a "ตำแหน่ง (Position)", allowing assignment of position-specific workflow roles.
+- **AgencyTreeSection.tsx**: Visually differentiated position nodes using teal badges, ID card icons, and rendered their system role tags directly in the tree.
+- **AgencyMembersDrawer.tsx**: Implemented an "Attach Account" dropdown to easily pull unassigned users into a specific position, and a "Detach" button to remove them.
+- **UserSection.tsx**: Removed the manual "Workflow Role" dropdown from the User form since roles are now governed by the Position System. Added an informational banner explaining the new inheritance rule.
+
+## [1.3.5] - 2026-06-06
+
+### Fixed
+- **Network Error & CORS Rate Limiting**: Fixed a CORS bug where rate limiter blocks (429 responses) lacked the necessary CORS headers, causing browsers to reject them as a "Network Error". Moved the CORS middleware registration in `server/src/index.ts` to be initialized before the rate limiters.
+- **API Rate Limits**: Increased the standard API rate limiter (`apiLimiter`) maximum allowed requests from 200 to 2000 per 15 minutes to prevent local development and rapid testing from triggering rate limit blocks.
+- **Workflow Template Routes Exports**: Re-ordered code structure in `server/src/routes/workflowTemplateRoutes.ts` to place `export default router;` at the absolute end of the file for consistency and robustness.
+
+## [1.3.4] - 2026-06-05
+
+### Added
+- **Workflow Architecture Documentation**: บันทึกสถาปัตยกรรมการออกแบบกระบวนการทำงานแบบย่อยและไดนามิก (Modular & Dynamic Workflow Design) เป็นภาษาไทยไว้ที่ [workflow_modular_design.md](file:///e:/BMA_OCSC_Circular/docs/workflow_modular_design.md) เพื่อใช้อ้างอิงแนวทางออกแบบเชิงระบบของ BMA OCSC Circular
+
+## [1.3.3] - 2026-06-05
+
+### Fixed
+- **Workflow Builder Update Bug**: แก้ไขบัคตอนบันทึก Workflow Template เดิมที่เกิด Error 409 (Conflict) โดยเพิ่ม API endpoint `PUT /api/admin/workflows/templates/:id` สำหรับการแก้ไข (Update) Template เดิมแทนการสร้างใหม่ทั้งหมด ทำให้สามารถบันทึกการแก้ไขได้อย่างถูกต้อง
+
+## [1.3.2] - 2026-06-05
+
+### Feature: Admin Sidebar Workflow Builder Link & Connection Actions Configuration
+
+#### 🎨 Frontend Changes
+- **Sidebar.tsx**:
+  - Imported `Link` from `react-router-dom` and added a `navLinkItem` helper.
+  - Added "ตั้งค่าขั้นตอนการทำงาน (Workflow)" menu item under the "จัดการระบบ" (Manage System) section.
+  - Restricted access to the workflow builder link to `superadmin`/`admin` (`isSuperAdmin`) roles.
+- **WorkflowBuilderPage.tsx**:
+  - Imported `Link` from `react-router-dom` and added a back arrow button to return to `/dashboard`.
+- **WorkflowBuilder.tsx**:
+  - Enabled action specification (มอบหมาย, เสนอ, ส่งต่อ, and custom label) on connection paths (edges) in the property sidebar.
+  - Configured custom text styling and dark-mode background labels for React Flow edges.
+  - Added an **"Outgoing Connection Creator"** panel inside the Node Properties sidebar to let users select a target node and action, then connect them via a button click.
+  - Enabled deleting edges and nodes directly from the sidebar.
+
 ## [1.3.1] - 2026-06-04
 
 ### Feature: Workflow Builder Acting Delegation Integration

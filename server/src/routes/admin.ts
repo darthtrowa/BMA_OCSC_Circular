@@ -463,17 +463,35 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
     // --- Get child agencies (subordinates) ---
     let childAgencyIds: number[] = [];
+    let ancestorAgencyIds: number[] = [];
+
     if (effectiveUserAgencyId) {
       const { rows: childRows } = await db.query(
         'SELECT ag_id FROM c_agency WHERE parent_ag_id = $1',
         [effectiveUserAgencyId]
       );
       childAgencyIds = childRows.map((r: any) => r.ag_id);
+
+      // --- Get all ancestor agencies for effective user ---
+      const { rows: ancestorRows } = await db.query(
+        `WITH RECURSIVE ancestors AS (
+           SELECT ag_id, parent_ag_id FROM c_agency WHERE ag_id = $1
+           UNION
+           SELECT c.ag_id, c.parent_ag_id FROM c_agency c
+           INNER JOIN ancestors a ON c.ag_id = a.parent_ag_id
+         )
+         SELECT ag_id FROM ancestors`,
+        [effectiveUserAgencyId]
+      );
+      ancestorAgencyIds = ancestorRows.map((r: any) => Number(r.ag_id));
     }
 
     // --- Fetch all active users (filtered by role if provided) ---
     const params: any[] = ['1'];
-    let sql = `SELECT a_id, a_name, a_role, a_position, a_agency_id FROM admin WHERE a_status = $1`;
+    let sql = `SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, c.parent_ag_id 
+           FROM admin a 
+           LEFT JOIN c_agency c ON a.a_agency_id = c.ag_id 
+           WHERE a.a_status = $1`;
     if (roles) {
       const roleList = roles.split(',').map(r => r.trim()).filter(Boolean);
       if (roleList.length > 0) {
@@ -499,11 +517,33 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
         );
       } else {
         // Others: can see parent-agency users (supervisor) + child-agency users (subordinates)
-        // NOT peers (same agency)
-        rows = rows.filter((r: any) =>
-          (effectiveUserAgencyParentId && Number(r.a_agency_id) === Number(effectiveUserAgencyParentId)) ||
-          childAgencyIds.includes(Number(r.a_agency_id))
-        );
+        // AND peers IF we are requesting GRP_LEADER
+        const isRequestingGrpLeader = roles && roles.includes('GRP_LEADER');
+        console.log('[DEBUG] isRequestingGrpLeader:', isRequestingGrpLeader, 'effectiveUserId:', effectiveUserId, 'roles:', roles, 'effectiveUserAgencyParentId:', effectiveUserAgencyParentId);
+        rows = rows.filter((r: any) => {
+          if (isRequestingGrpLeader && r.a_role === 'GRP_LEADER') {
+              console.log('[DEBUG] Checking GRP_LEADER:', r.a_name, 'a_agency_id:', r.a_agency_id, 'effectiveUserAgencyId:', effectiveUserAgencyId, 'parent_ag_id:', r.parent_ag_id, 'effectiveUserAgencyParentId:', effectiveUserAgencyParentId);
+              if (Number(r.a_agency_id) === Number(effectiveUserAgencyId)) return true;
+              if (effectiveUserAgencyParentId && Number(r.parent_ag_id) === Number(effectiveUserAgencyParentId)) return true;
+              if (effectiveUserAgencyParentId && Number(r.a_agency_id) === Number(effectiveUserAgencyParentId)) return true;
+              return false;
+          }
+          
+          // Allow seeing Directors (DIV/HR) if they govern any of the user's ancestor agencies
+          if ((r.a_role === 'DIV_DIRECTOR' || r.a_role === 'HR_DIRECTOR') && 
+              ancestorAgencyIds.includes(Number(r.parent_ag_id))) {
+              return true;
+          }
+          
+          // Allow seeing users in the exact same position node
+          if (Number(r.a_agency_id) === Number(effectiveUserAgencyId)) return true;
+          
+          // Allow seeing users in the same parent group (sibling positions)
+          if (effectiveUserAgencyParentId && Number(r.parent_ag_id) === Number(effectiveUserAgencyParentId)) return true;
+          
+          return (effectiveUserAgencyParentId && Number(r.a_agency_id) === Number(effectiveUserAgencyParentId)) ||
+                 childAgencyIds.includes(Number(r.a_agency_id));
+        });
       }
       // Exclude self always
       rows = rows.filter((r: any) => r.a_id !== effectiveUserId);
@@ -513,27 +553,32 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
     // --- Attach acting delegates for each visible user ---
     if (rows.length > 0) {
-      const userIds = rows.map((r: any) => r.a_id);
-      const placeholders2 = userIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
-      const { rows: delegations } = await db.query(
-        `SELECT d.assigner_id, assignee.a_id AS assignee_id, assignee.a_name AS assignee_name
-         FROM c_workflow_delegations d
-         JOIN admin assignee ON assignee.a_id = d.assignee_id
-         WHERE d.is_active = TRUE AND d.assigner_id IN (${placeholders2})`,
-        userIds
-      );
+      const userAgIds = [...new Set(rows.map((r: any) => r.a_agency_id).filter(Boolean))];
+      let delegations: any[] = [];
+      
+      if (userAgIds.length > 0) {
+        const placeholdersAg = userAgIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
+        const { rows: dRows } = await db.query(
+          `SELECT d.assigner_ag_id, assignee.a_id AS assignee_id, assignee.a_name AS assignee_name
+           FROM c_workflow_delegations d
+           JOIN admin assignee ON assignee.a_id = d.assignee_id
+           WHERE d.is_active = TRUE AND d.assigner_ag_id IN (${placeholdersAg})`,
+          userAgIds
+        );
+        delegations = dRows;
+      }
 
       const delegationMap = new Map<number, any>();
-      delegations.forEach((d: any) => delegationMap.set(d.assigner_id, d));
+      delegations.forEach((d: any) => delegationMap.set(d.assigner_ag_id, d));
 
       const finalRows: any[] = [];
       rows.forEach((r: any) => {
         finalRows.push(r);
-        if (delegationMap.has(r.a_id)) {
-          const del = delegationMap.get(r.a_id);
+        if (r.a_agency_id && delegationMap.has(r.a_agency_id)) {
+          const del = delegationMap.get(r.a_agency_id);
           finalRows.push({
             ...r,
-            a_id: del.assignee_id,
+            a_id: r.a_id, // Keep original role's ID so backend routes to Acting Inbox correctly
             a_name: `${del.assignee_name} (รักษาการแทน ${r.a_name})`,
             isActing: true,
             actingFor: r.a_name
@@ -628,6 +673,21 @@ router.delete('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Re
   }
 });
 
+/** 5. ย้ายสังกัดผู้ใช้ */
+router.patch('/users/:id/agency', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
+  const { id } = req.params;
+  const { a_agency_id } = req.body;
+  try {
+    const { rows } = await db.query('SELECT * FROM admin WHERE a_id=$1', [id]);
+    if (!rows.length) return res.status(404).json(err('ไม่พบบัญชีผู้ใช้'));
+    await db.query('UPDATE admin SET a_agency_id=$1, updated_at=NOW() WHERE a_id=$2', [a_agency_id ? parseInt(a_agency_id) : null, id]);
+    return res.json(ok(null, 'อัปเดตสังกัดสำเร็จ'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('ไม่สามารถย้ายสังกัดผู้ใช้ได้'));
+  }
+});
+
 // ─────────────────────────────────────────────────────────────
 // GET /admin/metrics (For AdminJS / Tableau Verification)
 // ─────────────────────────────────────────────────────────────
@@ -663,7 +723,7 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
         c_information.in_circular_detail, c_information.in_original_link, c_information.in_attachment_link,
         c_information.in_ordering, c_information.updated_at, c_information.created_at, c_information.updated_user,
         c_information.in_workflow_status, c_information.in_current_owner_id, c_information.in_creator_id,
-        c_information.in_is_parallel,
+        c_information.in_is_parallel, c_information.in_flow_state,
         EXISTS (
           SELECT 1 FROM c_workflow_history wh
           WHERE wh.in_id = c_information.in_id
@@ -1319,7 +1379,7 @@ router.get('/agency-tree', requireAdmin, async (_req: AdminRequest, res: Respons
     const { rows } = await db.query(`
       WITH RECURSIVE tree AS (
         SELECT
-          ag_id, ag_name, ag_code, ag_status, parent_ag_id,
+          ag_id, ag_name, ag_code, ag_status, parent_ag_id, ag_type, ag_role,
           agency_ordering, 1 AS ag_level,
           ag_id::TEXT AS ag_path
         FROM c_agency
@@ -1328,7 +1388,7 @@ router.get('/agency-tree', requireAdmin, async (_req: AdminRequest, res: Respons
         UNION ALL
 
         SELECT
-          c.ag_id, c.ag_name, c.ag_code, c.ag_status, c.parent_ag_id,
+          c.ag_id, c.ag_name, c.ag_code, c.ag_status, c.parent_ag_id, c.ag_type, c.ag_role,
           c.agency_ordering, t.ag_level + 1,
           t.ag_path || '.' || c.ag_id::TEXT
         FROM c_agency c
@@ -1353,20 +1413,22 @@ router.get('/agency-tree', requireAdmin, async (_req: AdminRequest, res: Respons
  * สร้างส่วนราชการใหม่
  */
 router.post('/agency-tree', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
-  const { ag_name, ag_code, parent_ag_id, ag_status } = req.body;
+  const { ag_name, ag_code, parent_ag_id, ag_status, ag_type, ag_role } = req.body;
   if (!ag_name?.trim()) return res.status(400).json(err('กรุณาระบุชื่อส่วนราชการ'));
   try {
     const { rows: [{ max_order }] } = await db.query(
       'SELECT COALESCE(MAX(agency_ordering), 0) AS max_order FROM c_agency'
     );
     const { rows: [inserted] } = await db.query(
-      `INSERT INTO c_agency (ag_name, ag_code, parent_ag_id, ag_status, agency_ordering, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING ag_id`,
+      `INSERT INTO c_agency (ag_name, ag_code, parent_ag_id, ag_status, ag_type, ag_role, agency_ordering, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING ag_id`,
       [
         ag_name.trim(),
         ag_code?.trim() || null,
         parent_ag_id ? parseInt(parent_ag_id) : null,
         ag_status || 'active',
+        ag_type || 'AGENCY',
+        ag_role || null,
         max_order + 1,
       ]
     );
@@ -1384,7 +1446,7 @@ router.post('/agency-tree', requireSuperAdmin, async (req: AdminRequest, res: Re
  */
 router.put('/agency-tree/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   const id = parseInt(String(req.params.id));
-  const { ag_name, ag_code, parent_ag_id, ag_status } = req.body;
+  const { ag_name, ag_code, parent_ag_id, ag_status, ag_type, ag_role } = req.body;
   if (!ag_name?.trim()) return res.status(400).json(err('กรุณาระบุชื่อส่วนราชการ'));
   if (parent_ag_id && parseInt(parent_ag_id) === id)
     return res.status(400).json(err('ไม่สามารถตั้งค่าหน่วยงานแม่เป็นตัวเองได้'));
@@ -1403,12 +1465,14 @@ router.put('/agency-tree/:id', requireSuperAdmin, async (req: AdminRequest, res:
         return res.status(400).json(err('ไม่สามารถย้ายส่วนราชการไปอยู่ภายใต้หน่วยงานย่อยของตัวเองได้'));
     }
     await db.query(
-      `UPDATE c_agency SET ag_name=$1, ag_code=$2, parent_ag_id=$3, ag_status=$4, updated_at=NOW() WHERE ag_id=$5`,
+      `UPDATE c_agency SET ag_name=$1, ag_code=$2, parent_ag_id=$3, ag_status=$4, ag_type=$5, ag_role=$6, updated_at=NOW() WHERE ag_id=$7`,
       [
         ag_name.trim(),
         ag_code?.trim() || null,
         parent_ag_id ? parseInt(parent_ag_id) : null,
         ag_status || 'active',
+        ag_type || 'AGENCY',
+        ag_role || null,
         id,
       ]
     );

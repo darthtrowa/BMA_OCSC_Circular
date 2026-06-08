@@ -37,6 +37,7 @@
 - **Logging**: Record all work updates, progress, and changes exclusively in `docs/update.md`. Do NOT log updates in this file (`GEMINI.md`).
 - **Dependencies**: Use `npm audit` regularly to check for vulnerable dependencies.
 - **State Synchronization**: When automated tools fail repeatedly during refactoring, manually re-verify the file content using `read_file` to resolve context mismatches and ensure precise string replacements.
+- **Deployment Process**: ALWAYS compile the backend code (`cd server && npm run build`) AND restart the service (`pm2 restart circular-api` or `pm2 restart all`) after making ANY modifications to TypeScript code. PM2 serves the compiled `dist/` directory, not the raw `.ts` files, so changes will not take effect without a rebuild.
 
 ## 5. React & Node.js Patterns
 - **React**: Favor hooks and modular components. Keep UI and logic separated.

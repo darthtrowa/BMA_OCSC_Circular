@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 import { LOGO_URL } from '../../api/apiService'
 
-export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, onLogout, onProfile, onPassword }) {
+export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, actingCount = 0, trackingCount = 0, onLogout, onProfile, onPassword }) {
   const isSuperAdmin = permiss === 'superadmin' || permiss === 'admin'
 
+  const [openInbox, setOpenInbox] = useState(false)
   const [openMaster, setOpenMaster] = useState(false)
   const [openManage, setOpenManage] = useState(false)
 
   // Auto-expand when active
   useEffect(() => {
+    if (activeSection.startsWith('sec-workflow-inbox')) setOpenInbox(true)
     if (activeSection.startsWith('sec-master-')) setOpenMaster(true)
     if (activeSection === 'sec-users' || activeSection === 'sec-agency-structure') setOpenManage(true)
   }, [activeSection])
@@ -23,7 +25,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
     { key: 'status', label: 'สถานะการใช้งาน', icon: 'bx-toggle-left' },
   ]
 
-  const navItem = (secId: string, label: string, icon: string, show = true, isSub = false) =>
+  const navItem = (secId: string, label: string, icon: string, show = true, count = 0, isSub = false) =>
     show && (
       <li key={secId}>
         <a
@@ -35,9 +37,9 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
             <i className={`bx ${icon} text-lg ${activeSection === secId ? 'text-emerald-700' : 'text-slate-400 group-hover:text-emerald-600'}`}></i>
             {label}
           </div>
-          {secId === 'sec-workflow-inbox' && inboxCount > 0 && (
+          {count > 0 && (
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white shadow-sm ring-1 ring-white">
-              {inboxCount}
+              {count}
             </span>
           )}
         </a>
@@ -66,10 +68,34 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
       <nav className="flex flex-1 flex-col px-4 pb-4 overflow-y-auto custom-scrollbar">
         <ul className="flex flex-1 flex-col gap-y-2">
           {/* Main Section */}
-          {navItem('sec-overview', 'ภาพรวมระบบ', 'bx-grid-alt', isSuperAdmin)}
-          {navItem('sec-circular', 'หนังสือเวียน', 'bx-file-blank', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR' || role === 'STAFF')}
-          {navItem('sec-workflow-inbox', 'กล่องข้อความงาน', 'bx-task', true)}
-          {navItem('sec-bot-queue', 'คิวงานบอต', 'bx-bot', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR')}
+          {navItem('sec-overview', 'ภาพรวมระบบ', 'bx-grid-alt', isSuperAdmin, 0)}
+          {navItem('sec-circular', 'หนังสือเวียน', 'bx-file-blank', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR' || role === 'STAFF', 0)}
+          
+          <li className="mt-2">
+            <button
+              className={`flex w-full items-center justify-between p-2 text-xs font-bold uppercase tracking-wider transition ${openInbox ? 'text-emerald-700' : 'text-slate-400 hover:text-slate-600'}`}
+              onClick={() => setOpenInbox(!openInbox)}
+            >
+              <div className="flex items-center gap-2">
+                <span>กล่องข้อความงาน</span>
+                {(inboxCount + actingCount) > 0 && !openInbox && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                    {inboxCount + actingCount}
+                  </span>
+                )}
+              </div>
+              <i className={`bx bx-chevron-${openInbox ? 'down' : 'right'} text-lg`}></i>
+            </button>
+            {openInbox && (
+              <ul className="mt-1 space-y-1 ml-2 border-l-2 border-slate-100 pl-2">
+                {navItem('sec-workflow-inbox-inbox', 'Inbox', 'bx-task', true, inboxCount, true)}
+                {navItem('sec-workflow-inbox-acting', 'Acting Inbox', 'bx-shield-quarter', true, actingCount, true)}
+                {navItem('sec-workflow-inbox-tracking', 'งานที่ดำเนินการแล้ว', 'bx-send', true, trackingCount, true)}
+              </ul>
+            )}
+          </li>
+
+          {navItem('sec-bot-queue', 'คิวงานบอต', 'bx-bot', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR', 0)}
           
           <li>
             <a href="/circular/" className="group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">
@@ -91,7 +117,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
                 </button>
                 {openMaster && (
                   <ul className="mt-1 space-y-1 ml-2 border-l-2 border-slate-100 pl-2">
-                    {masterTypes.map(t => navItem(`sec-master-${t.key}`, t.label, t.icon, true, true))}
+                    {masterTypes.map(t => navItem(`sec-master-${t.key}`, t.label, t.icon, true, 0, true))}
                   </ul>
                 )}
               </li>
@@ -106,8 +132,8 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
                 </button>
                 {openManage && (
                   <ul className="mt-1 space-y-1 ml-2 border-l-2 border-slate-100 pl-2">
-                    {navItem('sec-agency-structure', 'โครงสร้างส่วนราชการ', 'bx-sitemap', isSuperAdmin, true)}
-                    {navItem('sec-users', 'จัดการผู้ใช้งาน', 'bx-user-circle', isSuperAdmin, true)}
+                    {navItem('sec-agency-structure', 'โครงสร้างส่วนราชการ', 'bx-sitemap', isSuperAdmin, 0, true)}
+                    {navItem('sec-users', 'จัดการผู้ใช้งาน', 'bx-user-circle', isSuperAdmin, 0, true)}
                   </ul>
                 )}
               </li>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import Swal from 'sweetalert2'
+import Select from 'react-select'
 import { adminApi } from '../../api/apiService'
 
 export default function BotQueueSection({ allData }: { allData: any }) {
@@ -22,6 +23,12 @@ export default function BotQueueSection({ allData }: { allData: any }) {
   const [yearId, setYearId] = useState<number | ''>('')
   const [linkUrl, setLinkUrl] = useState('')
   const [selectedCats, setSelectedCats] = useState<number[]>([])
+  const [selectedAgencies, setSelectedAgencies] = useState<any[]>([null])
+
+  const makeOptions = (arr: any[], valKey: string, labelFn: (i: any) => string) => {
+    if (!arr) return []
+    return arr.map(i => ({ value: i[valKey], label: labelFn(i) }))
+  }
 
   // Local state for categories to allow immediate updates
   const [localCategories, setLocalCategories] = useState<any[]>([])
@@ -61,6 +68,7 @@ export default function BotQueueSection({ allData }: { allData: any }) {
     setTitle(payload.title || item.bot_title || '')
     setLinkUrl(payload.original_pdf || item.bot_url || '')
     setSelectedCats([])
+    setSelectedAgencies([null])
     
     // Match year from master data
     if (payload.year && allData?.year) {
@@ -92,7 +100,8 @@ export default function BotQueueSection({ allData }: { allData: any }) {
         in_detail: title,
         in_year_id: yearId || null,
         in_link: linkUrl,
-        categories: selectedCats
+        categories: selectedCats,
+        agencies: selectedAgencies.filter(Boolean).map((a: any) => a.value)
       }
       
       const res = await adminApi.importBotFinding(payload)
@@ -292,24 +301,24 @@ export default function BotQueueSection({ allData }: { allData: any }) {
                         <div className="flex items-center justify-center gap-2">
                           <button 
                             onClick={() => openImportModal(item)}
-                            className="flex items-center justify-center gap-1 px-2 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-sm font-semibold transition border border-emerald-100 hover:border-emerald-600"
+                            className="flex items-center justify-center px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg text-sm font-semibold transition border border-emerald-100 hover:border-emerald-600"
                             title="ตรวจและนำเข้าสู่ระบบหลัก"
                           >
-                            <i className='bx bx-import text-lg'></i> นำเข้า
+                            <i className='bx bx-import text-xl'></i>
                           </button>
                           <button 
                             onClick={() => handleAction(item.bot_id, 'IGNORE')}
-                            className="flex items-center justify-center gap-1 px-2 py-2 bg-slate-50 text-slate-600 hover:bg-slate-500 hover:text-white rounded-lg text-sm font-semibold transition border border-slate-200 hover:border-slate-500"
+                            className="flex items-center justify-center px-3 py-2 bg-slate-50 text-slate-600 hover:bg-slate-500 hover:text-white rounded-lg text-sm font-semibold transition border border-slate-200 hover:border-slate-500"
                             title="ละเว้นข้อมูลนี้"
                           >
-                            <i className='bx bx-block text-lg'></i> ละเว้น
+                            <i className='bx bx-block text-xl'></i>
                           </button>
                           <button 
                             onClick={() => handleDelete(item.bot_id)}
-                            className="flex items-center justify-center gap-1 px-2 py-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg text-sm font-semibold transition border border-red-100 hover:border-red-500"
+                            className="flex items-center justify-center px-3 py-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg text-sm font-semibold transition border border-red-100 hover:border-red-500"
                             title="ลบทิ้ง (ให้บอทดึงใหม่)"
                           >
-                            <i className='bx bx-trash text-lg'></i> ลบทิ้ง
+                            <i className='bx bx-trash text-xl'></i>
                           </button>
                         </div>
                       </td>
@@ -384,7 +393,7 @@ export default function BotQueueSection({ allData }: { allData: any }) {
                           }}
                           className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
                         />
-                        <span className="text-sm text-slate-700 select-none">{cat.cat_name}</span>
+                        <span className="text-xs text-slate-700 select-none">{cat.cat_name}</span>
                       </label>
                     ))}
                   </div>
@@ -405,6 +414,57 @@ export default function BotQueueSection({ allData }: { allData: any }) {
                       เพิ่มหมวดหมู่ใหม่
                     </button>
                   </div>
+                </div>
+
+                <div className="z-[60] relative">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                    ผู้รับผิดชอบ (ส่วนราชการเป้าหมาย) <span className="text-rose-500">*</span>
+                  </label>
+                  
+                  {selectedAgencies.map((selected, index) => (
+                    <div key={index} className="flex gap-2 mb-2">
+                      <div className="flex-1">
+                        <Select 
+                          placeholder="-- เลือกผู้รับผิดชอบ --"
+                          styles={{ 
+                            control: (base) => ({ ...base, borderRadius: '0.75rem', borderColor: '#e2e8f0', padding: '0.1rem', backgroundColor: '#f8fafc', fontSize: '12px' }),
+                            menu: (base) => ({ ...base, fontSize: '12px' }),
+                            singleValue: (base) => ({ ...base, fontSize: '12px' })
+                          }}
+                          options={makeOptions(allData?.agency?.filter((a: any) => (!a.parent_ag_id || a.parent_ag_id === 0) && a.ag_type !== 'POSITION'), 'ag_id', (i: any)=>i.ag_name)}
+                          value={selected} 
+                          onChange={v => {
+                            const newSelected = [...selectedAgencies];
+                            newSelected[index] = v;
+                            setSelectedAgencies(newSelected);
+                          }} 
+                        />
+                      </div>
+                      {selectedAgencies.length > 1 && (
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const newSelected = selectedAgencies.filter((_, i) => i !== index);
+                            setSelectedAgencies(newSelected);
+                          }}
+                          className="px-3 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition border border-red-100"
+                          title="ลบส่วนราชการนี้"
+                        >
+                          <i className="bx bx-trash"></i>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <button 
+                    type="button"
+                    onClick={() => setSelectedAgencies([...selectedAgencies, null])}
+                    className="mt-1 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-lg transition flex items-center gap-1"
+                  >
+                    <i className="bx bx-plus"></i> เพิ่มส่วนราชการพิจารณา
+                  </button>
+
+                  <p className="text-xs text-slate-400 mt-2">ส่วนราชการที่คุณเลือกตรงนี้จะถูกบันทึกเพื่อใช้ในการกระจายงานเมื่อหัวหน้าฝ่ายบุคคลอนุมัติ</p>
                 </div>
                 
                 <div className="hidden">
