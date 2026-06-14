@@ -530,17 +530,19 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                       <i className='bx bx-show text-sm'></i>
                       <span>ดูไฟล์</span>
                     </a>
-                    <button 
-                      type="button" 
-                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                      onClick={() => {
-                        set('in_original_link', '-');
-                        setOrigFile(null);
-                      }}
-                    >
-                      <i className='bx bx-trash text-sm'></i>
-                      <span>ลบไฟล์</span>
-                    </button>
+                    {!isView && (
+                      <button 
+                        type="button" 
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                        onClick={() => {
+                          set('in_original_link', '-');
+                          setOrigFile(null);
+                        }}
+                      >
+                        <i className='bx bx-trash text-sm'></i>
+                        <span>ลบไฟล์</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : !origFile ? (
@@ -623,14 +625,16 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                         <i className='bx bx-show text-sm'></i>
                         <span>ดูไฟล์</span>
                       </a>
-                      <button 
-                        type="button" 
-                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                        onClick={() => setKeptAttachments(prev => prev.filter((_, i) => i !== idx))}
-                      >
-                        <i className='bx bx-trash text-sm'></i>
-                        <span>ลบไฟล์</span>
-                      </button>
+                      {!isView && (
+                        <button 
+                          type="button" 
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                          onClick={() => setKeptAttachments(prev => prev.filter((_, i) => i !== idx))}
+                        >
+                          <i className='bx bx-trash text-sm'></i>
+                          <span>ลบไฟล์</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -719,14 +723,16 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                 ))}
               </div>
 
-              <button
-                type="button"
-                className="w-full py-2.5 border-2 border-dashed border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/20 text-slate-500 hover:text-emerald-600 rounded-xl transition flex items-center justify-center gap-2 text-sm font-semibold cursor-pointer mt-2"
-                onClick={() => setAttFiles(prev => [...prev, null])}
-              >
-                <i className='bx bx-plus text-lg'></i>
-                <span>เพิ่มรายการไฟล์สิ่งที่ส่งมาด้วย</span>
-              </button>
+              {!isView && (
+                <button
+                  type="button"
+                  className="w-full py-2.5 border-2 border-dashed border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/20 text-slate-500 hover:text-emerald-600 rounded-xl transition flex items-center justify-center gap-2 text-sm font-semibold cursor-pointer mt-2"
+                  onClick={() => setAttFiles(prev => [...prev, null])}
+                >
+                  <i className='bx bx-plus text-lg'></i>
+                  <span>เพิ่มรายการไฟล์สิ่งที่ส่งมาด้วย</span>
+                </button>
+              )}
             </div>
             {!isTaskSubmit && (
               <div>

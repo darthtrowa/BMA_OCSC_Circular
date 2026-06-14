@@ -110,20 +110,29 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
 
   const info = allData?.information || [];
   
+  const checkIsCurrentOwner = (item: any, userId: number | string | undefined) => {
+    if (!userId) return false;
+    if (item.in_is_parallel && item.parallel_owner_ids) {
+      const pIds = String(item.parallel_owner_ids).split(',').map(Number);
+      return pIds.includes(Number(userId));
+    }
+    return Number(item.in_current_owner_id) === Number(userId);
+  };
+
   // Filter only documents currently assigned to the logged-in user
-  const myTasks = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id));
+  const myTasks = info.filter((item: any) => checkIsCurrentOwner(item, admin?.id));
 
   // Tasks already processed by me (sent/returned) but no longer in my inbox — for tracking
   const myProcessedTasks = info.filter((item: any) =>
     item.in_processed_by_me === true &&
-    Number(item.in_current_owner_id) !== Number(admin?.id) &&
+    !checkIsCurrentOwner(item, admin?.id) &&
     !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)
   );
 
   // Documents created by COORDINATOR that are not DRAFT (to monitor)
   const myCreatedTasks = info.filter((item: any) => 
     Number(item.in_creator_id) === Number(admin?.id) && 
-    Number(item.in_current_owner_id) !== Number(admin?.id)
+    !checkIsCurrentOwner(item, admin?.id)
   );
 
   // All active workflow tasks for SYSTEM_ADMIN (view-only)
@@ -138,13 +147,13 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
   const actingTasks = actingAssignerIds.length > 0
     ? info
         .filter((item: any) =>
-          actingAssignerIds.includes(Number(item.in_current_owner_id)) &&
+          actingAssignerIds.some(id => checkIsCurrentOwner(item, id)) &&
           item.in_workflow_status && item.in_workflow_status !== 'DRAFT'
         )
         .map((item: any) => {
           // หา delegation ที่ตรงกับ owner ของ item นี้
           const matchedDelegation = activeDelegations.find(
-            d => Number(d.assigner_id) === Number(item.in_current_owner_id)
+            d => checkIsCurrentOwner(item, d.assigner_id)
           );
           return { ...item, _delegationId: matchedDelegation?.delegation_id ?? null };
         })

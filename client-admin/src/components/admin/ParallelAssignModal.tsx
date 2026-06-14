@@ -13,11 +13,13 @@ interface Props {
   isOpen: boolean;
   docId: number | null;
   preSelectedAgencies?: { ag_id: number | string; ag_name: string }[];
+  actionContext?: 'SELF' | 'ACTING';
+  delegationId?: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function ParallelAssignModal({ isOpen, docId, preSelectedAgencies = [], onClose, onSuccess }: Props) {
+export default function ParallelAssignModal({ isOpen, docId, preSelectedAgencies = [], actionContext, delegationId, onClose, onSuccess }: Props) {
   const [tracks, setTracks] = useState<TrackRow[]>([{ id: '1' }]);
   const [agencies, setAgencies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,7 +90,12 @@ export default function ParallelAssignModal({ isOpen, docId, preSelectedAgencies
         ag_id: t.ag_id,
         ag_name: t.ag_name
       }));
-      await workflowApi.assignParallel(docId, payload);
+      await workflowApi.assignParallel(
+        docId, 
+        payload, 
+        actionContext, 
+        actionContext === 'ACTING' && delegationId ? delegationId : undefined
+      );
       Swal.fire({ icon: 'success', text: `มอบหมายสำเร็จ (${validTracks.length} ส่วนราชการ)`, timer: 1800, showConfirmButton: false });
       onSuccess();
       onClose();

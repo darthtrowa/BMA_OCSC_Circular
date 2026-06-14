@@ -28,7 +28,8 @@ export class ParallelWorkflowService {
          SET in_workflow_status = 'PENDING_PARALLEL',
              in_is_parallel = TRUE,
              in_parallel_batch_id = $1,
-             in_current_owner_id = NULL
+             in_current_owner_id = NULL,
+             in_flow_state = 'in'
          WHERE in_id = $2`,
         [batchId, docId]
       );

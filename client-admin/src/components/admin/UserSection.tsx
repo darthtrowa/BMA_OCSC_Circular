@@ -386,6 +386,7 @@ export default function UserSection({ permiss }) {
 
 
 
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">สิทธิ์การเข้าระบบ (Security)</label>

@@ -70,7 +70,7 @@ export default function DashboardPage() {
         const dbRole = res.response.a_role || 'STAFF'
         // If the context role doesn't match the database, update the context immediately
         if (admin && admin.role !== dbRole) {
-          login(admin.token, admin.name, admin.permiss, dbRole)
+          login(admin.token, admin.id, admin.name, admin.permiss, dbRole)
         }
       }
     } catch {}
@@ -111,9 +111,18 @@ export default function DashboardPage() {
   const info = allData?.information || []
   const actingAssignerIds = activeDelegations.map(d => d.assigner_id)
   
-  const inboxCount = info.filter((item: any) => Number(item.in_current_owner_id) === Number(admin?.id)).length
-  const actingCount = info.filter((item: any) => actingAssignerIds.includes(Number(item.in_current_owner_id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT').length
-  const trackingCount = info.filter((item: any) => item.in_processed_by_me === true && Number(item.in_current_owner_id) !== Number(admin?.id) && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)).length
+  const checkIsCurrentOwner = (item: any, userId: number | string | undefined) => {
+    if (!userId) return false;
+    if (item.in_is_parallel && item.parallel_owner_ids) {
+      const pIds = String(item.parallel_owner_ids).split(',').map(Number);
+      return pIds.includes(Number(userId));
+    }
+    return Number(item.in_current_owner_id) === Number(userId);
+  };
+
+  const inboxCount = info.filter((item: any) => checkIsCurrentOwner(item, admin?.id)).length
+  const actingCount = info.filter((item: any) => actingAssignerIds.some(id => checkIsCurrentOwner(item, id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT').length
+  const trackingCount = info.filter((item: any) => item.in_processed_by_me === true && !checkIsCurrentOwner(item, admin?.id) && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)).length
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-saochingcha text-slate-800">
@@ -210,7 +219,7 @@ export default function DashboardPage() {
               />
             )}
             {activeSection === 'sec-bot-queue' && (
-              <BotQueueSection allData={allData} />
+              <BotQueueSection allData={allData} onReload={loadData} />
             )}
             {activeSection.startsWith('sec-workflow-inbox') && (
               <WorkflowInboxSection

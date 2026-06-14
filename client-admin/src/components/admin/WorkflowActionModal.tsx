@@ -57,6 +57,8 @@ export default function WorkflowActionModal({
 
   const [autoUpAssignee, setAutoUpAssignee] = useState<any>(null);
   const [manualAssignees, setManualAssignees] = useState<any[]>([]);
+  const [assignedAgencies, setAssignedAgencies] = useState<any[]>([]);
+  const [useParallelAssign, setUseParallelAssign] = useState<boolean>(false);
   const [forwardMode, setForwardMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [loadingUsers, setLoadingUsers] = useState(false);
 
@@ -70,11 +72,11 @@ export default function WorkflowActionModal({
 
     // --- Step 1: resolve initial context & delegation ---
     setComments('');
-    const initContext = (actionType === 'actingReject') ? 'ACTING' : 'SELF';
-    setApprovalContext(initContext);
+    const resolvedInitContext = initContext ? initContext : (actionType === 'actingReject') ? 'ACTING' : 'SELF';
+    setApprovalContext(resolvedInitContext);
 
     let resolvedDelegationId: number | '' = '';
-    if (initContext === 'ACTING') {
+    if (resolvedInitContext === 'ACTING') {
       if (preSelectedDelegationId) {
         resolvedDelegationId = preSelectedDelegationId;
       } else if (activeDelegations.length === 1) {
@@ -103,12 +105,14 @@ export default function WorkflowActionModal({
       setLoadingUsers(true);
       workflowApi.getNextAssignees(
         docId,
-        initContext,
-        initContext === 'ACTING' && resolvedDelegationId ? Number(resolvedDelegationId) : undefined
+        resolvedInitContext,
+        resolvedInitContext === 'ACTING' && resolvedDelegationId ? Number(resolvedDelegationId) : undefined
       ).then(res => {
-        const { autoUpAssignee: upUser, manualAssignees: mUsers } = res.data;
+        const { autoUpAssignee: upUser, manualAssignees: mUsers, assignedAgencies: ags, useParallelAssign: pAssign } = res.data;
         setAutoUpAssignee(upUser);
         setManualAssignees(mUsers || []);
+        setAssignedAgencies(ags || []);
+        setUseParallelAssign(pAssign || false);
         if (upUser) {
           setForwardMode('AUTO');
           const idToUse = upUser.acting_info ? upUser.acting_info.id : upUser.a_id;
@@ -118,8 +122,8 @@ export default function WorkflowActionModal({
           setSelectedUserId('');
         }
         setLoadingUsers(false);
-      }).catch(e => {
-        console.error('Failed to load dynamic assignees', e);
+      }).catch(err => {
+        console.error('Failed to load dynamic assignees', err);
         setAutoUpAssignee(null);
         setManualAssignees([]);
         setLoadingUsers(false);
@@ -144,9 +148,11 @@ export default function WorkflowActionModal({
         approvalContext,
         approvalContext === 'ACTING' && selectedDelegationId ? Number(selectedDelegationId) : undefined
       ).then(res => {
-        const { autoUpAssignee: upUser, manualAssignees: mUsers } = res.data;
+        const { autoUpAssignee: upUser, manualAssignees: mUsers, assignedAgencies: ags, useParallelAssign: pAssign } = res.data;
         setAutoUpAssignee(upUser);
         setManualAssignees(mUsers || []);
+        setAssignedAgencies(ags || []);
+        setUseParallelAssign(pAssign || false);
         if (upUser) {
           setForwardMode('AUTO');
           const idToUse = upUser.acting_info ? upUser.acting_info.id : upUser.a_id;
@@ -156,7 +162,8 @@ export default function WorkflowActionModal({
           setSelectedUserId('');
         }
         setLoadingUsers(false);
-      }).catch(() => {
+      }).catch((e) => {
+        console.error('Failed to load next assignees:', e);
         setAutoUpAssignee(null);
         setManualAssignees([]);
         setLoadingUsers(false);
@@ -185,7 +192,7 @@ export default function WorkflowActionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (config.requiresUser && !selectedUserId) {
+    if (config.requiresUser && !selectedUserId && !(actionType === 'forward' && useParallelAssign)) {
       Swal.fire('Error', 'กรุณาเลือกผู้รับมอบหมาย/ผู้รับผิดชอบ', 'error');
       return;
     }
@@ -207,13 +214,27 @@ export default function WorkflowActionModal({
           approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined
         );
       } else {
-        await workflowApi.forward(
-          docId,
-          targetUserId,
-          comments,
-          approvalContext,
-          approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined,
-        );
+        if (useParallelAssign) {
+          if (assignedAgencies.length === 0) {
+            Swal.fire('Error', 'ไม่พบข้อมูลส่วนราชการที่รับมอบ', 'error');
+            setSubmitting(false);
+            return;
+          }
+          await workflowApi.assignParallel(
+            docId, 
+            assignedAgencies.map(ag => ({ ag_id: ag.ag_id, ag_name: ag.ag_name })),
+            approvalContext,
+            approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined
+          );
+        } else {
+          await workflowApi.forward(
+            docId,
+            targetUserId,
+            comments,
+            approvalContext,
+            approvalContext === 'ACTING' ? Number(selectedDelegationId) : undefined,
+          );
+        }
       }
 
       Swal.fire('สำเร็จ', 'ดำเนินการเรียบร้อยแล้ว', 'success');
@@ -326,24 +347,30 @@ export default function WorkflowActionModal({
                       {users.map((u: any, idx: number) => (
                         <div
                           key={`${u.a_id}-${idx}`}
-                          className="flex items-center gap-3 px-4 py-3 border-b border-red-100 last:border-0"
+                          onClick={() => setSelectedUserId(`${u.a_id}-0`)}
+                          className={`flex items-center gap-3 px-4 py-3 border-b border-red-100 last:border-0 cursor-pointer transition-colors ${
+                            selectedUserId === `${u.a_id}-0` ? 'bg-red-100/50' : 'hover:bg-red-50'
+                          }`}
                         >
-                          <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                          <input
+                            type="radio"
+                            name="rejectAssignee"
+                            checked={selectedUserId === `${u.a_id}-0`}
+                            onChange={() => setSelectedUserId(`${u.a_id}-0`)}
+                            className="accent-red-500"
+                          />
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                            selectedUserId === `${u.a_id}-0` ? 'bg-red-200 text-red-700' : 'bg-red-100 text-red-600'
+                          }`}>
                             <i className="bx bx-user text-lg"></i>
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold text-slate-800 text-sm">{u.a_name}</div>
                             <div className="text-xs text-slate-500">{u.a_position || u.a_role || 'ไม่ระบุตำแหน่ง'}</div>
                           </div>
-                          {u.isActing ? (
-                            <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 bg-amber-100 text-amber-700 rounded-full">
-                              <i className="bx bx-shield-check"></i> รักษาการแทน {u.actingFor}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
-                              <i className="bx bx-user"></i> ปกติ
-                            </span>
-                          )}
+                          <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
+                            <i className="bx bx-user"></i> ตำแหน่งปกติ
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -355,6 +382,44 @@ export default function WorkflowActionModal({
                   {loadingUsers ? (
                     <div className="flex items-center gap-2 text-slate-500 py-2">
                       <i className="bx bx-loader-alt animate-spin"></i> กำลังโหลดข้อมูลผู้รับ...
+                    </div>
+                  ) : useParallelAssign ? (
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium text-slate-800">
+                        ส่งต่อให้ส่วนราชการที่รับมอบ ({assignedAgencies.length} ส่วนราชการ)
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+                        {assignedAgencies.length === 0 ? (
+                          <div className="text-sm text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-100">
+                            ไม่พบข้อมูลส่วนราชการที่รับมอบ กรุณากลับไปแก้ไขข้อมูลหนังสือ
+                          </div>
+                        ) : (
+                          assignedAgencies.map((ag: any, idx: number) => (
+                            <div key={idx} className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-full bg-indigo-200 text-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                                <i className="bx bx-user text-sm"></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                {ag.div_director_name ? (
+                                  <>
+                                    <div className="text-sm font-semibold text-indigo-900">{ag.div_director_name}</div>
+                                    <div className="text-xs text-indigo-700 mt-0.5">
+                                      {ag.div_director_position}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="text-sm font-semibold text-rose-600">
+                                    <i className="bx bx-error-circle mr-1"></i>ไม่มีข้อมูลผู้อำนวยการกอง
+                                  </div>
+                                )}
+                                <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                                  <i className="bx bx-buildings"></i> {ag.ag_name}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -375,14 +440,26 @@ export default function WorkflowActionModal({
                             </div>
                             <div>
                               <div className="font-medium text-slate-900 text-sm">
-                                เสนอเรื่องขึ้นไปที่: <span className="font-bold">
+                                {autoUpAssignee.a_role === 'DIV_DIRECTOR' ? 'ส่งต่อไปยัง ผอ.กอง:' : 'เสนอเรื่องขึ้นไปที่:'} <span className="font-bold">
                                   {autoUpAssignee.acting_info ? (
                                     <>
                                       <i className="bx bx-shield-check text-amber-500 mr-1"></i>
                                       รักษาการแทน {autoUpAssignee.acting_info.position || 'หัวหน้ากลุ่มงาน'}
+                                      {autoUpAssignee.acting_info.name && (
+                                        <span className="block text-xs font-normal text-slate-500 mt-1">
+                                          ({autoUpAssignee.acting_info.name})
+                                        </span>
+                                      )}
                                     </>
                                   ) : (
-                                    autoUpAssignee.a_position || (autoUpAssignee.a_role === 'GRP_LEADER' ? 'หัวหน้ากลุ่มงาน' : autoUpAssignee.a_role)
+                                    <>
+                                      {autoUpAssignee.a_position || (autoUpAssignee.a_role === 'GRP_LEADER' ? 'หัวหน้ากลุ่มงาน' : autoUpAssignee.a_role)}
+                                      {autoUpAssignee.a_name && (
+                                        <span className="block text-xs font-normal text-slate-500 mt-1">
+                                          ({autoUpAssignee.a_name})
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </span>
                               </div>
@@ -391,7 +468,7 @@ export default function WorkflowActionModal({
                         </div>
                       )}
 
-                      {manualAssignees.length > 0 && (
+                      {manualAssignees.length > 0 && !autoUpAssignee && (
                         <div 
                         onClick={() => {
                           setForwardMode('MANUAL');
@@ -435,8 +512,8 @@ export default function WorkflowActionModal({
                           </div>
                         )}
                       </div>
-                      )}
-                    </>
+                    )}
+                  </>
                   )}
                 </div>
               ) : null}

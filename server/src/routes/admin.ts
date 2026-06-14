@@ -137,9 +137,12 @@ router.post('/auth/login', async (req: AdminRequest, res: Response) => {
     return res.status(400).json(err('กรุณากรอก Username และ Password'));
   try {
     const { rows } = await db.query(
-      `SELECT a_id, a_name, a_username, a_password, a_status, a_permiss, a_role,
-              a_2fa_enabled, a_email, a_token_version
-       FROM admin WHERE a_username=$1`,
+      `SELECT a.a_id, a.a_name, a.a_username, a.a_password, a.a_status, a.a_permiss, 
+              COALESCE(ag.ag_role, 'STAFF') AS a_role,
+              a.a_2fa_enabled, a.a_email, a.a_token_version
+       FROM admin a
+       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+       WHERE a.a_username=$1`,
       [loginUsername]
     );
     if (!rows.length) return res.status(401).json(err('Username หรือ Password ไม่ถูกต้อง'));
@@ -242,7 +245,9 @@ router.post('/auth/verify-otp', async (req: AdminRequest, res: Response) => {
       return res.status(401).json(err('Token ไม่ถูกต้อง'));
 
     const { rows } = await db.query(
-      'SELECT a_id, a_name, a_permiss, a_role, a_otp_code, a_otp_expiry, a_token_version, a_otp_attempts FROM admin WHERE a_id=$1',
+      `SELECT a.a_id, a.a_name, a.a_permiss, COALESCE(ag.ag_role, 'STAFF') AS a_role, a.a_otp_code, a.a_otp_expiry, a.a_token_version, a.a_otp_attempts 
+       FROM admin a LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+       WHERE a.a_id=$1`,
       [decoded.id]
     );
     if (!rows.length) return res.status(404).json(err('ไม่พบบัญชีผู้ใช้'));
@@ -402,11 +407,12 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
   try {
     let sql = `
       SELECT 
-        a.a_id, a.a_name, a.a_username, a.a_email, a.a_permiss, a.a_role, 
+        a.a_id, a.a_name, a.a_username, a.a_email, a.a_permiss, COALESCE(ag.ag_role, 'STAFF') AS a_role, 
         a.a_position, a.a_status, a.a_agency, a.a_agency_id, a.a_last_login, a.created_at,
         MIN(d.delegation_id) AS active_delegation_id,
         STRING_AGG(assignee.a_name, ', ') AS active_assignee_name
       FROM admin a
+      LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
       LEFT JOIN c_workflow_delegations d ON d.assigner_id = a.a_id AND d.is_active = TRUE
       LEFT JOIN admin assignee ON assignee.a_id = d.assignee_id
     `;
@@ -414,7 +420,7 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
     if (req.admin?.permiss !== 'superadmin') {
       sql += ` WHERE a.a_permiss != 'superadmin' `;
     }
-    sql += ` GROUP BY a.a_id ORDER BY a.a_id DESC `;
+    sql += ` GROUP BY a.a_id, ag.ag_role ORDER BY a.a_id DESC `;
     const { rows } = await db.query(sql, params);
     return res.json(ok(rows));
   } catch (e) {
@@ -429,6 +435,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
     const approvalContext = req.query.approval_context as string; // 'SELF' | 'ACTING'
     const delegationId = req.query.delegation_id ? parseInt(req.query.delegation_id as string, 10) : undefined;
     const roles = req.query.roles as string; // comma-separated e.g. "HR_DIRECTOR,GRP_LEADER"
+    const sameAgencyOnly = req.query.same_agency === 'true'; // filter to same agency only (for coordinator assignment dropdown)
 
     // --- Determine effective user (could be the assigner if acting) ---
     let effectiveUserId: number = req.admin!.id;
@@ -488,7 +495,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
     // --- Fetch all active users (filtered by role if provided) ---
     const params: any[] = ['1'];
-    let sql = `SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, c.parent_ag_id 
+    let sql = `SELECT a.a_id, a.a_name, COALESCE(c.ag_role, 'STAFF') AS a_role, a.a_position, a.a_agency_id, c.parent_ag_id 
            FROM admin a 
            LEFT JOIN c_agency c ON a.a_agency_id = c.ag_id 
            WHERE a.a_status = $1`;
@@ -496,7 +503,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
       const roleList = roles.split(',').map(r => r.trim()).filter(Boolean);
       if (roleList.length > 0) {
         const placeholders = roleList.map((_, i) => `$${i + 2}`).join(', ');
-        sql += ` AND a_role IN (${placeholders})`;
+        sql += ` AND COALESCE(c.ag_role, 'STAFF') IN (${placeholders})`;
         params.push(...roleList);
       }
     }
@@ -547,6 +554,14 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
       }
       // Exclude self always
       rows = rows.filter((r: any) => r.a_id !== effectiveUserId);
+    }
+
+    // --- same_agency filter: return only users in same parent agency (for coordinator assignment) ---
+    if (sameAgencyOnly && effectiveUserAgencyParentId) {
+      rows = rows.filter((r: any) =>
+        Number(r.parent_ag_id) === Number(effectiveUserAgencyParentId) ||
+        Number(r.a_agency_id) === Number(effectiveUserAgencyParentId)
+      );
     }
 
     console.log('--- BY-ROLE ---', { effectiveUserId, effectiveUserRole, effectiveUserAgencyId, effectiveUserAgencyParentId, childAgencyIds, resultCount: rows.length });
@@ -730,6 +745,11 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
             AND wh.from_user_id = $3
             AND wh.action IN ('SUBMITTED','APPROVED','REJECTED','DELEGATED')
         ) AS in_processed_by_me,
+        (
+          SELECT STRING_AGG(DISTINCT CAST(pa.current_owner_id AS TEXT), ',')
+          FROM c_parallel_assignments pa
+          WHERE pa.in_id = c_information.in_id AND pa.pa_status IN ('PENDING', 'IN_PROGRESS')
+        ) AS parallel_owner_ids,
         STRING_AGG(DISTINCT CONCAT(c_mati_kk.mkk_id,'|#|',c_mati_kk.mkk_name,'|#|',c_mati_kk.mkk_date), ',')   AS mati_kk,
         STRING_AGG(DISTINCT CONCAT(c_mati_work.mw_id,'|#|',c_mati_work.mw_name,'|#|',c_mati_work.mw_date), ',') AS mati_work,
         STRING_AGG(DISTINCT CONCAT(c_results.results_id,'|#|',c_results.results_detail,'|#|',c_results.results_color,'|#|',c_results.results_etc), ',') AS results,
@@ -772,7 +792,7 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
       getCachedQuery('SELECT results_id, results_detail, results_etc FROM c_results ORDER BY results_ordering ASC'),
       getCachedQuery('SELECT mw_id, mw_name, mw_date FROM c_mati_work ORDER BY mw_date DESC, mw_id DESC'),
       getCachedQuery('SELECT mkk_id, mkk_name, mkk_date FROM c_mati_kk ORDER BY mkk_date DESC, mkk_id DESC'),
-      getCachedQuery('SELECT ag_id, ag_name FROM c_agency ORDER BY agency_ordering ASC'),
+      getCachedQuery("SELECT ag_id, ag_name, parent_ag_id, ag_type FROM c_agency WHERE ag_status = 'active' ORDER BY agency_ordering ASC"),
       getCachedQuery('SELECT cat_id, cat_name FROM c_categories ORDER BY cat_ordering ASC'),
       getCachedQuery('SELECT status_id, status_value FROM c_status ORDER BY status_ordering ASC'),
     ]);
@@ -1054,7 +1074,12 @@ router.post('/circular/delete', requireAdmin, async (req: AdminRequest, res: Res
 // ─────────────────────────────────────────────────────────────
 router.get('/profile', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
-    const { rows } = await db.query('SELECT a_name, a_username, a_email, a_permiss, a_role, a_position, a_2fa_enabled, a_agency_id FROM admin WHERE a_id=$1', [req.admin?.id]);
+    const { rows } = await db.query(
+      `SELECT a.a_name, a.a_username, a.a_email, a.a_permiss, COALESCE(ag.ag_role, 'STAFF') AS a_role, a.a_position, a.a_2fa_enabled, a.a_agency_id 
+       FROM admin a LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+       WHERE a.a_id=$1`, 
+      [req.admin?.id]
+    );
     if (!rows.length) return res.status(404).json(err('ไม่พบข้อมูล'));
     return res.json(ok(rows[0]));
   } catch (e) {
@@ -1189,6 +1214,27 @@ router.post('/master/action', requireAdmin, async (req: AdminRequest, res: Respo
 
 router.get('/bot-findings', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
+    // Dynamically update PENDING bot findings to IMPORTED if a matching circular exists in c_information
+    await db.query(`
+      UPDATE c_bot_findings bf
+      SET bot_status = 'IMPORTED'
+      WHERE bf.bot_status = 'PENDING'
+        AND EXISTS (
+          SELECT 1 
+          FROM c_information ci
+          LEFT JOIN c_year cy ON ci.in_year_id = cy.year_id
+          WHERE 
+            ci.in_link = bf.bot_url 
+            OR ci.in_original_link = bf.bot_url
+            OR (
+              bf.bot_payload->>'doc_num' IS NOT NULL 
+              AND bf.bot_payload->>'year' IS NOT NULL
+              AND ci.in_num_date ILIKE '%' || (bf.bot_payload->>'doc_num') || '%'
+              AND cy.year_value ILIKE '%' || (bf.bot_payload->>'year') || '%'
+            )
+        )
+    `);
+
     const { rows } = await db.query(`
       SELECT bot_id, bot_title, bot_url, bot_date, bot_status, created_at, bot_payload 
       FROM c_bot_findings 
@@ -1276,6 +1322,40 @@ router.post('/bot-findings/:id/action', requireAdmin, async (req: AdminRequest, 
   }
 });
 
+/**
+ * PATCH /admin/bot-findings/:id/save-draft
+ * บันทึกแบบร่าง: อัปเดต bot_payload ด้วยข้อมูลที่ผู้ใช้แก้ไข
+ * ไม่สร้าง c_information ไม่เปลี่ยน bot_status (คาอยู่ใน queue)
+ */
+router.patch('/bot-findings/:id/save-draft', requireAdmin, async (req: AdminRequest, res: Response) => {
+  const { id } = req.params;
+  const { in_num_date, in_doc_date, in_detail, in_year_id, in_link, categories, agencies } = req.body;
+  try {
+    // Build a corrected payload object to merge back into bot_payload
+    const correctedPayload = {
+      doc_num:        in_num_date  || undefined,
+      extracted_date: in_doc_date  || undefined,
+      title:          in_detail    || undefined,
+      year_id:        in_year_id   || undefined,
+      original_pdf:   in_link      || undefined,
+      saved_categories: categories || undefined,
+      saved_agencies:   agencies   || undefined,
+    };
+
+    // Merge corrected data into existing bot_payload (jsonb || jsonb)
+    await db.query(
+      `UPDATE c_bot_findings
+       SET bot_payload = COALESCE(bot_payload, '{}'::jsonb) || $1::jsonb
+       WHERE bot_id = $2`,
+      [JSON.stringify(correctedPayload), id]
+    );
+    return res.json(ok(null, 'บันทึกแบบร่างสำเร็จ — งานยังคาอยู่ในคิวบอต'));
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json(err('Server Error'));
+  }
+});
+
 router.delete('/bot-findings/:id', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -1288,7 +1368,7 @@ router.delete('/bot-findings/:id', requireAdmin, async (req: AdminRequest, res: 
 });
 
 router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res: Response) => {
-  const { bot_id, in_num_date, in_doc_date, in_detail, in_year_id, in_link, categories } = req.body;
+  const { bot_id, in_num_date, in_doc_date, in_detail, in_year_id, in_link, categories, agencies, assigned_coordinator_id, is_draft } = req.body;
 
   try {
     const { rows } = await db.query(
@@ -1299,22 +1379,29 @@ router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res:
 
     const { rows: [{ max_order }] } = await db.query('SELECT MAX(in_ordering) AS max_order FROM c_information');
     const newOrder = (max_order ?? 0) + 1;
+    const adminId = req.admin?.id;
+
+    // is_draft=true → current_owner = creator (stays in creator's inbox, not forwarded)
+    // assigned_coordinator_id provided → assign to that coordinator
+    // otherwise → assign to self
+    const currentOwnerId = is_draft ? adminId : (assigned_coordinator_id || adminId);
 
     const { rows: inserted } = await db.query(`
       INSERT INTO c_information (
         in_num_date, in_doc_date, in_detail, in_detail_ag, in_etc, in_link, in_file_mkk,
         updated_user, in_mkk_id, in_mw_id, in_results_id, in_year_id, in_status_id,
         created_at, updated_at, in_ordering, in_circular_detail, in_original_link, in_attachment_link,
-        in_workflow_status
+        in_workflow_status, in_current_owner_id, in_creator_id
       ) VALUES (
         $1, $2, $3, '-', '-', $4, '-',
         $5, NULL, NULL, NULL, $6, NULL,
         NOW(), NOW(), $7, '-', '-', '-',
-        'DRAFT'
+        'DRAFT', $8, $9
       ) RETURNING in_id
     `, [
       in_num_date, in_doc_date || null, in_detail, in_link,
-      req.admin?.name || 'Admin', in_year_id || null, newOrder
+      req.admin?.name || 'Admin', in_year_id || null, newOrder,
+      currentOwnerId, adminId
     ]);
 
     const newInId = inserted[0].in_id;
@@ -1328,7 +1415,17 @@ router.post('/bot-findings/import', requireAdmin, async (req: AdminRequest, res:
       }
     }
 
+    if (agencies && agencies.length > 0) {
+      for (const agId of agencies) {
+        await db.query(`
+          INSERT INTO c_information_agency (in_id, ag_id)
+          VALUES ($1, $2)
+        `, [newInId, agId]);
+      }
+    }
+
     await db.query('UPDATE c_bot_findings SET bot_status = $1 WHERE bot_id = $2', ['IMPORTED', bot_id]);
+    clearLookupCache();
     return res.json(ok({ in_id: newInId }, 'นำเข้าข้อมูลสู่ระบบสำเร็จ'));
   } catch (e) {
     console.error(e);
@@ -1530,7 +1627,7 @@ router.delete('/agency-tree/:id', requireSuperAdmin, async (req: AdminRequest, r
     clearLookupCache();
     return res.json(ok(null, 'ลบส่วนราชการสำเร็จ'));
   } catch (e: any) {
-    if (e.code === '23503') return res.status(400).json(err('ข้อมูลนี้ถูกใช้งานอยู่ในระบบ ไม่สามารถลบได้'));
+    if (e.code === '23503') return res.status(400).json(err('ส่วนราชการนี้มีประวัติผูกกับหนังสือเวียน หรือข้อมูลอื่นๆ ไปแล้ว ไม่สามารถลบถาวรได้ (แนะนำให้ใช้การตั้งสถานะเป็น "ยุบเลิก" แทนการลบครับ)'));
     console.error(e);
     return res.status(500).json(err('ไม่สามารถลบข้อมูลได้'));
   }
@@ -1560,7 +1657,7 @@ router.get('/agency-tree/:id/members', requireAdmin, async (req: AdminRequest, r
     const { rows: members } = await db.query(`
       SELECT
         a.a_id, a.a_name, a.a_username, a.a_email,
-        a.a_role, a.a_position, a.a_status, a.a_permiss,
+        COALESCE(ag.ag_role, 'STAFF') AS a_role, a.a_position, a.a_status, a.a_permiss,
         a.a_agency_id,
         ag.ag_name AS agency_name
       FROM admin a

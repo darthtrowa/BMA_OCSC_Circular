@@ -215,7 +215,34 @@ router.get(
       const delegationId = delegationIdStr ? parseInt(delegationIdStr, 10) : undefined;
       
       const assignees = await WorkflowService.getNextAssignees(
+        docId,
         req.admin!.id, 
+        context === 'ACTING' && delegationId ? delegationId : undefined
+      );
+
+      return res.json({ success: true, data: assignees });
+    } catch (error: any) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
+router.get(
+  '/:docId/reject-assignees',
+  requireAdmin,
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const docId = parseInt(req.params.docId as string, 10);
+      if (isNaN(docId)) return res.status(400).json({ success: false, message: 'Invalid docId' });
+
+      const context = req.query.context as string || 'SELF';
+      const delegationIdStr = req.query.delegationId as string;
+      const delegationId = delegationIdStr ? parseInt(delegationIdStr, 10) : undefined;
+      
+      const assignees = await WorkflowService.getRejectAssignees(
+        docId,
+        req.admin!.id,
+        req.admin!.role || '',
         context === 'ACTING' && delegationId ? delegationId : undefined
       );
 
@@ -271,17 +298,36 @@ router.post(
  */
 router.post(
   '/parallel-assign',
-  requireRole(['COORDINATOR']),
+  requireAdmin,
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, tracks } = req.body;
+      const { docId, tracks, approval_context, delegation_id } = req.body;
       if (!docId || !Array.isArray(tracks) || tracks.length === 0) {
         return res.status(400).json({ 
           success: false, 
           message: `ข้อมูลไม่ครบถ้วน: docId=${docId}, tracks_is_array=${Array.isArray(tracks)}, tracks_length=${tracks?.length}` 
         });
       }
-      const coordinatorId = req.admin!.id;
+      
+      let coordinatorId = req.admin!.id;
+      if (approval_context === 'ACTING') {
+        if (!delegation_id) {
+          return res.status(400).json({ success: false, message: 'ต้องระบุ delegation_id เมื่อกระจายงานในฐานะรักษาการ' });
+        }
+        const { rows: delRows } = await db.query(
+          `SELECT assigner_id
+           FROM   c_workflow_delegations
+           WHERE  delegation_id = $1
+             AND  assignee_id   = $2
+             AND  is_active     = TRUE`,
+          [delegation_id, req.admin!.id]
+        );
+        if (!delRows.length) {
+          return res.status(403).json({ success: false, message: 'ไม่พบการมอบอำนาจที่ถูกต้อง หรือถูกยกเลิกแล้ว' });
+        }
+        coordinatorId = delRows[0].assigner_id;
+      }
+
       const result = await ParallelWorkflowService.assignParallel(docId, coordinatorId, tracks);
       return res.json({ success: true, message: `มอบหมายสำเร็จ (${tracks.length} Track)`, data: result });
     } catch (error: any) {
@@ -296,12 +342,31 @@ router.post(
  */
 router.post(
   '/parallel-delegate',
-  requireRole(['HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER']),
+  requireAdmin,
   async (req: AdminRequest, res: Response): Promise<any> => {
     try {
-      const { docId, paId, toUserId, comments } = req.body;
+      const { docId, paId, toUserId, comments, approval_context, delegation_id } = req.body;
       if (!docId || !paId || !toUserId) return res.status(400).json({ success: false, message: 'ข้อมูลไม่ครบถ้วน' });
-      const fromUserId = req.admin!.id;
+      
+      let fromUserId = req.admin!.id;
+      if (approval_context === 'ACTING') {
+        if (!delegation_id) {
+          return res.status(400).json({ success: false, message: 'ต้องระบุ delegation_id เมื่อมอบหมายในฐานะรักษาการ' });
+        }
+        const { rows: delRows } = await db.query(
+          `SELECT assigner_id
+           FROM   c_workflow_delegations
+           WHERE  delegation_id = $1
+             AND  assignee_id   = $2
+             AND  is_active     = TRUE`,
+          [delegation_id, req.admin!.id]
+        );
+        if (!delRows.length) {
+          return res.status(403).json({ success: false, message: 'ไม่พบการมอบอำนาจที่ถูกต้อง หรือถูกยกเลิกแล้ว' });
+        }
+        fromUserId = delRows[0].assigner_id;
+      }
+
       await ParallelWorkflowService.delegateWithinTrack(docId, paId, fromUserId, toUserId, comments || '');
       return res.json({ success: true, message: 'มอบหมายใน Track สำเร็จ' });
     } catch (error: any) {

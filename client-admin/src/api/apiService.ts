@@ -198,6 +198,11 @@ export const adminApi = {
     const { data } = await http.post(`/api/admin/bot-findings/import`, payload)
     return data
   },
+
+  saveBotFindingDraft: async (id: string | number, payload: any): Promise<any> => {
+    const { data } = await http.patch(`/api/admin/bot-findings/${id}/save-draft`, payload)
+    return data
+  },
 }
 
 export const workflowApi = {
@@ -247,12 +252,16 @@ export const workflowApi = {
     return data;
   },
 
+  getRejectAssignees: async (docId: number, context: 'SELF'|'ACTING' = 'SELF', delegationId?: number): Promise<any> => {
+    let url = `/api/admin/workflow/${docId}/reject-assignees?context=${context}`;
+    if (delegationId) url += `&delegationId=${delegationId}`;
+    const { data } = await http.get(url);
+    return data;
+  },
+
   // ── Parallel Workflow ──────────────────────────────────────
-  assignParallel: async (
-    docId: number,
-    tracks: { ag_id?: number; ag_name?: string }[]
-  ): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/parallel-assign', { docId, tracks });
+  assignParallel: async (docId: number, tracks: any[], approval_context?: string, delegation_id?: number): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-assign', { docId, tracks, approval_context, delegation_id });
     return data;
   },
 

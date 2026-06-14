@@ -1,17 +1,89 @@
 # Project Update Log
 
+## [1.4.3] - 2026-06-14
+
+### Bug Fix: Resolved Missing Parallel Documents in Inbox (Shared Client Support)
+
+#### 🎨 Frontend Changes
+
+- **DashboardPage.tsx (client)**: Added the `checkIsCurrentOwner` helper to resolve parallel assignments. Updated count calculations (inboxCount, actingCount, trackingCount) to handle parallel ownership where the primary document current owner ID is null.
+- **WorkflowInboxSection.tsx (client)**: Added the `checkIsCurrentOwner` helper and replaced all direct `in_current_owner_id` comparisons with `checkIsCurrentOwner` across all tabs (myTasks, myProcessedTasks, myCreatedTasks, actingTasks). This matches the fix previously applied to `client-admin` to ensure users running the unified client frontend see their assigned parallel tasks.
+
+### UI/UX: Hidden Manual Assignment Option When Automatic Route is Available
+
+#### 🎨 Frontend Changes
+
+- **WorkflowActionModal.tsx**: Hidden the "มอบหมายงาน / ส่งข้ามสายงาน" (Manual Assignment / Cross-Division Forward) block when an automatic hierarchical recipient (`autoUpAssignee`) is present. This eliminates unnecessary options and enforces strict, automated routing down the correct path.
+
+### Bug Fix: Resolved Duplicate Staging Queue Items in Bot Findings (Auto-imported Detection)
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**: Updated the `GET /bot-findings` route to automatically check and update any `PENDING` bot findings to `IMPORTED` if a matching circular already exists in the `c_information` table (matching either by post URL or document number + year). This resolves the issue where circulars created manually or saved in an inconsistent draft state would remain stuck/visible in the Bot Findings queue.
+
+### UI/UX & Workflow: Separated Single-Division Sequential Flow and Multi-Division Parallel Flow
+
+#### ⚙️ Backend Changes
+
+- **workflowService.ts**: Separated the routing logic for `HR_DIRECTOR` (or acting delegate) distributing work. If **more than 1 division** (`assignedAgencies.length > 1`) is selected, it triggers parallel assignment (`useParallelAssign = true`). If **exactly 1 division** (`assignedAgencies.length === 1`) is selected, it uses sequential flow (`useParallelAssign = false`) and queries the corresponding `DIV_DIRECTOR` (or active delegate) to set as `autoUpAssignee`. This prevents showing the manual assignee dropdown in both cases and flows.
+
+#### 🎨 Frontend Changes
+
+- **WorkflowActionModal.tsx**: Made the auto-forward routing label context-aware. If the next assignee's role is `'DIV_DIRECTOR'`, it renders `'ส่งต่อไปยัง ผอ.กอง:'` (Forward to Division Director) instead of `'เสนอเรื่องขึ้นไปที่:'` (Submit up to) for cleaner UX.
+
+### UI/UX: Hidden File Delete Buttons in Circular Details Modal (View Mode)
+
+#### 🎨 Frontend Changes
+
+- **CircularModal.tsx**: Hidden the "ลบไฟล์" (Delete file) buttons for both the "หนังสือเวียนสำนักงาน ก.พ." (Original circular PDF) and "เอกสารแนบท้าย" (Attachments) sections, and the "+ เพิ่มรายการไฟล์สิ่งที่ส่งมาด้วย" (Add attachment) button, when the modal is opened in read-only/view mode (`isView = true`).
+
+### Bug Fix: Resolved PostgreSQL GROUP BY Error in User List Endpoint
+
+#### 🗄️ Backend Changes
+
+- **admin.ts**: Added `ag.ag_role` to the `GROUP BY` clause in `GET /users` endpoint query. This fixes the database compilation exception `column "ag.ag_role" must appear in the GROUP BY clause or be used in an aggregate function` when retrieving user accounts list on the Admin Management dashboard.
+
+### UI/UX: Stylized Assignee Name Layout in Workflow Action Modal
+
+#### 🎨 Frontend Changes
+
+- **WorkflowActionModal.tsx**: Wrapped the target assignee's name in the automatic up-routing display with styling to show the name on a new line, in a smaller (`text-xs`), thinner (`font-normal`), and gray (`text-slate-500`) style as requested by the user.
+
+### Bug Fix: Fixed Validation Error During Parallel Assignment
+
+#### ⚙️ Frontend Changes
+
+- **WorkflowActionModal.tsx**: Fixed a bug where a validation error ("กรุณาเลือกผู้รับมอบหมาย/ผู้รับผิดชอบ") incorrectly blocked document forwarding during parallel assignment (`useParallelAssign = true`). The form submission logic now properly bypasses the single-user selection requirement for parallel forward actions.
+
+#### 🗄️ Backend Changes
+
+- **workflowService.ts**: Updated the `getNextAssignees` logic so that `useParallelAssign` is only triggered if the HR_DIRECTOR is sending the document to **more than 1 agency** (`assignedAgencies.length > 1`). If sent to a single agency, the workflow will now correctly proceed as a standard sequential flow (`forward`), allowing the user to select the specific action/assignee from the dropdown.
+
+### Bug Fix: Fixed Parallel Assignment Visibility in Inbox
+
+#### 🗄️ Backend Changes
+
+- **admin.ts**: Updated the `GET /admin/dashboard` query to include `parallel_owner_ids` using a subquery on `c_parallel_assignments`. This ensures the frontend receives the list of all active owners for a parallel document.
+
+#### 🎨 Frontend Changes
+
+- **WorkflowInboxSection.tsx**: Updated the task filtering logic to utilize a new `checkIsCurrentOwner` helper function. The inbox now correctly displays documents assigned via parallel assignment by matching the logged-in user's ID against the `parallel_owner_ids` list. This resolves the issue where documents sent out by HR_DIRECTOR disappeared instead of showing up in the DIV_DIRECTOR's inbox.
+
 ## [1.4.2] - 2026-06-07
 
 ### Removed Dynamic Workflow Builder System
 
 #### 🗄️ Database Changes
+
 - **Migration Script**: Removed dynamic workflow builder columns (`ag_template_id`, `pa_template_id`, `pa_active_node_id`, `in_template_id`, `in_active_node_id`) and completely dropped the `workflow_templates`, `workflow_nodes`, and `workflow_edges` tables as the system now relies entirely on the hierarchical workflow engine.
 
 #### ⚙️ Backend Changes
+
 - **index.ts & workflowTemplateRoutes.ts**: Removed all API routes and imports associated with the dynamic node-based builder (`/api/admin/workflows`).
 - **parallelWorkflowService.ts**: Removed dynamic template logic from the parallel assignment engine and fixed a runtime crash caused by querying the deleted `ag_template_id` column. The assignment now directly falls back to the active `DIV_DIRECTOR` or `HR_DIRECTOR` hierarchy logic. Additionally, fixed a major bug where the system could not find the `DIV_DIRECTOR` because they were assigned to a child "POSITION" agency (e.g. `ag_id=48` inside `ag_id=2`), and the query failed to account for `parent_ag_id`. Also fixed `a_status` matching (from `'active'` to `'1'`).
 
 #### 🎨 Frontend Changes
+
 - **App.tsx & Sidebar.tsx**: Removed the builder page from the client router and navigation menu.
 - **Components**: Deleted `WorkflowBuilderPage.tsx` and `WorkflowBuilder.tsx` components to clean up the codebase.
 - **AgencyFormModal.tsx**: Removed the "กระบวนการทำงานหลัก (Workflow Template)" dropdown field as the system no longer supports custom workflow bindings per agency.
@@ -22,12 +94,14 @@
 ### Refactored Workflow Processing to Match Real-World Procedures
 
 #### ⚙️ Backend Changes
+
 - **workflow.ts**: Added `'PENDING_CLOSE'` status to the `WorkflowStatus` type union.
 - **workflowRoutes.ts**: Changed role check for `/parallel-assign` to allow both `COORDINATOR` and `HR_DIRECTOR` roles. Added POST `/close` route to close workflows in `'PENDING_CLOSE'` status.
 - **workflowService.ts**: Modified the `approve` method to set document status to `'PENDING_CLOSE'` instead of `'COMPLETED'` when approving to the `COORDINATOR`. Added the `closeWorkflow` method.
 - **parallelWorkflowService.ts**: Modified `checkAndAdvance` to route the document to the active `HR_DIRECTOR` (or their level-1 acting delegate) in `'PENDING_HR_APPROVAL'` status when all parallel tracks are finished, instead of completing it directly.
 
 #### 🎨 Frontend Changes
+
 - **ParallelAssignModal.tsx**: Added `preSelectedAgencies` prop and auto-populated the modal tracks when opened.
 - **WorkflowInboxSection.tsx**: Enabled `HR_DIRECTOR` to trigger the parallel tracks modal. Added the "Close Work" (ปิดงาน) button for the `COORDINATOR` when document status is `'PENDING_CLOSE'`. Passed `preSelectedAgencies` to `ParallelAssignModal`. Added `sweetalert2` import and `'PENDING_CLOSE'` badge style mapping.
 - **apiService.ts**: Added `closeWorkflow` method to `workflowApi`.
@@ -38,14 +112,17 @@
 ### Feature: Position System & Account Role Refactoring
 
 #### 🗄️ Database Changes
+
 - **Migration Script**: Added `ag_type` (VARCHAR) and `ag_role` (VARCHAR) to `c_agency` table to support creating Positions directly inside the organizational hierarchy.
 
 #### ⚙️ Backend Changes
+
 - **admin.ts**: Updated agency CRUD endpoints to handle `ag_type` and `ag_role`.
 - **admin.ts**: Refactored user creation/update. System roles (`a_role`) are now automatically calculated. If `a_permiss` is admin/superadmin, the role is forced to `SYSTEM_ADMIN`. Otherwise, it inherits `ag_role` from the user's assigned position (defaulting to `STAFF`).
 - **admin.ts**: Added a new endpoint `PATCH /api/admin/users/:id/agency` to allow assigning users to positions or agencies via the organization chart.
 
 #### 🎨 Frontend Changes
+
 - **AgencyFormModal.tsx**: Added toggles to specify if a new hierarchy node is a "ส่วนราชการ (Agency)" or a "ตำแหน่ง (Position)", allowing assignment of position-specific workflow roles.
 - **AgencyTreeSection.tsx**: Visually differentiated position nodes using teal badges, ID card icons, and rendered their system role tags directly in the tree.
 - **AgencyMembersDrawer.tsx**: Implemented an "Attach Account" dropdown to easily pull unassigned users into a specific position, and a "Detach" button to remove them.
@@ -54,6 +131,7 @@
 ## [1.3.5] - 2026-06-06
 
 ### Fixed
+
 - **Network Error & CORS Rate Limiting**: Fixed a CORS bug where rate limiter blocks (429 responses) lacked the necessary CORS headers, causing browsers to reject them as a "Network Error". Moved the CORS middleware registration in `server/src/index.ts` to be initialized before the rate limiters.
 - **API Rate Limits**: Increased the standard API rate limiter (`apiLimiter`) maximum allowed requests from 200 to 2000 per 15 minutes to prevent local development and rapid testing from triggering rate limit blocks.
 - **Workflow Template Routes Exports**: Re-ordered code structure in `server/src/routes/workflowTemplateRoutes.ts` to place `export default router;` at the absolute end of the file for consistency and robustness.
@@ -61,11 +139,13 @@
 ## [1.3.4] - 2026-06-05
 
 ### Added
+
 - **Workflow Architecture Documentation**: บันทึกสถาปัตยกรรมการออกแบบกระบวนการทำงานแบบย่อยและไดนามิก (Modular & Dynamic Workflow Design) เป็นภาษาไทยไว้ที่ [workflow_modular_design.md](file:///e:/BMA_OCSC_Circular/docs/workflow_modular_design.md) เพื่อใช้อ้างอิงแนวทางออกแบบเชิงระบบของ BMA OCSC Circular
 
 ## [1.3.3] - 2026-06-05
 
 ### Fixed
+
 - **Workflow Builder Update Bug**: แก้ไขบัคตอนบันทึก Workflow Template เดิมที่เกิด Error 409 (Conflict) โดยเพิ่ม API endpoint `PUT /api/admin/workflows/templates/:id` สำหรับการแก้ไข (Update) Template เดิมแทนการสร้างใหม่ทั้งหมด ทำให้สามารถบันทึกการแก้ไขได้อย่างถูกต้อง
 
 ## [1.3.2] - 2026-06-05
@@ -73,6 +153,7 @@
 ### Feature: Admin Sidebar Workflow Builder Link & Connection Actions Configuration
 
 #### 🎨 Frontend Changes
+
 - **Sidebar.tsx**:
   - Imported `Link` from `react-router-dom` and added a `navLinkItem` helper.
   - Added "ตั้งค่าขั้นตอนการทำงาน (Workflow)" menu item under the "จัดการระบบ" (Manage System) section.
@@ -90,11 +171,13 @@
 ### Feature: Workflow Builder Acting Delegation Integration
 
 #### 🎨 Frontend Changes
+
 - **WorkflowBuilder.tsx**: Integrated "Situational Awareness" UI for Acting Roles. When a user clicks a node assigned to a `ROLE` (e.g. `HR_DIRECTOR`), the right sidebar fetches and displays a real-time list of personnel currently acting in that role.
 - **WorkflowBuilder.tsx**: Added a shortcut button "ตั้งค่า ➕" that links directly to `/circular/admin/dashboard/users` for seamless delegation management without breaking the Template workflow.
 - **workflowEngineApi.ts**: Added `getActiveDelegationsByRole` method to fetch active acting personnel.
 
 #### ⚙️ Backend Changes
+
 - **delegationRoutes.ts**: Created `GET /api/admin/delegations/active-by-role/:role` endpoint to fetch active delegations filtered by `delegated_role`.
 - **Build & PM2**: Re-compiled TS backend (`npm run build`) and restarted PM2 instance (`circular-api`) to apply route changes.
 
@@ -103,23 +186,27 @@
 ### Feature: Dynamic Workflow Engine Implementation & Architecture
 
 #### 🗄️ Database Changes
+
 - **Migration Script**: Altered `c_workflow_inbox` via `ALTER TABLE ADD COLUMN IF NOT EXISTS` to safely migrate the existing legacy table without losing data.
 - **Workflow Engine Schema**: Added and ensured tables for `workflow_templates`, `workflow_nodes`, and `workflow_edges` for a dynamic node-based approval engine.
 - **Template Seeding**: Created and executed `seed_workflow.cjs` to seed the default "OCSC Circular Workflow (Standard)" template (U-Shape flow with 10 steps).
 
 #### ⚙️ Backend Changes
+
 - **workflowTemplateRoutes.ts**: Implemented full REST API CRUD for managing workflow templates, nodes, and edges (`/api/admin/workflows/templates`).
 - **Circular Approval Endpoint**: Created `/api/admin/workflows/circular/approve` supporting both `SELF` and `ACTING` contexts, safely verifying active delegations.
 - **index.ts**: Mounted the new `workflowTemplateRoutes` under `/api/admin/workflows`.
 - **Build & PM2**: Successfully built the TypeScript backend (`npm run build`) and restarted the `circular-api` PM2 instance to register the new routes.
 
 #### 🎨 Frontend Changes
+
 - **WorkflowBuilderPage.tsx**: Connected the Workflow Builder React Flow UI to the new backend API endpoints (`listTemplates`, `createTemplate`, etc.).
 - **Error Handling**: Enhanced `loadTemplates` function to explicitly catch and display loading errors in the UI, replacing silent failures.
 - **Vite Configuration**: Updated proxy configuration in `client/vite.config.ts` to correctly route `/circular/admin/.*` to `http://127.0.0.1:5175`.
 - **IPv4 Binding**: Enforced `host: '127.0.0.1'` inside `client-admin/vite.config.ts` to fix IPv4/IPv6 mismatches causing `ECONNREFUSED` 500 HTTP Proxy Errors.
 
 #### ✅ Verification
+
 - React Frontend (Admin & Client) build: **Passed**
 - API Endpoints: Verified 401 Unauthorized returns correctly when accessed without token.
 - PM2 Status: **circular-api restarted and fully online.**
@@ -663,7 +750,6 @@
 - **gemini.md**:
   - Created [gemini.md](file:///e:/BMA_OCSC_Circular/.agents/rules/gemini.md) in the agent rules folder `.agents/rules/` to ensure the project instructions, stack constraints, and guardrails are automatically read and enforced by agentic AI workflows.
 
-
 #### ✅ Verification
 
 - File existence and layout: **Verified**
@@ -890,6 +976,7 @@
   - Mitigated MIME spoofing in Multer configuration by forcing all uploaded filenames to have the \`.pdf\` extension.
   - Implemented a global \`isSyncing\` lock on the \`POST /bot-findings/sync\` endpoint to prevent DoS via concurrent heavy sync operations, returning \`429 Too Many Requests\` when locked.
 - **aiService.ts**:
+
 #### ✅ Verification
 
 - React Frontend layout: **Updated and verified**
@@ -1225,9 +1312,9 @@
 #### ?? Backend Changes
 
 - **admin.ts (Transactions)**: Wrapped the multi-table INSERT and UPDATE SQL queries inside /circular/create and /circular/update with PostgreSQL transactions (BEGIN, COMMIT, ROLLBACK). This guarantees atomicity and prevents orphaned relations (e.g. categories, agencies, references) if an insert fails mid-execution.
-- **admin.ts (IDOR Fix)**: Upgraded access control for PATCH /users/:id/2fa from 
-equireAdmin to 
-equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
+- **admin.ts (IDOR Fix)**: Upgraded access control for PATCH /users/:id/2fa from
+  equireAdmin to
+  equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
 - **admin.ts (Scalability)**: Documented an architectural TODO flag for implementing LIMIT/OFFSET pagination inside the heavy GET /admin/dashboard SQL query to prevent future Out-Of-Memory (OOM) risks as database volume grows.
 - **index.ts & aiService.ts**: Confirmed and validated prior critical patches including uthLimiter namespacing to /api/admin/auth and SSRF prevention via maxRedirects: 0 during PDF text extraction.
 
@@ -1276,23 +1363,29 @@ equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilit
 ### Bug Fix: Public Base URL Redirect for Officer Login
 
 #### 🎨 Frontend Changes
+
 - **Redirect Path (`apiService.ts`)**: Updated the global Axios response 401 interceptor redirect from `/admin/login` to `/circular/admin/login` to match the configured Vite public base path (`/circular/`). This prevents the Vite dev server from showing the base URL error page ("The server is configured with a public base URL...") when unauthorized API responses trigger a hard reload.
 
 #### ⚙️ Backend Changes
+
 - **API Status Dashboard (`index.ts`)**: Updated the HTML template links for "Public Portal" and "Admin Login" on the server's root status dashboard to use `/circular` and `/circular/admin/login` respectively.
 
 ### RBAC: Coordinator Permissions for Starting Workflows
+
 - **Circular Play Button (`CircularSection.tsx`)**: Updated the conditional check for showing the workflow play button ("เริ่มเวียนหนังสือ") to include `admin?.permiss === 'admin'` in addition to `admin?.permiss === 'superadmin'` and `admin?.role === 'COORDINATOR'`. This ensures that Coordinator role users across all legacy permission levels (such as 'admin' and 'user') can fully see and interact with this button to start the document workflow.
 
 ### Database Maintenance
+
 - **Workflow State Reset**: Reset `in_workflow_status`, `in_current_owner_id`, and `in_creator_id` to `NULL` (and cleared associated workflow history) for circular document **"นร 1008/ว 5"** dated **21 พฤษภาคม 2569** (ID 509). This restores the document to its original unprocessed state, allowing the newly updated coordinator play button ("เริ่มเวียนหนังสือ") to appear for active testing.
 - **Workflow History Schema Fix**: Dropped and recreated the `c_workflow_history` table in the PostgreSQL database to align with the current schema design requirements defined in the codebase (`action` and `comments` columns), resolving the "column 'action' does not exist" error when initiating a workflow.
 
 ### Bug Fix: Workflow Inbox Missing Tasks
+
 - **Auth State Management**: Fixed a critical issue where tasks were missing from the user's Inbox (`WorkflowInboxSection.tsx`) after initiating a workflow. The backend API (`/auth/login` and `/auth/verify-otp`) now explicitly returns the user's `id` (`admin.a_id`) in the JSON payload.
 - **Frontend Context**: Updated the frontend `AuthContext` and `LoginPage` to properly extract, store (`localStorage`), and manage the `id` within the React state. This ensures that `admin.id` correctly matches `in_current_owner_id` during the Inbox rendering check.
 
 ### Bug Fix: Profile Modal Permission Display
+
 - **Role Display Mapping**: Fixed a hardcoded ternary operator in `ProfileModal.tsx` that assumed any user who isn't a `superadmin` must be an `Admin`. It now correctly maps all three system permission levels (`superadmin` -> ผู้ดูแลระบบสูงสุด, `admin` -> ผู้ดูแลระบบ, `user` -> เจ้าหน้าที่ทั่วไป) to ensure the user's self-viewed profile matches the system's underlying reality shown in the User Management page.
 
 ## [1.1.55] - 2026-05-26
@@ -1300,9 +1393,11 @@ equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilit
 ### Feature: Embedded User Snapshot in Workflow History (Audit-Proof)
 
 #### 🎯 Design Rationale
+
 Previously, the `c_workflow_history` table stored only `from_user_id` and `to_user_id`. When displaying history, the system performed a `JOIN` on the `admin` table to fetch names and positions. This meant that if a user changed their name, received a promotion, transferred departments, or was deleted from the system, the historical record of their past actions would retroactively reflect their new information — violating auditing integrity.
 
 #### 🏗️ Database Changes (`fix_schema.ts`)
+
 - Dropped and recreated the `c_workflow_history` table with 4 new snapshot text columns:
   - `from_user_name VARCHAR(255)`: The name of the actor at the time of action
   - `from_user_position VARCHAR(255)`: The official position/role of the actor at the time
@@ -1310,11 +1405,13 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
   - `to_user_position VARCHAR(255)`: The official position/role of the recipient at the time
 
 #### ⚙️ Backend Changes (`workflowService.ts`)
+
 - Refactored all 6 workflow action methods (`startWorkflow`, `submitToHR`, `delegate`, `submitReview`, `approve`, `reject`) to use a new private `addHistory()` helper.
 - `addHistory()` fetches the `a_name` and `a_position` (falling back to `a_role`) for both actors at the exact moment of the action, then embeds them as static text into the history record.
 - Updated `getHistory()` to remove the `LEFT JOIN` on the `admin` table, as all required data is now embedded in the history row itself.
 
 #### 🎨 Frontend Changes (`WorkflowHistoryModal.tsx`)
+
 - Updated the history display to read `h.from_user_name`, `h.from_user_position`, `h.to_user_name`, `h.to_user_position` (the embedded static fields) instead of the previously joined `h.from_position`, `h.from_role` fields.
 - Added handling for the `STARTED` action type label ("เริ่มกระบวนการ").
 - Fixed a pre-existing bug where `h.comments` was wrapped in literal quote characters `"..."` instead of being rendered as a JSX variable.
@@ -1324,6 +1421,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 ### UI/UX: Parallel Workflow Text & Label Enhancements
 
 #### 🎨 Frontend Changes
+
 - **WorkflowInboxSection.tsx**:
   - Changed the parallel flow activation button text from `"ส่ง Parallel"` to `"ส่งไปพิจารณา"`.
 - **ParallelAssignModal.tsx**:
@@ -1333,6 +1431,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
   - Changed the field label `"หมายเหตุ"` to `"เนื้อความ"`.
 
 #### ✅ Verification
+
 - Production build: **Passed with 0 errors**
 
 ## [1.1.57] - 2026-05-27
@@ -1340,10 +1439,12 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 ### Bug Fix & Compliance: Parallel Workflow Department Validation & Cross-Department Role Restricting
 
 #### ⚙️ Backend Changes
+
 - **admin.ts**:
   - Included `a_agency_id` in the SELECT columns list for `/users/by-role` and `GET /profile` endpoints, enabling department-based logic and user-filtering on the client interface.
 
 #### 🎨 Frontend Changes
+
 - **ParallelAssignModal.tsx**:
   - **Required Department Selection**: Added `required` to the agency select input, and styled it with a red asterisk (`*`). Form submission now strictly requires a department to be specified.
   - **Bug Fix**: Resolved user loading empty list bug when selecting departments by successfully receiving and filtering users on `a_agency_id`.
@@ -1351,6 +1452,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
   - **Root-Level Organizational Selection**: Fixed the agency selector to filter the API's flat list and keep only the root level of the organizational tree (where `parent_ag_id` is `null`), and sorted them by `agency_ordering` ascending to match the organization tree management screen layout.
 
 #### ✅ Verification
+
 - Production build: **Passed with 0 errors**
 
 ## [1.1.58] - 2026-06-03
@@ -1358,6 +1460,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 ### Build & Deploy: Production Compile and PM2 Local Deployment
 
 #### ⚙️ Build Process
+
 - Compiled backend Express/TypeScript API in `server` (`npm run build` -> `server/dist`).
 - Built the React frontend applications:
   - Main unified frontend in `client` (`npm run build` -> `client/dist`).
@@ -1365,6 +1468,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
   - Split public frontend in `client-public` (`npm run build` -> `client-public/dist`).
 
 #### 🚀 Deployment
+
 - Started all local dev services using PM2 via `powershell -ExecutionPolicy Bypass -File .\start-circular.ps1`.
 - Verified API service is healthy and online at `http://localhost:3000/health`.
 - Verified Frontend service is online and serving at `http://127.0.0.1:5173/circular/` (mapped to port 80 proxy).
@@ -1374,6 +1478,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 ### Feature & Sync: Unified Client Delegation (Acting/Interim) Feature Integration
 
 #### 🎨 Frontend Changes
+
 - **apiService.ts**: Added `delegationApi` helper endpoints and updated `workflowApi.approve` signature.
 - **DelegationModal.tsx** [NEW]: Copied the acting appointment modal component from `client-admin` to `client`.
 - **UserSection.tsx**: Added the purple shield button (`bx-shield-plus`) to allow Superadmins to appoint an acting officer.
@@ -1381,6 +1486,31 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 - **WorkflowInboxSection.tsx**: Added the "กล่องงานรักษาการ (Acting Inbox)" container to display acting tasks and enable approval in acting capacity.
 
 #### ✅ Verification
+
 - Checked that `client` compiles and builds successfully via Vite with 0 errors.
 - Restarted PM2 services.
 
+## [1.1.60] - 2026-06-11
+
+### DevOps: Docker Deployment Setup & Port Conflict Resolution
+
+#### ⚙️ Docker & Infrastructure Changes
+
+- **docker-compose.yml**:
+  - Remapped the Nginx gateway external port mapping from `80:80` to `8080:80` to resolve a conflict with a local Windows Netsh port proxy listening on port 80.
+- **.env.docker**:
+  - Updated `FRONTEND_URL` to `http://localhost:8080` to match the new gateway port configuration for CORS mapping.
+- **server/Dockerfile**:
+  - Optimized the builder stage by skipping Puppeteer Chromium downloads (`ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true`), which speeds up Docker builds significantly.
+  - Copied the `patches/` folder before running `npm install` in both builder and production stages to ensure `patch-package` successfully applies the `@adminjs/express` patches.
+  - Added `RUN chown -R node:node /app` before switching to `USER node` to fix `EACCES: permission denied` errors when AdminJS tries to bundle assets and create the `.adminjs` directory.
+- **server/package.json**:
+  - Moved `patch-package` to `dependencies` to ensure it is installed and runs in the production Docker stage.
+- **client-public/.env.production & client-admin/.env.production**:
+  - Changed `VITE_API_BASE_URL` to `"/circular"` so the React clients resolve API requests relative to the gateway's `/circular/api` path, avoiding 404 errors.
+
+#### ✅ Verification
+
+- **Docker Containers**: All 5 services (db, server, client-public, client-admin, gateway) are running and healthy.
+- **Database Import**: Successfully cleared schema and imported `docs/circular_docker_export.sql` database dump with zero errors.
+- **Endpoint Tests**: Verified API filters, public search route, and admin login page are accessible at `http://localhost:8080/circular/` and `http://localhost:8080/circular/admin/`.

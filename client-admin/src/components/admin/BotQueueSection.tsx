@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react'
 import Swal from 'sweetalert2'
 import Select from 'react-select'
 import { adminApi } from '../../api/apiService'
+import { useAuth } from '../../contexts/AuthContext'
 
-export default function BotQueueSection({ allData }: { allData: any }) {
+export default function BotQueueSection({ allData, onReload }: { allData: any, onReload?: () => void }) {
+  const { admin } = useAuth()
   const cleanYear = (val: string | number | undefined | null) => {
     if (!val) return ''
     return String(val).replace(/^(ปี\s*)?พ\.ศ\.\s*/g, '').trim()
@@ -24,6 +26,9 @@ export default function BotQueueSection({ allData }: { allData: any }) {
   const [linkUrl, setLinkUrl] = useState('')
   const [selectedCats, setSelectedCats] = useState<number[]>([])
   const [selectedAgencies, setSelectedAgencies] = useState<any[]>([null])
+  // Coordinator assignment
+  const [coordinators, setCoordinators] = useState<any[]>([])
+  const [assignedCoordinatorId, setAssignedCoordinatorId] = useState<number | ''>('')
 
   const makeOptions = (arr: any[], valKey: string, labelFn: (i: any) => string) => {
     if (!arr) return []
@@ -58,29 +63,69 @@ export default function BotQueueSection({ allData }: { allData: any }) {
     loadData()
   }, [])
 
-  const openImportModal = (item: any) => {
+  const openImportModal = async (item: any) => {
     setSelectedItem(item)
     const payload = item.bot_payload || {}
     
-    // Auto fill
+    // Auto fill — prefer saved (draft) values over bot-extracted values
     setDocNum(payload.doc_num || '')
     setDocDate(payload.extracted_date || '')
     setTitle(payload.title || item.bot_title || '')
     setLinkUrl(payload.original_pdf || item.bot_url || '')
-    setSelectedCats([])
-    setSelectedAgencies([null])
+    setAssignedCoordinatorId(admin?.id || '')
+
+    // Restore saved categories (from previous draft save)
+    if (payload.saved_categories && payload.saved_categories.length > 0) {
+      setSelectedCats(payload.saved_categories)
+    } else {
+      setSelectedCats([])
+    }
+
+    // Restore saved agencies (from previous draft save) — convert ag_id back to react-select options
+    if (payload.saved_agencies && payload.saved_agencies.length > 0) {
+      const restoredAgencies = payload.saved_agencies
+        .map((agId: number) => {
+          const agency = allData?.agency?.find((a: any) => a.ag_id === agId)
+          return agency ? { value: agency.ag_id, label: agency.ag_name } : null
+        })
+        .filter(Boolean)
+      setSelectedAgencies(restoredAgencies.length > 0 ? restoredAgencies : [null])
+    } else {
+      setSelectedAgencies([null])
+    }
     
-    // Match year from master data
-    if (payload.year && allData?.year) {
+    // Match year: prefer saved year_id, else match by year string from bot payload
+    if (payload.year_id) {
+      setYearId(Number(payload.year_id))
+    } else if (payload.year && allData?.year) {
       const cleanPayloadYear = cleanYear(payload.year)
       const y = allData.year.find((y: any) => cleanYear(y.year_value) === cleanPayloadYear)
       setYearId(y ? y.year_id : '')
     } else {
       setYearId('')
     }
+
+    // Load coordinators from same agency
+    try {
+      const coordList = await adminApi.getUsersByRole(['COORDINATOR'], undefined, undefined)
+      setCoordinators(coordList || [])
+    } catch {
+      setCoordinators([])
+    }
     
     setShowModal(true)
   }
+
+  const buildPayload = () => ({
+    bot_id: selectedItem.bot_id,
+    in_num_date: docNum,
+    in_doc_date: docDate || null,
+    in_detail: title,
+    in_year_id: yearId || null,
+    in_link: linkUrl,
+    categories: selectedCats,
+    agencies: selectedAgencies.filter(Boolean).map((a: any) => a.value)
+  })
 
   const submitImport = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -92,21 +137,49 @@ export default function BotQueueSection({ allData }: { allData: any }) {
     
     try {
       Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } })
-      
       const payload = {
-        bot_id: selectedItem.bot_id,
+        ...buildPayload(),
+        assigned_coordinator_id: assignedCoordinatorId || admin?.id || null,
+      }
+      const res = await adminApi.importBotFinding(payload)
+      if (res.status) {
+        Swal.fire('สำเร็จ', 'นำเข้าและมอบหมายงานสำเร็จ', 'success')
+        setShowModal(false)
+        loadData()
+        if (onReload) onReload()
+      } else {
+        Swal.fire('ผิดพลาด', res.message || 'เกิดข้อผิดพลาด', 'error')
+      }
+    } catch (err: any) {
+      Swal.fire('ผิดพลาด', err.message || 'เชื่อมต่อไม่ได้', 'error')
+    }
+  }
+
+  const submitDraft = async () => {
+    if (!docNum) return Swal.fire({ icon: 'warning', text: 'กรุณากรอกเลขที่หนังสือ' })
+    if (!yearId) return Swal.fire({ icon: 'warning', text: 'กรุณาเลือกปี' })
+    if (!title) return Swal.fire({ icon: 'warning', text: 'กรุณากรอกชื่อเรื่อง' })
+    
+    try {
+      Swal.fire({ title: 'กำลังบันทึกแบบร่าง...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } })
+      // บันทึกข้อมูลที่แก้ไขกลับเข้า bot_payload เท่านั้น
+      // ไม่สร้าง c_information / ไม่เปลี่ยน bot_status → คาอยู่ใน queue
+      const payload = {
         in_num_date: docNum,
         in_doc_date: docDate || null,
         in_detail: title,
         in_year_id: yearId || null,
         in_link: linkUrl,
         categories: selectedCats,
-        agencies: selectedAgencies.filter(Boolean).map((a: any) => a.value)
+        agencies: selectedAgencies.filter(Boolean).map((a: any) => a.value),
       }
-      
-      const res = await adminApi.importBotFinding(payload)
+      const res = await adminApi.saveBotFindingDraft(selectedItem.bot_id, payload)
       if (res.status) {
-        Swal.fire('สำเร็จ', 'นำเข้าข้อมูลสู่ระบบสำเร็จ', 'success')
+        Swal.fire({
+          icon: 'success',
+          title: 'บันทึกแบบร่างแล้ว',
+          text: 'ข้อมูลที่แก้ไขถูกบันทึกไว้แล้ว งานยังคาอยู่ในคิวบอตรอนำเข้า',
+        })
         setShowModal(false)
         loadData()
       } else {
@@ -466,6 +539,32 @@ export default function BotQueueSection({ allData }: { allData: any }) {
 
                   <p className="text-xs text-slate-400 mt-2">ส่วนราชการที่คุณเลือกตรงนี้จะถูกบันทึกเพื่อใช้ในการกระจายงานเมื่อหัวหน้าฝ่ายบุคคลอนุมัติ</p>
                 </div>
+
+                {/* Coordinator Assignment */}
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+                  <label className="block text-xs font-bold text-indigo-700 uppercase tracking-wide mb-2">
+                    <i className="bx bx-user-check mr-1"></i>
+                    มอบหมายงานให้ COORDINATOR
+                    <span className="text-slate-400 font-normal normal-case ml-2">(เลือกคนในสังกัดเดียวกัน)</span>
+                  </label>
+                  <select
+                    value={assignedCoordinatorId}
+                    onChange={e => setAssignedCoordinatorId(Number(e.target.value) || '')}
+                    className="w-full border border-indigo-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                  >
+                    <option value={admin?.id ?? ''}>— ฉัน ({admin?.name}) —</option>
+                    {coordinators
+                      .filter((c: any) => Number(c.a_id) !== Number(admin?.id))
+                      .map((c: any) => (
+                        <option key={c.a_id} value={c.a_id}>{c.a_name}</option>
+                      ))
+                    }
+                  </select>
+                  <p className="text-xs text-indigo-500 mt-1.5">
+                    <i className="bx bx-info-circle"></i>
+                    {' '}หากเลือก "บันทึกแบบร่าง" งานจะอยู่ใน Inbox ของคุณ โดยไม่ส่งให้ใคร
+                  </p>
+                </div>
                 
                 <div className="hidden">
                   <input type="text" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} />
@@ -473,15 +572,22 @@ export default function BotQueueSection({ allData }: { allData: any }) {
               </form>
             </div>
             
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-end gap-3">
               <a href={selectedItem.bot_url || selectedItem.bot_payload?.original_pdf} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-4 py-2 text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition mr-auto">
                 <i className='bx bx-search-alt'></i> ดู PDF ต้นฉบับ
               </a>
               <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition">
                 ยกเลิก
               </button>
+              <button
+                type="button"
+                onClick={submitDraft}
+                className="px-5 py-2 text-sm font-semibold text-slate-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-xl transition flex items-center gap-2"
+              >
+                <i className="bx bx-file text-lg"></i> บันทึกแบบร่าง
+              </button>
               <button type="submit" form="importForm" className="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow hover:shadow-md rounded-xl transition flex items-center gap-2">
-                <i className="bx bx-save text-lg"></i> บันทึกนำเข้า
+                <i className="bx bx-send text-lg"></i> บันทึกนำเข้า
               </button>
             </div>
           </div>
