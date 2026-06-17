@@ -225,7 +225,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
             </button>
           )}
 
-          {canAct && admin?.role !== 'COORDINATOR' && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && (
+          {canAct && !['STAFF', 'COORDINATOR'].includes(admin?.role || '') && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && (
             <button className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition text-xs font-semibold" onClick={() => handleAction(item.in_id, 'reject')}>
               ตีกลับ
             </button>

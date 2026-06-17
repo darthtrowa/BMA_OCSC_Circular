@@ -124,8 +124,8 @@ export default function UserSection({ permiss }) {
     e.preventDefault()
 
     // Validation
-    if (!formData.a_name || !formData.a_username || !formData.a_agency_id) {
-      return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลและเลือกสังกัดให้ครบถ้วน', 'warning')
+    if (!formData.a_name || !formData.a_username) {
+      return Swal.fire('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบถ้วน', 'warning')
     }
     if (!editingUser && !formData.a_password) {
       return Swal.fire('แจ้งเตือน', 'กรุณากรอกรหัสผ่านสำหรับผู้ใช้ใหม่', 'warning')
@@ -348,26 +348,7 @@ export default function UserSection({ permiss }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">สังกัด / หน่วยงาน</label>
-                    <input
-                      type="text"
-                      readOnly
-                      className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
-                      value={formData.a_agency || 'ไม่ระบุสังกัด'}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่ง (Position)</label>
-                    <input
-                      type="text"
-                      readOnly
-                      className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
-                      value={formData.a_position || '-'}
-                    />
-                  </div>
-                </div>
+
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">

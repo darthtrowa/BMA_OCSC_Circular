@@ -195,12 +195,15 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
             <i className="bx bx-history"></i> ประวัติ
           </button>
 
-          {/* Pencil edit button: shown for COORDINATOR on their own DRAFT or REJECTED items */}
-          {canAct && admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status) && (
+          {/* Pencil edit button: shown for COORDINATOR on DRAFT/REJECTED, and STAFF on active tasks */}
+          {canAct && item.in_workflow_status !== 'COMPLETED' && (
+            (admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status)) ||
+            (admin?.role === 'STAFF')
+          ) && (
             <button
               className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition text-xs font-semibold flex items-center gap-1"
               onClick={() => { setEditItem(item); setShowEditModal(true); }}
-              title="แก้ไขข้อมูลก่อนส่ง"
+              title={admin?.role === 'STAFF' ? "บันทึกข้อมูลพิจารณา" : "แก้ไขข้อมูลก่อนส่ง"}
             >
               <i className="bx bx-pencil"></i> แก้ไข
             </button>
@@ -212,7 +215,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
             </button>
           )}
 
-          {canAct && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && item.in_flow_state !== 'in' && (
+          {canAct && !['STAFF', 'COORDINATOR'].includes(admin?.role || '') && !['COMPLETED', 'REJECTED', 'DRAFT'].includes(item.in_workflow_status) && item.in_flow_state !== 'in' && (
             <button className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition text-xs font-semibold flex items-center gap-1" onClick={() => handleAction(item.in_id, 'reject')}>
               <i className="bx bx-undo"></i> ส่งงานกลับ
             </button>

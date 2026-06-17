@@ -100,10 +100,39 @@ export class WorkflowService {
         newFlowState = 'out';
       } else if (fromRole === 'HR_DIRECTOR' && toRole === 'DIV_DIRECTOR') {
         newFlowState = 'in';
+      } else if (toRole === 'STAFF') {
+        newFlowState = 'out';
       } else if (fromRole === 'STAFF') {
         newFlowState = 'out';
       } else if (fromRole === 'DIV_DIRECTOR' && toRole === 'HR_DIRECTOR') {
         newFlowState = 'in';
+      }
+
+      const docRes = await client.query("SELECT in_is_parallel FROM c_information WHERE in_id = $1", [docId]);
+      const isParallel = docRes.rows.length > 0 ? docRes.rows[0].in_is_parallel : false;
+
+      if (isParallel) {
+        const paRes = await client.query(
+          "SELECT pa_id FROM c_parallel_assignments WHERE in_id = $1 AND current_owner_id = $2 AND pa_status IN ('PENDING', 'IN_PROGRESS')",
+          [docId, currentOwnerId]
+        );
+        if (paRes.rows.length > 0) {
+          const paId = paRes.rows[0].pa_id;
+          
+          if (newFlowState) {
+            await client.query("UPDATE c_information SET in_flow_state = $1 WHERE in_id = $2", [newFlowState, docId]);
+          }
+
+          await client.query("COMMIT");
+          
+          const { ParallelWorkflowService } = await import('./parallelWorkflowService.js');
+          if (newFlowState === 'in' || toRole === 'HR_DIRECTOR' || toRole === 'COORDINATOR') {
+             await ParallelWorkflowService.submitTrackResult(docId, paId, currentOwnerId as number, comments);
+          } else {
+             await ParallelWorkflowService.delegateWithinTrack(docId, paId, currentOwnerId as number, toUserId, comments);
+          }
+          return { success: true };
+        }
       }
 
       let query = "UPDATE c_information SET in_workflow_status = $1, in_current_owner_id = $2";
@@ -150,10 +179,49 @@ export class WorkflowService {
       
       const newStatus: WorkflowStatus = "REJECTED";
 
-      await client.query(
-        "UPDATE c_information SET in_workflow_status = $1, in_current_owner_id = $2 WHERE in_id = $3",
-        [newStatus, rejectToUserId, docId]
-      );
+      let newFlowState: string | null = null;
+      if (targetRole === 'STAFF') {
+        newFlowState = 'out';
+      }
+
+      const docRes = await client.query("SELECT in_is_parallel FROM c_information WHERE in_id = $1", [docId]);
+      const isParallel = docRes.rows.length > 0 ? docRes.rows[0].in_is_parallel : false;
+
+      if (isParallel) {
+        const paRes = await client.query(
+          "SELECT pa_id FROM c_parallel_assignments WHERE in_id = $1 AND current_owner_id = $2 AND pa_status IN ('PENDING', 'IN_PROGRESS')",
+          [docId, currentOwnerId]
+        );
+        if (paRes.rows.length > 0) {
+          const paId = paRes.rows[0].pa_id;
+          
+          if (newFlowState) {
+            await client.query("UPDATE c_information SET in_flow_state = $1 WHERE in_id = $2", [newFlowState, docId]);
+          }
+
+          await client.query("COMMIT");
+          
+          const { ParallelWorkflowService } = await import('./parallelWorkflowService.js');
+          if (targetRole === 'HR_DIRECTOR' || targetRole === 'COORDINATOR') {
+             await ParallelWorkflowService.rejectTrack(docId, paId, currentOwnerId as number, comments);
+          } else {
+             await ParallelWorkflowService.delegateWithinTrack(docId, paId, currentOwnerId as number, rejectToUserId, comments);
+          }
+          return { success: true };
+        }
+      }
+
+      let query = "UPDATE c_information SET in_workflow_status = $1, in_current_owner_id = $2";
+      const params: any[] = [newStatus, rejectToUserId];
+      
+      if (newFlowState) {
+        query += ", in_flow_state = $3";
+        params.push(newFlowState);
+      }
+      query += ` WHERE in_id = $${params.length + 1}`;
+      params.push(docId);
+
+      await client.query(query, params);
 
       await this.addHistory(client, docId, reviewerId, rejectToUserId, "REJECTED", comments, delegationId);
 

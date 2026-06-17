@@ -72,7 +72,7 @@ export default function BotQueueSection({ allData, onReload }: { allData: any, o
     setDocDate(payload.extracted_date || '')
     setTitle(payload.title || item.bot_title || '')
     setLinkUrl(payload.original_pdf || item.bot_url || '')
-    setAssignedCoordinatorId(admin?.id || '')
+    setAssignedCoordinatorId(admin?.id ? Number(admin.id) : '')
 
     // Restore saved categories (from previous draft save)
     if (payload.saved_categories && payload.saved_categories.length > 0) {
@@ -139,7 +139,7 @@ export default function BotQueueSection({ allData, onReload }: { allData: any, o
       Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } })
       const payload = {
         ...buildPayload(),
-        assigned_coordinator_id: assignedCoordinatorId || admin?.id || null,
+        assigned_coordinator_id: assignedCoordinatorId || (admin?.id ? Number(admin.id) : null),
       }
       const res = await adminApi.importBotFinding(payload)
       if (res.status) {

@@ -1,5 +1,25 @@
 # Project Update Log
 
+## [1.4.4] - 2026-06-17
+
+### Feature: Workflow & User Field Refinement and System Upload Preparation
+
+#### ⚙️ Backend Changes
+
+- **admin.ts**:
+  - Refined `/users` endpoints (`GET`, `POST`, `PUT`) by optimizing position name and agency fallback lookups.
+  - Removed deprecated or unused fields from user create/update body parameter validation and insertion.
+- **workflowService.ts**:
+  - Integrated parallel workflow logic into the main submission and rejection process flow (`submitTrackResult`, `delegateWithinTrack`, `rejectTrack`). This allows auto-updating state flags when executing parallel tracks.
+
+#### 🎨 Frontend Changes
+
+- **UserSection.tsx (client-admin)**:
+  - Removed outdated or redundant inputs ("สังกัด / หน่วยงาน" and "ตำแหน่ง") from user form modals to improve layout spacing and reduce vertical clutter.
+- **WorkflowInboxSection.tsx (client & client-admin)**:
+  - Added support for `STAFF` users to edit and save details on active tasks.
+  - Restricted the "ส่งงานกลับ" (Reject) button to prevent role conflicts for `STAFF` and `COORDINATOR` users.
+
 ## [1.4.3] - 2026-06-14
 
 ### Bug Fix: Resolved Missing Parallel Documents in Inbox (Shared Client Support)

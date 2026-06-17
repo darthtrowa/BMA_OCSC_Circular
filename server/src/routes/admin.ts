@@ -408,11 +408,14 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
     let sql = `
       SELECT 
         a.a_id, a.a_name, a.a_username, a.a_email, a.a_permiss, COALESCE(ag.ag_role, 'STAFF') AS a_role, 
-        a.a_position, a.a_status, a.a_agency, a.a_agency_id, a.a_last_login, a.created_at,
+        COALESCE(ag.ag_name, a.a_position) AS a_position, a.a_status, 
+        COALESCE(parent_ag.ag_name, ag.ag_name, a.a_agency) AS a_agency, 
+        a.a_agency_id, a.a_last_login, a.created_at,
         MIN(d.delegation_id) AS active_delegation_id,
         STRING_AGG(assignee.a_name, ', ') AS active_assignee_name
       FROM admin a
       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+      LEFT JOIN c_agency parent_ag ON ag.parent_ag_id = parent_ag.ag_id
       LEFT JOIN c_workflow_delegations d ON d.assigner_id = a.a_id AND d.is_active = TRUE
       LEFT JOIN admin assignee ON assignee.a_id = d.assignee_id
     `;
@@ -420,7 +423,7 @@ router.get('/users', requireSuperAdmin, async (req: AdminRequest, res: Response)
     if (req.admin?.permiss !== 'superadmin') {
       sql += ` WHERE a.a_permiss != 'superadmin' `;
     }
-    sql += ` GROUP BY a.a_id, ag.ag_role ORDER BY a.a_id DESC `;
+    sql += ` GROUP BY a.a_id, ag.ag_role, ag.ag_name, parent_ag.ag_name ORDER BY a.a_id DESC `;
     const { rows } = await db.query(sql, params);
     return res.json(ok(rows));
   } catch (e) {
@@ -495,7 +498,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
     // --- Fetch all active users (filtered by role if provided) ---
     const params: any[] = ['1'];
-    let sql = `SELECT a.a_id, a.a_name, COALESCE(c.ag_role, 'STAFF') AS a_role, a.a_position, a.a_agency_id, c.parent_ag_id 
+    let sql = `SELECT a.a_id, a.a_name, COALESCE(c.ag_role, 'STAFF') AS a_role, COALESCE(c.ag_name, a.a_position) AS a_position, a.a_agency_id, c.parent_ag_id 
            FROM admin a 
            LEFT JOIN c_agency c ON a.a_agency_id = c.ag_id 
            WHERE a.a_status = $1`;
@@ -613,7 +616,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
 /** 2. เพิ่มผู้ใช้ใหม่ */
 router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
-  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id } = req.body;
+  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_status } = req.body;
   if (req.admin?.permiss !== 'superadmin' && a_permiss === 'superadmin') {
     return res.status(403).json(err('คุณไม่มีสิทธิ์เพิ่มผู้ใช้ระดับ SuperAdmin'));
   }
@@ -625,9 +628,9 @@ router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(a_password, salt);
     await db.query(`
-      INSERT INTO admin (a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-    `, [a_name, a_username, a_email, hash, a_permiss || 'user', a_role || 'STAFF', a_position || '', a_status || '1', a_agency, a_agency_id ? parseInt(a_agency_id) : null]);
+      INSERT INTO admin (a_name, a_username, a_email, a_password, a_permiss, a_role, a_status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+    `, [a_name, a_username, a_email, hash, a_permiss || 'user', a_role || 'STAFF', a_status || '1']);
     return res.json(ok(null, 'เพิ่มผู้ใช้สำเร็จ'));
   } catch (e) {
     console.error(e);
@@ -639,7 +642,7 @@ router.post('/users', requireSuperAdmin, async (req: AdminRequest, res: Response
 router.put('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Response) => {
   console.log(`[AdminAPI] Incoming PUT /users/${req.params.id}`, req.body);
   const { id } = req.params;
-  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id } = req.body;
+  const { a_name, a_username, a_email, a_password, a_permiss, a_role, a_status } = req.body;
   try {
     const { rows: existing } = await db.query('SELECT a_permiss FROM admin WHERE a_id = $1', [id]);
     if (!existing.length) return res.status(404).json(err('ไม่พบผู้ใช้'));
@@ -653,14 +656,14 @@ router.put('/users/:id', requireSuperAdmin, async (req: AdminRequest, res: Respo
       const salt = await bcrypt.genSalt(10);
       const hash = await bcrypt.hash(a_password, salt);
       await db.query(`
-        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_position=$7, a_status=$8, a_agency=$9, a_agency_id=$10, a_token_version = COALESCE(a_token_version, 1) + 1, updated_at=NOW()
-        WHERE a_id=($11)::int
-      `, [a_name, a_username, a_email, hash, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id ? parseInt(a_agency_id) : null, id]);
+        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_password=$4, a_permiss=$5, a_role=$6, a_status=$7, a_token_version = COALESCE(a_token_version, 1) + 1, updated_at=NOW()
+        WHERE a_id=($8)::int
+      `, [a_name, a_username, a_email, hash, a_permiss, a_role, a_status, id]);
     } else {
       await db.query(`
-        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_permiss=$4, a_role=$5, a_position=$6, a_status=$7, a_agency=$8, a_agency_id=$9, updated_at=NOW()
-        WHERE a_id=($10)::int
-      `, [a_name, a_username, a_email, a_permiss, a_role, a_position, a_status, a_agency, a_agency_id ? parseInt(a_agency_id) : null, id]);
+        UPDATE admin SET a_name=$1, a_username=$2, a_email=$3, a_permiss=$4, a_role=$5, a_status=$6, updated_at=NOW()
+        WHERE a_id=($7)::int
+      `, [a_name, a_username, a_email, a_permiss, a_role, a_status, id]);
     }
 
     return res.json(ok(null, 'แก้ไขข้อมูลสำเร็จ'));
