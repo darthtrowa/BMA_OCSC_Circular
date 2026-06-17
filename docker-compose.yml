@@ -20,7 +20,10 @@ services:
       context: ./server
       dockerfile: Dockerfile
     env_file:
-      - .env.docker
+      - path: .env
+        required: false
+      - path: .env.docker
+        required: false
     depends_on:
       db:
         condition: service_healthy

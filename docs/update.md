@@ -2,7 +2,12 @@
 
 ## [1.4.4] - 2026-06-17
 
-### Feature: Workflow & User Field Refinement and System Upload Preparation
+### Feature: Workflow & User Field Refinement, Docker Deploy Fix, and System Upload Preparation
+
+#### 🐳 Docker & Deployment Changes
+
+- **docker-compose.yml**:
+  - Configured `env_file` paths (`.env` and `.env.docker`) as optional (`required: false`) using modern Docker Compose schema. This resolves deployment crashes on servers (e.g., Portainer stacks) where `.env.docker` is missing because it is ignored by Git, by allowing them to fall back to the stack-generated `.env` file or host environments.
 
 #### ⚙️ Backend Changes
 
