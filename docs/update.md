@@ -12,6 +12,7 @@
   - Created `client-public/Dockerfile.windows` and `client-admin/Dockerfile.windows` using lightweight Node.js static servers (`server.mjs`) on Nanoserver, replacing `nginx:alpine` since Nginx lacks a native Nanoserver image.
   - Created `gateway/Dockerfile.windows` and `gateway/proxy.mjs`. Replaced Nginx with an Express/`http-proxy-middleware` solution to route `/circular/api`, `/circular/admin`, and static volumes natively on Windows Containers.
   - Reconfigured the architecture to use a **Native Windows PostgreSQL Database** on the host. Removed the `db` container from `docker-compose.windows.yml` and updated `.env.docker` to route connections via `host.docker.internal`.
+  - Restored default builder shell to standard CMD (`SHELL ["cmd", "/S", "/C"]`) after installing Node.js in all `Dockerfile.windows` files, preventing PowerShell's `$ErrorActionPreference = 'Stop'` from crashing the build on `npm ci` warnings.
 
 ## [1.4.4] - 2026-06-17
 

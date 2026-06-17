@@ -12,6 +12,8 @@ RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tl
 
 ENV PATH="C:\nodejs;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
 
+SHELL ["cmd", "/S", "/C"]
+
 # Copy and install dependencies
 COPY package*.json ./
 COPY patches ./patches
