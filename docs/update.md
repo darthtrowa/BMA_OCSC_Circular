@@ -1,5 +1,11 @@
 # Project Update Log
 
+## [1.4.6] - 2026-06-17
+
+### Documentation: Windows Server Docker Deployment Guide
+
+- **Deployment Guide**: Created `docs/windows_server_deployment_guide.md` saving the complete troubleshooting history and solutions for deploying this project on Windows Server 2019 native containers, including fixes for missing `docker-compose`, QuickEdit mode freezes, and strict `package-lock.json` lockfile sync errors during `npm ci`.
+
 ## [1.4.5] - 2026-06-17
 
 ### Infrastructure: Windows Containers Deployment Support

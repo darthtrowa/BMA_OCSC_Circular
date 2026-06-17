@@ -18,7 +18,7 @@ SHELL ["cmd", "/S", "/C"]
 COPY package*.json ./
 COPY patches ./patches
 # We let Puppeteer download Chromium now since Servercore supports it
-RUN npm ci || (type "%USERPROFILE%\AppData\Local\npm-cache\_logs\*.log" & exit 1)
+RUN npm install || (type "%USERPROFILE%\AppData\Local\npm-cache\_logs\*.log" & exit 1)
 
 # Copy source and build
 COPY . .
@@ -40,7 +40,7 @@ ENV PATH="C:\nodejs;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\W
 COPY package*.json ./
 COPY patches ./patches
 # We do not skip chromium download, so Puppeteer downloads Win64 Chromium during npm ci
-RUN npm ci --omit=dev || (type "%USERPROFILE%\AppData\Local\npm-cache\_logs\*.log" & exit 1)
+RUN npm install --omit=dev || (type "%USERPROFILE%\AppData\Local\npm-cache\_logs\*.log" & exit 1)
 
 # Copy built artifacts
 COPY --from=builder /app/dist ./dist
