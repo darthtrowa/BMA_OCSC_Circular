@@ -15,6 +15,7 @@
   - Restored default builder shell to standard CMD (`SHELL ["cmd", "/S", "/C"]`) after installing Node.js in all `Dockerfile.windows` files, preventing PowerShell's `$ErrorActionPreference = 'Stop'` from crashing the build on `npm ci` warnings.
   - Synchronized `server/package-lock.json` to resolve lockfile mismatch errors during clean build setup.
   - Generated and added `gateway/package-lock.json` to enable clean installation of reverse proxy gateway dependencies using `npm ci`.
+  - Migrated Stage 2 base images in `client-public/Dockerfile.windows`, `client-admin/Dockerfile.windows`, and `gateway/Dockerfile.windows` from `nanoserver:1809` to `servercore:1809` to resolve silent Node.js startup crashes (exit code 1) caused by missing Visual C++ Redistributable DLLs in the minimal Nanoserver environment.
 
 ## [1.4.4] - 2026-06-17
 

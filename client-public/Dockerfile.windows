@@ -23,7 +23,7 @@ RUN npm run build
 
 
 # Stage 2: Run the production server
-FROM mcr.microsoft.com/windows/nanoserver:1809
+FROM mcr.microsoft.com/windows/servercore:1809
 
 WORKDIR /app
 
