@@ -13,6 +13,8 @@
   - Created `gateway/Dockerfile.windows` and `gateway/proxy.mjs`. Replaced Nginx with an Express/`http-proxy-middleware` solution to route `/circular/api`, `/circular/admin`, and static volumes natively on Windows Containers.
   - Reconfigured the architecture to use a **Native Windows PostgreSQL Database** on the host. Removed the `db` container from `docker-compose.windows.yml` and updated `.env.docker` to route connections via `host.docker.internal`.
   - Restored default builder shell to standard CMD (`SHELL ["cmd", "/S", "/C"]`) after installing Node.js in all `Dockerfile.windows` files, preventing PowerShell's `$ErrorActionPreference = 'Stop'` from crashing the build on `npm ci` warnings.
+  - Synchronized `server/package-lock.json` to resolve lockfile mismatch errors during clean build setup.
+  - Generated and added `gateway/package-lock.json` to enable clean installation of reverse proxy gateway dependencies using `npm ci`.
 
 ## [1.4.4] - 2026-06-17
 
