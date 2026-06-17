@@ -1,5 +1,18 @@
 # Project Update Log
 
+## [1.4.5] - 2026-06-17
+
+### Infrastructure: Windows Containers Deployment Support
+
+#### 🐳 Docker & Deployment Changes
+
+- **Windows Containers Support**:
+  - Created `docker-compose.windows.yml` to support deploying the entire stack on Windows Server 2019 without WSL, using native Windows containers.
+  - Created `server/Dockerfile.windows`, compiling and running via `servercore:1809` to fully support Puppeteer and Chromium for automated data syncing without crashing on Windows containers.
+  - Created `client-public/Dockerfile.windows` and `client-admin/Dockerfile.windows` using lightweight Node.js static servers (`server.mjs`) on Nanoserver, replacing `nginx:alpine` since Nginx lacks a native Nanoserver image.
+  - Created `gateway/Dockerfile.windows` and `gateway/proxy.mjs`. Replaced Nginx with an Express/`http-proxy-middleware` solution to route `/circular/api`, `/circular/admin`, and static volumes natively on Windows Containers.
+  - Reconfigured the architecture to use a **Native Windows PostgreSQL Database** on the host. Removed the `db` container from `docker-compose.windows.yml` and updated `.env.docker` to route connections via `host.docker.internal`.
+
 ## [1.4.4] - 2026-06-17
 
 ### Feature: Workflow & User Field Refinement, Docker Deploy Fix, and System Upload Preparation

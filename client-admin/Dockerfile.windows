@@ -1,0 +1,45 @@
+# Stage 1: Build the React application
+FROM mcr.microsoft.com/windows/servercore:1809 AS builder
+
+WORKDIR /app
+
+# Install Node.js via PowerShell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+    Invoke-WebRequest -UseBasicParsing -OutFile node.zip https://nodejs.org/dist/v22.13.0/node-v22.13.0-win-x64.zip; \
+    Expand-Archive node.zip -DestinationPath C:\; \
+    Rename-Item "C:\node-v22.13.0-win-x64" C:\nodejs
+
+ENV PATH="C:\nodejs;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm run build
+
+
+# Stage 2: Run the production server
+FROM mcr.microsoft.com/windows/nanoserver:1809
+
+WORKDIR /app
+
+# Copy Node.js from Stage 1
+COPY --from=builder C:\\nodejs C:\\nodejs
+
+# Set PATH
+ENV PATH="C:\nodejs;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
+
+# Copy built assets and server script
+COPY --from=builder /app/dist ./dist
+COPY server.mjs ./
+
+ENV PORT=80
+ENV NODE_ENV=production
+
+USER ContainerAdministrator
+
+EXPOSE 80
+
+CMD ["node", "server.mjs"]
