@@ -135,8 +135,8 @@ export const initAdminJS = async (app: any) => {
 
   app.get('/internal-admin/api/logs', (req: any, res: any) => {
     try {
-      const logPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/circular-api-out.log');
-      const errPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/circular-api-error.log');
+      const logPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/ocsc-circular-api-out.log');
+      const errPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/ocsc-circular-api-error.log');
       
       let logs = '';
       if (fs.existsSync(logPath)) {

@@ -823,9 +823,9 @@ router.get('/dashboard', requireAdmin, async (req: AdminRequest, res: Response) 
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /admin/circular/create
+// POST /admin/ocsc-circular/create
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/create', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
+router.post('/ocsc-circular/create', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
@@ -906,9 +906,9 @@ router.post('/circular/create', requireAdmin, uploadFields, validate(circularSch
 
 // ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
-// POST /admin/circular/summarize
+// POST /admin/ocsc-circular/summarize
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/summarize', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.post('/ocsc-circular/summarize', requireAdmin, async (req: AdminRequest, res: Response) => {
   const { pdfPath, mainPdf, attachments } = req.body;
   
   // Backward compatibility with older frontend requests
@@ -930,9 +930,9 @@ router.post('/circular/summarize', requireAdmin, async (req: AdminRequest, res: 
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /admin/circular/upload-single
+// POST /admin/ocsc-circular/upload-single
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Response) => {
+router.post('/ocsc-circular/upload-single', requireAdmin, (req: AdminRequest, res: Response) => {
   const uploadSingle = upload.fields([
     { name: 'in_original_file', maxCount: 1 },
     { name: 'in_attachment_file', maxCount: 1 },
@@ -956,9 +956,9 @@ router.post('/circular/upload-single', requireAdmin, (req: AdminRequest, res: Re
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /admin/circular/update
+// POST /admin/ocsc-circular/update
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/update', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
+router.post('/ocsc-circular/update', requireAdmin, uploadFields, validate(circularSchema), async (req: AdminRequest, res: Response) => {
   try {
     const b = req.body;
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
@@ -1039,9 +1039,9 @@ router.post('/circular/update', requireAdmin, uploadFields, validate(circularSch
 });
 
 // ─────────────────────────────────────────────────────────────
-// POST /admin/circular/delete
+// POST /admin/ocsc-circular/delete
 // ─────────────────────────────────────────────────────────────
-router.post('/circular/delete', requireAdmin, async (req: AdminRequest, res: Response) => {
+router.post('/ocsc-circular/delete', requireAdmin, async (req: AdminRequest, res: Response) => {
   try {
     const raw = req.body.in_id;
     if (!raw) return res.status(400).json(err('ไม่ได้ระบุ ID'));

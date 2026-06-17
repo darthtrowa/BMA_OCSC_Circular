@@ -38,7 +38,7 @@ export const publicApi = {
   },
 
   getCircular: async (id: number | string): Promise<any> => {
-    const { data } = await http.get<ApiResponse<any>>(`/api/circular/${id}`)
+    const { data } = await http.get<ApiResponse<any>>(`/api/ocsc-circular/${id}`)
     if (!data.status) throw new Error(data.message)
     return data.response
   },

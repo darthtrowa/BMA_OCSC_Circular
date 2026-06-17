@@ -38,7 +38,7 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/circular">
+      <BrowserRouter basename="/ocsc-circular">
         <Routes>
           <Route path="/" element={<PublicPage />} />
 

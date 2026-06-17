@@ -30,7 +30,7 @@ http.interceptors.response.use(
       !err.config?.url?.includes('/auth/verify-otp')
     ) {
       localStorage.removeItem('admin_token');
-      window.location.href = '/circular/admin/';
+      window.location.href = '/ocsc-circular/admin/';
     }
     return Promise.reject(err);
   },
@@ -167,7 +167,7 @@ export const workflowEngineApi = {
 
   /** Approve / Reject a circular with context-based acting role check */
   approveCircular: async (payload: CircularApprovePayload): Promise<void> => {
-    const { data } = await http.post('/api/admin/workflows/circular/approve', payload);
+    const { data } = await http.post('/api/admin/workflows/ocsc-circular/approve', payload);
     if (!data.status) throw new Error(data.message);
   },
 

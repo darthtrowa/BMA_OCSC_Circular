@@ -5,16 +5,16 @@
 
 $LocalUser = "postgres"
 $LocalPass = "1956wine"
-$LocalDb = "circular"
+$LocalDb = "ocsc_circular"
 $LocalPort = 5432
 
 $DockerUser = "admin"
 $DockerPass = "MKhNYeMDtZ4nuUCy"
-$DockerDb = "circular_db"
+$DockerDb = "ocsc_circular_db"
 
 $BackupFile = "docs\sync_temp.sql"
 
-Write-Host "=== BMA Circular - Database Sync (Docker Version) ===" -ForegroundColor Cyan
+Write-Host "=== BMA OCSC Circular - Database Sync (Docker Version) ===" -ForegroundColor Cyan
 Write-Host "This script will OVERWRITE the Docker database ($DockerDb) with data from Local ($LocalDb)." -ForegroundColor Yellow
 Write-Host "Please ensure Docker Desktop is RUNNING and 'docker compose up -d' has been executed." -ForegroundColor Yellow
 Write-Host ""

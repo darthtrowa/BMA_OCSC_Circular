@@ -16,21 +16,21 @@ app.use((req, res, next) => {
 
 // Root redirect
 app.get('/', (req, res) => {
-  res.redirect(301, '/circular/');
+  res.redirect(301, '/ocsc-circular/');
 });
 
 // API Proxy (Must come first to avoid being caught by other routes)
-app.use('/circular/api/', createProxyMiddleware({
+app.use('/ocsc-circular/api/', createProxyMiddleware({
   target: 'http://server:3000',
   changeOrigin: true,
   pathRewrite: {
-    '^/circular/api/': '/api/'
+    '^/ocsc-circular/api/': '/api/'
   },
   ws: true // proxy websockets
 }));
 
 // Static Assets
-app.use('/circular/uploads/', express.static('/uploads', {
+app.use('/ocsc-circular/uploads/', express.static('/uploads', {
   setHeaders: (res, path, stat) => {
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('Content-Disposition', 'inline');
@@ -42,22 +42,22 @@ app.use('/circular/uploads/', express.static('/uploads', {
   maxAge: '30d'
 }));
 
-app.use('/circular/image/', express.static('/image', {
+app.use('/ocsc-circular/image/', express.static('/image', {
   maxAge: '30d'
 }));
 
-app.use('/circular/fonts/', express.static('/fonts', {
+app.use('/ocsc-circular/fonts/', express.static('/fonts', {
   maxAge: '30d'
 }));
 
 // Admin Frontend
-app.use('/circular/admin/', createProxyMiddleware({
+app.use('/ocsc-circular/admin/', createProxyMiddleware({
   target: 'http://client-admin:80',
   changeOrigin: true
 }));
 
 // Public Frontend
-app.use('/circular/', createProxyMiddleware({
+app.use('/ocsc-circular/', createProxyMiddleware({
   target: 'http://client-public:80',
   changeOrigin: true
 }));

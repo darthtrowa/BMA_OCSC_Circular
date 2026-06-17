@@ -7,7 +7,7 @@ if (!(Get-Command pm2 -ErrorAction SilentlyContinue)) {
     $pm2Command = "$npxCommand -y pm2"
 }
 
-Write-Host "--- Starting BMA Circular System (Local Dev Mode) ---" -ForegroundColor Cyan
+Write-Host "--- Starting BMA OCSC Circular System (Local Dev Mode) ---" -ForegroundColor Cyan
 
 # Set location to where the script is located
 Set-Location -Path $PSScriptRoot
@@ -42,7 +42,7 @@ if ($pm2Command -eq "pm2") {
 
 Write-Host ""
 Write-Host "🚀 System is starting up in Local Mode!" -ForegroundColor Cyan
-Write-Host "  - Frontend : http://localhost/circular/ (Mapped from :5173/circular/)" -ForegroundColor Green
+Write-Host "  - Frontend : http://localhost/ocsc-circular/ (Mapped from :5173/ocsc-circular/)" -ForegroundColor Green
 Write-Host "  - Backend  : http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "💡 Tip: To enable http://localhost (Port 80) without Docker," -ForegroundColor Gray

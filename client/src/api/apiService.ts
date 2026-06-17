@@ -26,7 +26,7 @@ http.interceptors.response.use(
       localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_name')
       localStorage.removeItem('admin_permiss')
-      window.location.href = '/circular/admin/login'
+      window.location.href = '/ocsc-circular/admin/login'
     }
     return Promise.reject(err)
   }
@@ -57,7 +57,7 @@ export const publicApi = {
   },
 
   getCircular: async (id: number | string): Promise<any> => {
-    const { data } = await http.get<ApiResponse<any>>(`/api/circular/${id}`)
+    const { data } = await http.get<ApiResponse<any>>(`/api/ocsc-circular/${id}`)
     if (!data.status) throw new Error(data.message)
     return data.response
   },
@@ -107,31 +107,31 @@ export const adminApi = {
   },
 
   createCircular: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/api/admin/circular/create', formData, {
+    const { data } = await http.post('/api/admin/ocsc-circular/create', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
 
   updateCircular: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/api/admin/circular/update', formData, {
+    const { data } = await http.post('/api/admin/ocsc-circular/update', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data
   },
 
   deleteCircular: async (encodedId: string | number): Promise<any> => {
-    const { data } = await http.post('/api/admin/circular/delete', { in_id: encodedId })
+    const { data } = await http.post('/api/admin/ocsc-circular/delete', { in_id: encodedId })
     return data
   },
 
   summarizeCircular: async (payload: { mainPdf?: string, attachments?: string[] }): Promise<any> => {
-    const { data } = await http.post('/api/admin/circular/summarize', payload)
+    const { data } = await http.post('/api/admin/ocsc-circular/summarize', payload)
     return data
   },
 
   uploadSingle: async (formData: FormData): Promise<any> => {
-    const { data } = await http.post('/api/admin/circular/upload-single', formData, {
+    const { data } = await http.post('/api/admin/ocsc-circular/upload-single', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     return data

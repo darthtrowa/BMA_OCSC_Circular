@@ -98,7 +98,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
           {navItem('sec-bot-queue', 'คิวงานบอต', 'bx-bot', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR', 0)}
           
           <li>
-            <a href="/circular/" className="group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">
+            <a href="/ocsc-circular/" className="group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">
               <i className="bx bx-globe text-lg text-slate-400 group-hover:text-emerald-600"></i>
               ระบบค้นหา
             </a>

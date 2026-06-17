@@ -76,7 +76,7 @@ const ApiStatusDashboard = () => {
         </Box>
 
         <Box style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '40px' }}>
-          <Button as="a" href="http://localhost/circular" target="_blank" variant="secondary">
+          <Button as="a" href="http://localhost/ocsc-circular" target="_blank" variant="secondary">
             <Icon icon="ExternalLink" /> Public Portal
           </Button>
           <Button as="a" href="/api-docs" target="_blank" variant="primary">

@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // vite.config.ts — Public-only circular lookup (lightweight build)
 export default defineConfig({
   plugins: [react()],
-  base: '/circular/',
+  base: '/ocsc-circular/',
   server: {
     port: 5174,
   },

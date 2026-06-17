@@ -5,7 +5,7 @@ module.exports = {
   apps: [
     // ===== Backend API =====
     {
-      name: "circular-api",
+      name: "ocsc-circular-api",
       script: "./dist/index.js", // Use compiled JS instead of tsx
       cwd: path.join(baseDir, "server"),
       exec_mode: "fork",
@@ -18,7 +18,7 @@ module.exports = {
     },
     // ===== Frontend (Development Mode) =====
     {
-      name: "circular-frontend",
+      name: "ocsc-circular-frontend",
       script: "./node_modules/vite/bin/vite.js",
       cwd: path.join(baseDir, "client"),
       exec_mode: "fork",
@@ -28,7 +28,7 @@ module.exports = {
     },
     // ===== Admin Frontend (Development Mode) =====
     {
-      name: "circular-admin",
+      name: "ocsc-circular-admin",
       script: "./node_modules/vite/bin/vite.js",
       cwd: path.join(baseDir, "client-admin"),
       exec_mode: "fork",

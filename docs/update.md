@@ -1,5 +1,15 @@
 # Project Update Log
 
+## [1.5.0] - 2026-06-17
+
+### Feature: System Rename to OCSC Circular
+
+#### 🌐 Global Changes
+- **System Rename**: Fully renamed the system from "circular" to "ocsc-circular" to support future migration and alignment with the OCSC document standards.
+- **API Endpoints**: Replaced all frontend and backend routing paths, API targets, and PM2 process names from `/circular/` to `/ocsc-circular/`.
+- **Database Refactor**: Changed target database names across both Local (`ocsc_circular`) and Docker (`ocsc_circular_db`) environments.
+- **Gateway Configuration**: Reconfigured Nginx and `proxy.mjs` gateways to properly handle and forward `/ocsc-circular/` requests.
+
 ## [1.4.6] - 2026-06-17
 
 ### Documentation: Windows Server Docker Deployment Guide

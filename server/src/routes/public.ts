@@ -234,9 +234,9 @@ router.post('/search', async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/circular/:id
+// GET /api/ocsc-circular/:id
 // ─────────────────────────────────────────────────────────────
-router.get('/circular/:id', async (req: Request, res: Response) => {
+router.get('/ocsc-circular/:id', async (req: Request, res: Response) => {
   const id = req.params.id;
   try {
     const sql = `

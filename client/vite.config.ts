@@ -4,12 +4,12 @@ import react from '@vitejs/plugin-react'
 // vite.config.js — standalone React app (ไม่ต้องพึ่ง backend localhost:3000)
 export default defineConfig({
   plugins: [react()],
-  base: '/circular/',
+  base: '/ocsc-circular/',
   server: {
     port: 5173,
     host: '127.0.0.1',
     proxy: {
-      '^/circular/admin/.*': {
+      '^/ocsc-circular/admin/.*': {
         target: 'http://127.0.0.1:5175',
         changeOrigin: true
       }
