@@ -5,7 +5,7 @@
 ### PM2 Windows Startup Configuration Fix
 
 #### ⚙️ Deployment & Script Changes
-- **client/serve.js**: Updated `BASE_PATH` from `'/circular'` to `'/ocsc-circular'` to match the new system base path naming convention.
+- **client/serve.js**: Updated `BASE_PATH` from `'/circular'` to `'/ocsc-circular'` to match the new system base path naming convention. Also implemented a **built-in native Node.js HTTP reverse proxy** to forward API `/ocsc-circular/api/`, Admin `/ocsc-circular/admin/`, and assets `/image/` & `/uploads/` to their respective ports. This allows the system to run fully standalone on port 5173 without any dependency on IIS ARR (Application Request Routing).
 - **client-admin/server.mjs**: Added logic to strip the `/ocsc-circular/admin` path prefix from incoming URLs, allowing production static assets to resolve correctly.
 - **ecosystem.config.js**: Reconfigured PM2 apps to run frontends in **Production Mode** using lightweight native Node scripts (`serve.js` and `server.mjs`) instead of launching memory-intensive Vite development servers.
 - **deploy-iis.ps1**: Updated deployment workflow to build both the public frontend (`client`) and admin frontend (`client-admin`) sequentially.

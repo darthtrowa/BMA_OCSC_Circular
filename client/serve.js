@@ -13,6 +13,74 @@ const DIST_DIR = path.join(__dirname, 'dist');
 http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
   
+  // 1. Proxy /ocsc-circular/admin/ to admin client on port 5175
+  if (urlPath.startsWith('/ocsc-circular/admin/')) {
+    const proxyReq = http.request({
+      host: '127.0.0.1',
+      port: 5175,
+      path: req.url,
+      method: req.method,
+      headers: req.headers
+    }, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+      proxyRes.pipe(res, { end: true });
+    });
+    
+    proxyReq.on('error', (e) => {
+      res.writeHead(502);
+      res.end('Proxy Error (Admin): ' + e.message);
+    });
+    
+    req.pipe(proxyReq, { end: true });
+    return;
+  }
+
+  // 2. Proxy /ocsc-circular/api/ to backend API on port 3000
+  if (urlPath.startsWith('/ocsc-circular/api/')) {
+    const apiPath = urlPath.replace('/ocsc-circular/api', '/api');
+    const proxyReq = http.request({
+      host: '127.0.0.1',
+      port: 3000,
+      path: apiPath + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''),
+      method: req.method,
+      headers: req.headers
+    }, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+      proxyRes.pipe(res, { end: true });
+    });
+    
+    proxyReq.on('error', (e) => {
+      res.writeHead(502);
+      res.end('Proxy Error (API): ' + e.message);
+    });
+    
+    req.pipe(proxyReq, { end: true });
+    return;
+  }
+
+  // 3. Proxy /ocsc-circular/image/ and /ocsc-circular/uploads/ to backend on port 3000
+  if (urlPath.startsWith('/ocsc-circular/image/') || urlPath.startsWith('/ocsc-circular/uploads/')) {
+    const targetPath = urlPath.replace('/ocsc-circular', '');
+    const proxyReq = http.request({
+      host: '127.0.0.1',
+      port: 3000,
+      path: targetPath + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''),
+      method: req.method,
+      headers: req.headers
+    }, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+      proxyRes.pipe(res, { end: true });
+    });
+    
+    proxyReq.on('error', (e) => {
+      res.writeHead(502);
+      res.end('Proxy Error (Assets): ' + e.message);
+    });
+    
+    req.pipe(proxyReq, { end: true });
+    return;
+  }
+
   // If request doesn't start with /ocsc-circular, return 404
   if (!urlPath.startsWith(BASE_PATH)) {
     res.writeHead(404);
