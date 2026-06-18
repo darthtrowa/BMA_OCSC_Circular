@@ -13,6 +13,8 @@
 - **client/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"` to match the new system base path naming convention.
 - **client-admin/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"`.
 - **client-public/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"`.
+- **client/public/web.config**: Added permanent IIS URL Rewrite web.config configuration in the public assets directory (automatically copies to dist on compilation, preventing deletion when Vite empties outDir).
+- **client-admin/public/web.config**: Added permanent IIS URL Rewrite web.config configuration in the public assets directory.
 - **docs/DEPLOYMENT.md**: Rewrote the frontend deployment guide to explain correct Windows PM2 execution syntax and how to start the system using production Node.js servers natively.
 
 ## [1.5.1] - 2026-06-18
