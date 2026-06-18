@@ -24,20 +24,29 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── Security Middleware ──────────────────────────────────────
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "blob:", "https:"],
-      connectSrc: ["'self'"],
-    }
-  },
-}));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/internal-admin')) {
+    return helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false,
+    })(req, res, next);
+  }
+  return helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
+        connectSrc: ["'self'"],
+      }
+    },
+  })(req, res, next);
+});
 
 // ─── CORS ─────────────────────────────────────────────────────
 // SEC-06: Default to production-safe CORS (was permissive when NODE_ENV unset)

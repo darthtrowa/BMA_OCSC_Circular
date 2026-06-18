@@ -13,10 +13,11 @@ if (!(Get-Command pm2 -ErrorAction SilentlyContinue)) {
     pm2-startup install
 }
 
-# 2. Install Server dependencies
-Write-Host "[2/5] Installing backend dependencies..." -ForegroundColor Green
+# 2. Install Server dependencies & Compile
+Write-Host "[2/5] Installing backend dependencies and compiling..." -ForegroundColor Green
 Set-Location -Path "$baseDir\server"
 npm install
+npm run build
 
 # 3. Install Client dependencies and Build
 Write-Host "[3/5] Building frontends (Production Build)..." -ForegroundColor Green
