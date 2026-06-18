@@ -8,6 +8,20 @@ export default defineConfig({
   server: {
     port: 5175,
     host: '127.0.0.1',
+    proxy: {
+      '^/api/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
+      },
+      '^/uploads/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
+      },
+      '^/image/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
+      }
+    }
   },
   build: {
     outDir: 'dist',

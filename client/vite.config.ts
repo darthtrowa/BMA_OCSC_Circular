@@ -12,6 +12,18 @@ export default defineConfig({
       '^/ocsc-circular/admin/.*': {
         target: 'http://127.0.0.1:5175',
         changeOrigin: true
+      },
+      '^/api/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
+      },
+      '^/uploads/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
+      },
+      '^/image/.*': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true
       }
     }
   },

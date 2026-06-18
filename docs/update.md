@@ -1,5 +1,18 @@
 # Project Update Log
 
+## [1.5.1] - 2026-06-18
+
+### Diagnostics: Database Setup and Troubleshooting Script
+
+#### ⚙️ Backend Changes
+
+- **diagnose_db.js**: Created a persistent database diagnostic and setup script in the `server` directory. This script runs on Windows Server 2019, connects to the configured database, automatically creates the `ocsc_circular` database if it is missing (resolving error 3D000), lists active tables to verify migration states, and provides specific firewall/service troubleshooting advice.
+
+#### 🎨 Frontend Changes
+
+- **client/vite.config.ts**: Added proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting the backend on `http://127.0.0.1:3000`. This resolves database connection and asset loading 404 errors when running natively and accessing the system directly on port 5173.
+- **client-admin/vite.config.ts**: Added matching proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting `http://127.0.0.1:3000` to support direct execution on port 5175.
+
 ## [1.5.0] - 2026-06-17
 
 ### Feature: System Rename to OCSC Circular
@@ -58,6 +71,13 @@
 - **WorkflowInboxSection.tsx (client & client-admin)**:
   - Added support for `STAFF` users to edit and save details on active tasks.
   - Restricted the "ส่งงานกลับ" (Reject) button to prevent role conflicts for `STAFF` and `COORDINATOR` users.
+
+### Docker Deployment & Optimization (2026-06-15)
+
+#### ⚙️ Docker Changes
+
+- **server/Dockerfile**: Optimized the production stage build script. Switched to `USER node` before running `npm install` and copied files using the `--chown=node:node` parameter to prevent a slow post-build recursive `chown -R` on thousands of NPM dependency files.
+- **Docker Stack Control**: Built the images and started the services, and subsequently stopped and tore down the containers, networks, and resources (`docker compose down`) per the user's shutdown request.
 
 ## [1.4.3] - 2026-06-14
 
