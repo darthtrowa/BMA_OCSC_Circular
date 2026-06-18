@@ -10,8 +10,8 @@
 
 #### 🎨 Frontend Changes
 
-- **client/vite.config.ts**: Added proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting the backend on `http://127.0.0.1:3000`. This resolves database connection and asset loading 404 errors when running natively and accessing the system directly on port 5173.
-- **client-admin/vite.config.ts**: Added matching proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting `http://127.0.0.1:3000` to support direct execution on port 5175.
+- **client/vite.config.ts**: Added proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting the backend on `http://127.0.0.1:3000`. Changed binding `host` from `127.0.0.1` to `0.0.0.0` to allow external / LAN IP connections (such as accessing via `172.31.167.17`).
+- **client-admin/vite.config.ts**: Added matching proxy configurations for `/api/*`, `/uploads/*`, and `/image/*` endpoints targeting `http://127.0.0.1:3000`. Changed binding `host` from `127.0.0.1` to `0.0.0.0` to allow external / LAN IP connections.
 
 ## [1.5.0] - 2026-06-17
 
