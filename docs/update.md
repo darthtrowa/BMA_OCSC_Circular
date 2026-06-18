@@ -1610,3 +1610,66 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 - **Docker Containers**: All 5 services (db, server, client-public, client-admin, gateway) are running and healthy.
 - **Database Import**: Successfully cleared schema and imported `docs/circular_docker_export.sql` database dump with zero errors.
 - **Endpoint Tests**: Verified API filters, public search route, and admin login page are accessible at `http://localhost:8080/circular/` and `http://localhost:8080/circular/admin/`.
+
+## [1.2.0] - 2026-06-18
+
+### Upgrade: Vite v5 to Vite v8 Major Upgrade
+
+#### ⚙️ Dependencies & Configuration Changes
+
+- **client/package.json, client-admin/package.json, client-public/package.json**:
+  - Upgraded `vite` devDependency to `^8.0.16`.
+  - Upgraded `@vitejs/plugin-react` devDependency to `^6.0.2`.
+  - Upgraded `vitest` devDependency to `^3.0.7` in `client` and `client-admin`.
+- **client/vite.config.ts, client-admin/vite.config.ts, client-public/vite.config.ts**:
+  - Refactored `rollupOptions.output.manualChunks` configuration from an object layout to a function check structure to align with Vite 8's new Rolldown bundler requirements.
+
+#### ✅ Verification
+
+- **Production Builds**: `client`, `client-admin`, and `client-public` all compile successfully using Vite 8 + Rolldown in under 1 second.
+- **Unit Tests**: `client` and `client-admin` test suites pass with 0 errors under Vitest.
+- **PM2 Services**: Restarted and verified online under native Windows Server PM2 environment.
+- **UI & Accessibility**: Main user portal and admin login interfaces loaded successfully in the browser.
+
+## [1.2.1] - 2026-06-18
+
+### Upgrade: Tailwind CSS v3 to Tailwind CSS v4 Major Upgrade
+
+#### ⚙️ Dependencies & Configuration Changes
+
+- **client/package.json, client-admin/package.json, client-public/package.json**:
+  - Upgraded `tailwindcss` to `^4.3.1`.
+  - Added `@tailwindcss/vite` devDependency `^4.3.1` (native Tailwind v4 Vite compiler plugin).
+  - Cleaned up legacy `postcss` and `autoprefixer` devDependencies.
+- **client/vite.config.ts, client-admin/vite.config.ts, client-public/vite.config.ts**:
+  - Registered the `tailwindcss()` compiler plugin in the Vite plugins configuration.
+- **client/src/styles/custom.css, client-admin/src/styles/custom.css, client-public/src/styles/custom.css**:
+  - Refactored legacy `@tailwind base; @tailwind components; @tailwind utilities;` directives to modern `@import "tailwindcss";` syntax.
+- **Deleted Configuration Files**:
+  - Removed unused legacy configuration files: `tailwind.config.js` and `postcss.config.js` in all three frontend directories.
+
+#### ✅ Verification
+
+- **Rust-powered Tailwind Compiler Builds**: `client`, `client-admin`, and `client-public` all compile cleanly. Built time is reduced by up to 3x (~250ms).
+- **Unit Tests**: All client-side test suites pass under Vitest.
+- **PM2 Services**: Successfully restarted all services and confirmed stable status.
+- **UI Styling Check**: Visited the public tracking website and admin portal using a browser agent. Layout structures and styling classes are fully aligned and loaded without any issues or errors.
+
+## [1.2.2] - 2026-06-18
+
+### Upgrade: React Router v6 to React Router v7 Major Upgrade
+
+#### ⚙️ Dependencies & Configuration Changes
+
+- **client/package.json, client-admin/package.json**:
+  - Upgraded `react-router-dom` from `^6.24.1` to `^7.18.0` (stable major version).
+
+#### ✅ Verification
+
+- **Production Builds**: `client` and `client-admin` both compile successfully under React Router v7 and Vite 8.
+- **Unit Tests**: All client-side test suites pass under Vitest.
+- **PM2 Services**: Successfully restarted and confirmed online.
+- **Client-Side Routing Check**: Navigated through the portals in the browser. Verified that transitioning from the Public Portal to the Admin Login Portal correctly performs client-side routing without a full page reload, and no console errors are generated.
+
+
+

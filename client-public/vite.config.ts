@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // vite.config.ts — Public-only circular lookup (lightweight build)
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   base: '/ocsc-circular/',
   server: {
     port: 5174,
@@ -13,9 +14,15 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          vendor: ['axios', 'moment', 'sweetalert2']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'react';
+            }
+            if (id.includes('axios') || id.includes('moment') || id.includes('sweetalert2')) {
+              return 'vendor';
+            }
+          }
         }
       }
     }

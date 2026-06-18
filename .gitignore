@@ -30,3 +30,6 @@ client/src/components/admin/test.txt
 # Additional developer scripts
 server/query*.js
 server/update_flow_state.cjs
+
+# Backup folder for ignored files
+Ignore/
