@@ -15,7 +15,7 @@
 ## 2. Security & Compliance Standards (Mandatory)
 - **Secret Management**: NEVER hardcode secrets or API keys. All sensitive values (JWT_SECRET, DB_PASSWORD, SMTP_SETTINGS, etc.) MUST be loaded from environment variables.
 - **Database Security**: 
-    - Keep database ports private within the Docker network. Do not expose port 5432 to the host unless absolutely necessary for debugging.
+    - Keep database ports private and secure. Do not expose port 5432 to the public internet unless absolutely necessary for debugging.
     - Use parameterized queries for all database interactions to prevent SQL injection.
     - If dynamic table/column names are required, they MUST be strictly validated against a hardcoded whitelist.
 - **API Protection**:
@@ -48,10 +48,9 @@
     - Frontend: Use React Testing Library with MSW for API mocking.
     - Backend: Unit tests for services; Integration tests for routes.
 
-## 6. Docker & DevOps
-- **Dockerfile**: Use multi-stage builds with `node:alpine` to keep images small.
-- **Docker Compose**: Orchestrate Node.js, PostgreSQL, and Redis.
-- **Volumes**: Ensure persistent storage for PostgreSQL data.
+## 6. DevOps
+- **Process Management**: Use PM2 for running the Node.js application in production.
+- **Database**: Ensure PostgreSQL data directory has proper permissions and backups are scheduled.
 
 ## 7. AI & Chatbot Integration
 - **Frameworks**: Use Vercel AI SDK or LangChain for LLM orchestration.

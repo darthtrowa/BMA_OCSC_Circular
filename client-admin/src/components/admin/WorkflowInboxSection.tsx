@@ -90,16 +90,27 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
     }
     return Number(item.in_current_owner_id) === Number(userId);
   };
-  
-  // Filter only documents currently assigned to the logged-in user
-  const myTasks = info.filter((item: any) => checkIsCurrentOwner(item, admin?.id));
+  const isAdminOrSuper = admin?.permiss === 'superadmin' || admin?.permiss === 'admin';
 
-  // Tasks already processed by me (sent/returned) but no longer in my inbox — for tracking
-  const myProcessedTasks = info.filter((item: any) =>
-    item.in_processed_by_me === true &&
-    !checkIsCurrentOwner(item, admin?.id) &&
-    !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)
-  );
+  // Filter only documents currently assigned to the logged-in user (or all active tasks for Admin/SuperAdmin)
+  const myTasks = info.filter((item: any) => {
+    if (isAdminOrSuper) {
+      return item.in_workflow_status && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status);
+    } else {
+      return checkIsCurrentOwner(item, admin?.id) && item.in_workflow_status !== 'COMPLETED';
+    }
+  });
+
+  // Tasks shown in Processed Tasks tab (or all completed tasks for Admin/SuperAdmin)
+  const myProcessedTasks = info.filter((item: any) => {
+    if (isAdminOrSuper) {
+      return item.in_workflow_status === 'COMPLETED';
+    } else {
+      return item.in_processed_by_me === true &&
+             !checkIsCurrentOwner(item, admin?.id) &&
+             !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status);
+    }
+  });
 
   // Documents created by COORDINATOR that are not DRAFT (to monitor)
   const myCreatedTasks = info.filter((item: any) => 
@@ -239,7 +250,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
 
   return (
     <div className="space-y-6">
-      {admin?.permiss !== 'superadmin' && activeTabFromSidebar === 'inbox' && (
+      {activeTabFromSidebar === 'inbox' && (
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden animate__animated animate__fadeIn">
           <div className="p-6 border-b border-slate-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl">
@@ -274,7 +285,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
                       </td>
                     </tr>
                   )}
-                  {myTasks.map(item => renderTaskRow(item, true))}
+                  {myTasks.map(item => renderTaskRow(item, checkIsCurrentOwner(item, admin?.id)))}
                 </tbody>
               </table>
             )}
@@ -307,7 +318,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
       )}
 
       {/* Processed Tasks Tracking — งานที่ดำเนินการไปแล้ว (ติดตามสถานะ) */}
-      {admin?.permiss !== 'superadmin' && activeTabFromSidebar === 'tracking' && (
+      {activeTabFromSidebar === 'tracking' && (
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-sky-100 animate__animated animate__fadeIn">
           <div className="p-6 border-b border-sky-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center text-xl">
@@ -341,7 +352,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
                       <div className="text-xs text-slate-500 mt-1">{item.in_doc_date ? `ลงวันที่ ${item.in_doc_date}` : ''}</div>
                     </td>
                     <td className="px-6 py-4 align-top">
-                      <div className="text-slate-700 line-clamp-2 max-w-[350px]">{item.in_detail}</div>
+                      <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
+                      <ParallelTracksPanel docId={item.in_id} isParallel={!!item.in_is_parallel} />
                     </td>
                     <td className="px-6 py-4 align-top">
                       {renderStatusBadge(item)}
@@ -478,7 +490,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
       )}
 
       {/* For System Admin: Show all active workflow tasks for monitoring */}
-      {isSuper && (
+      {isSuper && !isAdminOrSuper && (
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden opacity-75 hover:opacity-100 transition-opacity">
           <div className="p-6 border-b border-slate-100 flex items-center gap-2">
             <i className="bx bx-shield-quarter text-xl text-slate-500"></i>

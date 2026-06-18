@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [loading, setLoading]                 = useState(true)
   const profileRef  = useRef<any>(null)
   const passwordRef = useRef<any>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
@@ -120,9 +121,25 @@ export default function DashboardPage() {
     return Number(item.in_current_owner_id) === Number(userId);
   };
 
-  const inboxCount = info.filter((item: any) => checkIsCurrentOwner(item, admin?.id)).length
-  const actingCount = info.filter((item: any) => actingAssignerIds.some(id => checkIsCurrentOwner(item, id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT').length
-  const trackingCount = info.filter((item: any) => item.in_processed_by_me === true && !checkIsCurrentOwner(item, admin?.id) && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status)).length
+  const isAdminOrSuper = admin?.permiss === 'superadmin' || admin?.permiss === 'admin';
+
+  const inboxCount = info.filter((item: any) => {
+    if (isAdminOrSuper) {
+      return item.in_workflow_status && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status);
+    } else {
+      return checkIsCurrentOwner(item, admin?.id) && item.in_workflow_status !== 'COMPLETED';
+    }
+  }).length;
+
+  const actingCount = info.filter((item: any) => actingAssignerIds.some(id => checkIsCurrentOwner(item, id)) && item.in_workflow_status && item.in_workflow_status !== 'DRAFT').length;
+
+  const trackingCount = info.filter((item: any) => {
+    if (isAdminOrSuper) {
+      return item.in_workflow_status === 'COMPLETED';
+    } else {
+      return item.in_processed_by_me === true && !checkIsCurrentOwner(item, admin?.id) && !['DRAFT', 'COMPLETED'].includes(item.in_workflow_status);
+    }
+  }).length;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-saochingcha text-slate-800">
@@ -137,10 +154,23 @@ export default function DashboardPage() {
         onLogout={doLogout}
         onProfile={() => profileRef.current?.open()}
         onPassword={() => passwordRef.current?.open()}
+        isCollapsed={sidebarCollapsed}
       />
       
-      <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden ml-0 lg:ml-64">
-        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-end gap-x-4 border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+      <div className={`relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden ml-0 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-0' : 'lg:ml-64'}`}>
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-x-4 border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <button 
+              className="p-2 hover:bg-slate-100 rounded-xl transition text-slate-600 flex items-center justify-center"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? "แสดงแถบเมนู" : "ซ่อนแถบเมนู"}
+            >
+              <i className={`bx ${sidebarCollapsed ? 'bx-menu-alt-left' : 'bx-menu'} text-2xl`}></i>
+            </button>
+            <div className="text-base sm:text-lg font-bold text-slate-800 truncate">
+              ระบบบริหารการพิจารณาหนังสือเวียนสำนักงาน ก.พ.
+            </div>
+          </div>
           <div className="relative">
             <button 
               className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-xl transition"

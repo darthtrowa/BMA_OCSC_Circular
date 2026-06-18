@@ -189,11 +189,11 @@ export default function PublicPage() {
         <div className="container mx-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="flex items-center justify-center mr-4 w-12 h-12 bg-emerald-800 rounded-full overflow-hidden shadow-md">
+              <div className="flex items-center justify-center mr-4 w-12 h-12 bg-white rounded-full overflow-hidden shadow-md">
                 <img
                   src={LOGO_URL}
                   alt="Logo"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain p-1"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
                     ((e.target as HTMLImageElement).nextSibling as HTMLElement).style.display = 'block';
@@ -210,12 +210,12 @@ export default function PublicPage() {
             </div>
 
             <div className="flex gap-2">
-              <Link
-                to="/admin/login"
+              <a
+                href="/ocsc-circular/admin/login"
                 className="flex items-center px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition shadow-md"
               >
                 <i className='bx bx-user mr-2 text-lg'></i>สำหรับเจ้าหน้าที่
-              </Link>
+              </a>
               <a
                 href="https://docs.google.com/forms/d/e/1FAIpQLSdkqK5KxLxvG-nenSYNhbq2m2fctMmvQNG_i5B1m4Z-vC08Kg/viewform"
                 target="_blank"

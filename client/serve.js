@@ -13,8 +13,8 @@ const DIST_DIR = path.join(__dirname, 'dist');
 http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
   
-  // 1. Proxy /ocsc-circular/admin/ to admin client on port 5175
-  if (urlPath.startsWith('/ocsc-circular/admin/')) {
+  // 1. Proxy /ocsc-circular/admin to admin client on port 5175
+  if (urlPath.startsWith('/ocsc-circular/admin/') || urlPath === '/ocsc-circular/admin') {
     const proxyReq = http.request({
       host: '127.0.0.1',
       port: 5175,

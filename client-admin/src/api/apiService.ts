@@ -6,7 +6,7 @@
 import axios from 'axios'
 
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
-export const LOGO_URL = `${BASE_URL}/image/bmalogo2.jpg`
+export const LOGO_URL = `${BASE_URL}/image/logo_BMA.png`
 
 const http = axios.create({
   baseURL: BASE_URL,

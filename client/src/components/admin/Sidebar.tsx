@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LOGO_URL } from '../../api/apiService'
 
-export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, actingCount = 0, trackingCount = 0, onLogout, onProfile, onPassword }) {
+export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, actingCount = 0, trackingCount = 0, onLogout, onProfile, onPassword, isCollapsed = false }) {
   const isSuperAdmin = permiss === 'superadmin' || permiss === 'admin'
 
   const [openInbox, setOpenInbox] = useState(false)
@@ -47,14 +47,14 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
     )
 
   return (
-    <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 shadow-sm z-50">
+    <aside className={`hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 shadow-sm z-50 transition-all duration-300 ${isCollapsed ? 'lg:-translate-x-full lg:opacity-0 lg:pointer-events-none' : 'lg:translate-x-0 lg:opacity-100'}`}>
       {/* Logo Section */}
       <div className="flex h-16 shrink-0 items-center px-6 gap-3 mt-4 mb-4">
-        <div className="flex items-center justify-center w-10 h-10 bg-emerald-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="flex items-center justify-center w-10 h-10 bg-white rounded-xl overflow-hidden shadow-sm">
           <img 
             src={LOGO_URL} 
             alt="Logo" 
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain p-1"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
               ((e.target as HTMLImageElement).nextSibling as HTMLElement).style.display = 'block';
@@ -78,9 +78,9 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
             >
               <div className="flex items-center gap-2">
                 <span>กล่องข้อความงาน</span>
-                {(inboxCount + actingCount) > 0 && !openInbox && (
+                {(inboxCount + (isSuperAdmin ? 0 : actingCount)) > 0 && !openInbox && (
                   <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                    {inboxCount + actingCount}
+                    {inboxCount + (isSuperAdmin ? 0 : actingCount)}
                   </span>
                 )}
               </div>
@@ -89,7 +89,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
             {openInbox && (
               <ul className="mt-1 space-y-1 ml-2 border-l-2 border-slate-100 pl-2">
                 {navItem('sec-workflow-inbox-inbox', 'Inbox', 'bx-task', true, inboxCount, true)}
-                {navItem('sec-workflow-inbox-acting', 'Acting Inbox', 'bx-shield-quarter', true, actingCount, true)}
+                {navItem('sec-workflow-inbox-acting', 'Acting Inbox', 'bx-shield-quarter', !isSuperAdmin, actingCount, true)}
                 {navItem('sec-workflow-inbox-tracking', 'งานที่ดำเนินการแล้ว', 'bx-send', true, trackingCount, true)}
               </ul>
             )}

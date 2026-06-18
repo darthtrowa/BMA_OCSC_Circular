@@ -873,32 +873,39 @@ router.post('/ocsc-circular/create', requireAdmin, uploadFields, validate(circul
 
     let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
-    await db.query('BEGIN');
-    const { rows: [{ in_id }] } = await db.query(
-      `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link,in_workflow_status,in_current_owner_id,in_creator_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18,$19,$20,$20) RETURNING in_id`,
-      [
-        b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
-        toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
-        toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
-        newOrder, in_circular_detail, in_original_link, in_attachment_link,
-        'DRAFT', req.admin?.id
-      ]
-    );
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: [{ in_id }] } = await client.query(
+        `INSERT INTO c_information (in_num_date,in_doc_date,in_detail,in_detail_ag,in_etc,in_link,in_qr_link,in_file_mkk,updated_user,in_mkk_id,in_mw_id,in_results_id,in_year_id,in_status_id,created_at,updated_at,in_ordering,in_circular_detail,in_original_link,in_attachment_link,in_workflow_status,in_current_owner_id,in_creator_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),$15,$16,$17,$18,$19,$20,$20) RETURNING in_id`,
+        [
+          b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
+          toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
+          toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
+          newOrder, in_circular_detail, in_original_link, in_attachment_link,
+          'DRAFT', req.admin?.id
+        ]
+      );
 
-    const agIds = [].concat(b['ag_id[]'] || b.ag_id || []);
-    const catIds = [].concat(b['cat_id[]'] || b.cat_id || []);
-    for (const id of agIds) await db.query('INSERT INTO c_information_agency (in_id,ag_id) VALUES ($1,$2)', [in_id, toSqlInt(id)]);
-    for (const id of catIds) await db.query('INSERT INTO c_information_categories (in_id,cat_id) VALUES ($1,$2)', [in_id, toSqlInt(id)]);
+      const agIds = [].concat(b['ag_id[]'] || b.ag_id || []);
+      const catIds = [].concat(b['cat_id[]'] || b.cat_id || []);
+      for (const id of agIds) await client.query('INSERT INTO c_information_agency (in_id,ag_id) VALUES ($1,$2)', [in_id, toSqlInt(id)]);
+      for (const id of catIds) await client.query('INSERT INTO c_information_categories (in_id,cat_id) VALUES ($1,$2)', [in_id, toSqlInt(id)]);
 
-    const refIds = [].concat(b['in_id_ref[]'] || b.in_id_ref || []);
-    if (b.ref_none !== '-' && refIds.length)
-      for (const rid of refIds) await db.query('INSERT INTO c_information_information (in_id,in_id_ref) VALUES ($1,$2)', [in_id, toSqlInt(rid)]);
+      const refIds = [].concat(b['in_id_ref[]'] || b.in_id_ref || []);
+      if (b.ref_none !== '-' && refIds.length)
+        for (const rid of refIds) await client.query('INSERT INTO c_information_information (in_id,in_id_ref) VALUES ($1,$2)', [in_id, toSqlInt(rid)]);
 
-    await db.query('COMMIT');
-    return res.json(ok(in_id, 'เพิ่มหนังสือเวียนสำเร็จ'));
+      await client.query('COMMIT');
+      return res.json(ok(in_id, 'เพิ่มหนังสือเวียนสำเร็จ'));
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   } catch (e: any) {
-    await db.query('ROLLBACK');
     console.error('Create Circular Full Error:', e);
     return res.status(500).json(err('เกิดข้อผิดพลาดในการเพิ่มข้อมูล (Internal Server Error)'));
   }
@@ -1003,36 +1010,43 @@ router.post('/ocsc-circular/update', requireAdmin, uploadFields, validate(circul
 
     let in_attachment_link = attachmentLinks.length > 0 ? JSON.stringify(attachmentLinks) : '-';
 
-    await db.query('BEGIN');
-    await db.query(
-      `UPDATE c_information SET in_num_date=$1,in_doc_date=$2,in_detail=$3,in_detail_ag=$4,in_etc=$5,in_link=$6,in_qr_link=$7,in_file_mkk=$8,updated_user=$9,in_mkk_id=$10,in_mw_id=$11,in_results_id=$12,in_year_id=$13,in_status_id=$14,in_circular_detail=$15,in_original_link=$16,in_attachment_link=$17,updated_at=NOW() WHERE in_id=$18`,
-      [
-        b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
-        toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
-        toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
-        in_circular_detail, in_original_link, in_attachment_link, toSqlInt(b.in_id)
-      ]
-    );
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE c_information SET in_num_date=$1,in_doc_date=$2,in_detail=$3,in_detail_ag=$4,in_etc=$5,in_link=$6,in_qr_link=$7,in_file_mkk=$8,updated_user=$9,in_mkk_id=$10,in_mw_id=$11,in_results_id=$12,in_year_id=$13,in_status_id=$14,in_circular_detail=$15,in_original_link=$16,in_attachment_link=$17,updated_at=NOW() WHERE in_id=$18`,
+        [
+          b.in_num_date, b.in_doc_date || null, b.in_detail, b.in_detail_ag, in_etc, in_link, in_qr_link, in_file_mkk, req.admin?.name, 
+          toSqlInt(b.in_mkk_id), toSqlInt(b.in_mw_id), toSqlInt(b.in_results_id), 
+          toSqlInt(b.in_year_id), toSqlInt(b.in_status_id), 
+          in_circular_detail, in_original_link, in_attachment_link, toSqlInt(b.in_id)
+        ]
+      );
 
-    const agIds = [].concat(b['ag_id[]'] || b.ag_id || []);
-    const catIds = [].concat(b['cat_id[]'] || b.cat_id || []);
-    await db.query('DELETE FROM c_information_agency WHERE in_id=$1', [toSqlInt(b.in_id)]);
-    await db.query('DELETE FROM c_information_categories WHERE in_id=$1', [toSqlInt(b.in_id)]);
-    for (const id of agIds) await db.query('INSERT INTO c_information_agency (in_id,ag_id) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(id)]);
-    for (const id of catIds) await db.query('INSERT INTO c_information_categories (in_id,cat_id) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(id)]);
+      const agIds = [].concat(b['ag_id[]'] || b.ag_id || []);
+      const catIds = [].concat(b['cat_id[]'] || b.cat_id || []);
+      await client.query('DELETE FROM c_information_agency WHERE in_id=$1', [toSqlInt(b.in_id)]);
+      await client.query('DELETE FROM c_information_categories WHERE in_id=$1', [toSqlInt(b.in_id)]);
+      for (const id of agIds) await client.query('INSERT INTO c_information_agency (in_id,ag_id) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(id)]);
+      for (const id of catIds) await client.query('INSERT INTO c_information_categories (in_id,cat_id) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(id)]);
 
-    const refIds = [].concat(b['in_id_ref[]'] || b.in_id_ref || []);
-    if (b.ref_none !== '-' && refIds.length) {
-      await db.query('DELETE FROM c_information_information WHERE in_id=$1', [toSqlInt(b.in_id)]);
-      for (const rid of refIds) await db.query('INSERT INTO c_information_information (in_id,in_id_ref) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(rid)]);
-    } else if (b.ref_none === '-') {
-      await db.query('DELETE FROM c_information_information WHERE in_id=$1', [toSqlInt(b.in_id)]);
+      const refIds = [].concat(b['in_id_ref[]'] || b.in_id_ref || []);
+      if (b.ref_none !== '-' && refIds.length) {
+        await client.query('DELETE FROM c_information_information WHERE in_id=$1', [toSqlInt(b.in_id)]);
+        for (const rid of refIds) await client.query('INSERT INTO c_information_information (in_id,in_id_ref) VALUES ($1,$2)', [toSqlInt(b.in_id), toSqlInt(rid)]);
+      } else if (b.ref_none === '-') {
+        await client.query('DELETE FROM c_information_information WHERE in_id=$1', [toSqlInt(b.in_id)]);
+      }
+
+      await client.query('COMMIT');
+      return res.json(ok('success', 'แก้ไขหนังสือเวียนสำเร็จ'));
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
-
-    await db.query('COMMIT');
-    return res.json(ok('success', 'แก้ไขหนังสือเวียนสำเร็จ'));
   } catch (e: any) {
-    await db.query('ROLLBACK');
     console.error('Update Circular Full Error:', e);
     return res.status(500).json(err('เกิดข้อผิดพลาดในการแก้ไขข้อมูล (Internal Server Error)'));
   }
@@ -1057,16 +1071,23 @@ router.post('/ocsc-circular/delete', requireAdmin, async (req: AdminRequest, res
     if (used.rows.length) return res.status(400).json(err('หนังสือเวียนนี้ถูกอ้างอิงอยู่ ไม่สามารถลบได้'));
 
     // SEC-05: Wrap in transaction for data integrity
-    await db.query('BEGIN');
-    await db.query('DELETE FROM c_information_information WHERE in_id=$1', [in_id]);
-    await db.query('DELETE FROM c_information_agency WHERE in_id=$1', [in_id]);
-    await db.query('DELETE FROM c_information_categories WHERE in_id=$1', [in_id]);
-    await db.query('DELETE FROM c_information WHERE in_id=$1', [in_id]);
-    await db.query('COMMIT');
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM c_information_information WHERE in_id=$1', [in_id]);
+      await client.query('DELETE FROM c_information_agency WHERE in_id=$1', [in_id]);
+      await client.query('DELETE FROM c_information_categories WHERE in_id=$1', [in_id]);
+      await client.query('DELETE FROM c_information WHERE in_id=$1', [in_id]);
+      await client.query('COMMIT');
 
-    return res.json(ok(in_id, 'ลบหนังสือเวียนสำเร็จ'));
+      return res.json(ok(in_id, 'ลบหนังสือเวียนสำเร็จ'));
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   } catch (e) {
-    await db.query('ROLLBACK');
     console.error(e);
     return res.status(500).json(err('เกิดข้อผิดพลาด'));
   }

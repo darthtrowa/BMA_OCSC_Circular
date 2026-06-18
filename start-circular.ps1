@@ -49,7 +49,7 @@ Write-Host "🚀 System is starting up in Local Mode!" -ForegroundColor Cyan
 Write-Host "  - Frontend : http://localhost/ocsc-circular/ (Mapped from :5173/ocsc-circular/)" -ForegroundColor Green
 Write-Host "  - Backend  : http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "💡 Tip: To enable http://localhost (Port 80) without Docker," -ForegroundColor Gray
+Write-Host "💡 Tip: To enable http://localhost (Port 80)," -ForegroundColor Gray
 Write-Host "   Run this command ONCE in Admin PowerShell:" -ForegroundColor Gray
 Write-Host "   netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=5173 connectaddress=127.0.0.1" -ForegroundColor White
 Write-Host ""

@@ -41,15 +41,6 @@ export default function App() {
       <BrowserRouter basename="/ocsc-circular">
         <Routes>
           <Route path="/" element={<PublicPage />} />
-
-          <Route
-            path="/admin/login"
-            element={<GuestRoute><LoginPage /></GuestRoute>}
-          />
-          <Route
-            path="/admin/dashboard"
-            element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
-          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

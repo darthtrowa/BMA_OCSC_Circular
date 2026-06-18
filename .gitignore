@@ -12,8 +12,6 @@ dist/
 robocopy_log.txt
 
 # Environments and Local Settings
-.env.docker
-
 # Temporary / Database scripts at server root
 server/add_qr_link_column.js
 server/alter_db.cjs

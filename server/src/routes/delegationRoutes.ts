@@ -226,25 +226,28 @@ router.put('/reorder', requireAdmin, async (req: AdminRequest, res: Response): P
     return res.status(400).json(err('รูปแบบข้อมูลไม่ถูกต้อง (ต้องเป็น array ของ delegation_id)'));
   }
 
+  const client = await db.connect();
   try {
-    await db.query('BEGIN');
+    await client.query('BEGIN');
     
     for (let i = 0; i < delegation_ids.length; i++) {
       const del_id = parseInt(delegation_ids[i], 10);
       if (!isNaN(del_id)) {
-        await db.query(
+        await client.query(
           'UPDATE c_workflow_delegations SET delegation_order = $1, updated_at = NOW() WHERE delegation_id = $2',
           [i + 1, del_id]
         );
       }
     }
     
-    await db.query('COMMIT');
+    await client.query('COMMIT');
     return res.json(ok(null, 'บันทึกลำดับรักษาการเรียบร้อยแล้ว'));
   } catch (e: any) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('[DelegationRoutes] reorder error:', e.message);
     return res.status(500).json(err('ไม่สามารถบันทึกลำดับใหม่ได้'));
+  } finally {
+    client.release();
   }
 });
 
