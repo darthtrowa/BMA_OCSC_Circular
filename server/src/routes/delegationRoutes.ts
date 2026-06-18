@@ -47,7 +47,7 @@ function isOneLevelBelow(assignerRole: AdminRole, assigneeRole: AdminRole): bool
 const assignSchema = z.object({
   assigner_id:  z.number().int().positive().optional(),
   assigner_ag_id: z.number().int().positive().optional(),
-  assignee_id:  z.number({ required_error: 'ต้องระบุ assignee_id' }).int().positive(),
+  assignee_id:  z.number({ message: 'ต้องระบุ assignee_id' }).int().positive(),
   notes:        z.string().optional(),
 }).refine(data => data.assigner_id || data.assigner_ag_id, {
   message: 'ต้องระบุอย่างน้อย assigner_id หรือ assigner_ag_id',

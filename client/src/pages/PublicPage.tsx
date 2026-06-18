@@ -189,11 +189,11 @@ export default function PublicPage() {
         <div className="container mx-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="flex items-center justify-center mr-4 w-12 h-12 bg-white rounded-full overflow-hidden shadow-md">
+              <div className="mr-4 w-12 h-12 bg-white rounded-full overflow-hidden shadow-md relative">
                 <img
                   src={LOGO_URL}
                   alt="Logo"
-                  className="w-full h-full object-contain p-1"
+                  className="absolute inset-0 w-full h-full object-contain p-1"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
                     ((e.target as HTMLImageElement).nextSibling as HTMLElement).style.display = 'block';
@@ -208,7 +208,6 @@ export default function PublicPage() {
                 <small className="text-gray-500 text-sm">สำนักงานคณะกรรมการข้าราชการกรุงเทพมหานคร</small>
               </div>
             </div>
-
             <div className="flex gap-2">
               <a
                 href="/ocsc-circular/admin/login"

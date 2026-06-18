@@ -12,7 +12,6 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "patch-package": "^8.0.0",
     "@adminjs/design-system": "^4.1.1",
     "@adminjs/express": "^6.1.1",
     "@adminjs/sql": "^2.2.6",
@@ -32,17 +31,19 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.7",
+    "patch-package": "^8.0.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.20.0",
     "puppeteer": "^25.0.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-is": "^19.2.7",
     "recharts": "^2.13.0",
     "styled-components": "^6.4.2",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^14.0.0",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/connect-pg-simple": "^7.0.3",
@@ -54,6 +55,8 @@
     "@types/node": "^25.6.2",
     "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "tsx": "^4.16.2",

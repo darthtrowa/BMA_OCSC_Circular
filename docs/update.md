@@ -1,5 +1,23 @@
 # Project Update Log
 
+## [1.5.3] - 2026-06-18
+
+### Upgrade & UI Fixes: Zod v4 Upgrade & Centered Logo Layout Fix
+
+#### 🎨 Frontend & UI Changes
+- **client/src/pages/PublicPage.tsx** & **client-public/src/pages/PublicPage.tsx**: Refactored the header logo element structure. Replaced the flex container centered layout with a robust `relative` container and `absolute inset-0` img setup. This prevents flexbox layout stretching bugs in browsers when rendering large natural-width (`2500x2500` px) image files, ensuring the green BMA seal stays perfectly centered and fully circular without getting shifted or cut off.
+- **client/src/components/admin/Sidebar.tsx** & **client-admin/src/components/admin/Sidebar.tsx**: Applied the same relative/absolute bounding layout to the sidebar logo container for layout consistency across admin panels.
+
+#### ⚙️ Backend & Schema Changes
+- **server/package.json**: Upgraded `zod` from `^3.25.76` to `^4.4.3` (stable major version).
+- **server/src/routes/delegationRoutes.ts** & **server/src/routes/admin.ts**: Refactored string/number validation inputs. Replaced legacy/incompatible `{ required_error: '...' }` object properties with `{ message: '...' }` to conform to Zod v4 validation parameters and fix TypeScript compile errors.
+- **styled-components / adminjs dependency hotfix**: Installed `react-is` in the server backend to fix dynamic bundle loading crashes within AdminJS.
+
+#### ✅ Verification
+- **Compilation**: Successfully compiled the Express API backend via `npm run build` with zero errors. All three Vite 8 / React 19 frontend apps (`client`, `client-admin`, and `client-public`) build and compile cleanly in under 300ms.
+- **Unit Tests**: Executed and verified that all backend routing unit tests pass cleanly.
+- **Browser & Runtime Validation**: Restarted PM2 services and captured browser screenshots. Verified that the header logo is rendered as a perfect full circle, and frontend search query routing to the backend parses correctly using the new Zod v4 validators.
+
 ## [1.5.2] - 2026-06-18
 
 ### PM2 Windows Startup Configuration Fix
@@ -1670,6 +1688,26 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 - **Unit Tests**: All client-side test suites pass under Vitest.
 - **PM2 Services**: Successfully restarted and confirmed online.
 - **Client-Side Routing Check**: Navigated through the portals in the browser. Verified that transitioning from the Public Portal to the Admin Login Portal correctly performs client-side routing without a full page reload, and no console errors are generated.
+
+## [1.2.3] - 2026-06-18
+
+### Upgrade: React v18 to React v19 Major Upgrade
+
+#### ⚙️ Dependencies & Configuration Changes
+
+- **client/package.json, client-admin/package.json, client-public/package.json**:
+  - Upgraded `react` and `react-dom` to `^19.0.0`.
+  - Upgraded `@types/react` and `@types/react-dom` to `^19.0.0`.
+- **Backend Stability (Express Server)**:
+  - Kept backend server on React 18 (`react: "^18.3.1"`, `react-dom: "^18.3.1"`) due to strict React 18 peer dependencies of the AdminJS 7 core framework, maintaining control panel security and stability while enabling latest React 19 runtime features for frontend applications.
+
+#### ✅ Verification
+
+- **Production Builds**: `client`, `client-admin`, and `client-public` all compile successfully with React 19 + Vite 8.
+- **Unit Tests**: All client-side test suites pass under Vitest.
+- **PM2 Services**: Successfully restarted all services and confirmed stable status.
+- **Browser Verification**: Used the browser subagent to verify render, state binding, form inputs, dynamic updates, SweetAlert modals, and page transitions. Everything loads successfully without any runtime console errors.
+
 
 
 

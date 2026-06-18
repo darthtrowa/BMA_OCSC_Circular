@@ -21,8 +21,8 @@ import { recordAuditLog } from '../utils/auditLogger.js';
 const stringOrNumber = z.union([z.string(), z.number()]).optional().nullable();
 
 const circularSchema = z.object({
-  in_num_date: z.string({ required_error: 'ระบุเลขที่หนังสือเวียน' }).min(1, 'ระบุเลขที่หนังสือเวียน'),
-  in_detail: z.string({ required_error: 'ระบุรายละเอียดหนังสือเวียน' }).min(1, 'ระบุรายละเอียดหนังสือเวียน'),
+  in_num_date: z.string({ message: 'ระบุเลขที่หนังสือเวียน' }).min(1, 'ระบุเลขที่หนังสือเวียน'),
+  in_detail: z.string({ message: 'ระบุรายละเอียดหนังสือเวียน' }).min(1, 'ระบุรายละเอียดหนังสือเวียน'),
   in_doc_date: z.string().optional().nullable(),
   in_detail_ag: z.string().optional().nullable(),
   in_etc: z.string().optional().nullable(),
