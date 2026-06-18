@@ -28,11 +28,19 @@ const mimeTypes = {
 };
 
 const server = http.createServer((req, res) => {
-  let filePath = path.join(PUBLIC_DIR, req.url === '/' ? 'index.html' : req.url);
-  const extname = String(path.extname(filePath)).toLowerCase();
+  let urlPath = req.url.split('?')[0];
+  const BASE_PATH = '/ocsc-circular/admin';
 
-  // Remove query parameters from file path
-  filePath = filePath.split('?')[0];
+  if (urlPath.startsWith(BASE_PATH)) {
+    urlPath = urlPath.replace(BASE_PATH, '');
+  }
+
+  if (urlPath === '' || urlPath === '/') {
+    urlPath = '/index.html';
+  }
+
+  let filePath = path.join(PUBLIC_DIR, urlPath);
+  const extname = String(path.extname(filePath)).toLowerCase();
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {

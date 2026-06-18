@@ -16,25 +16,32 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
-    // ===== Frontend (Development Mode) =====
+    // ===== Frontend (Production Mode) =====
     {
       name: "ocsc-circular-frontend",
-      script: "./node_modules/vite/bin/vite.js",
+      script: "./serve.js",
       cwd: path.join(baseDir, "client"),
       exec_mode: "fork",
       watch: false,
       autorestart: true,
-      max_memory_restart: "500M", // Vite dev server uses more memory
+      max_memory_restart: "200M",
+      env: {
+        NODE_ENV: "production",
+      },
     },
-    // ===== Admin Frontend (Development Mode) =====
+    // ===== Admin Frontend (Production Mode) =====
     {
       name: "ocsc-circular-admin",
-      script: "./node_modules/vite/bin/vite.js",
+      script: "./server.mjs",
       cwd: path.join(baseDir, "client-admin"),
       exec_mode: "fork",
       watch: false,
       autorestart: true,
-      max_memory_restart: "500M",
+      max_memory_restart: "200M",
+      env: {
+        NODE_ENV: "production",
+        PORT: 5175,
+      },
     },
   ],
 };

@@ -19,11 +19,16 @@ Set-Location -Path "$baseDir\server"
 npm install
 
 # 3. Install Client dependencies and Build
-Write-Host "[3/5] Building frontend (Production Build)..." -ForegroundColor Green
+Write-Host "[3/5] Building frontends (Production Build)..." -ForegroundColor Green
+Write-Host "Building public frontend..." -ForegroundColor Gray
 Set-Location -Path "$baseDir\client"
 npm install
 npm run build
-Write-Host "Build complete! Files are at: $baseDir\client\dist" -ForegroundColor Yellow
+Write-Host "Building admin frontend..." -ForegroundColor Gray
+Set-Location -Path "$baseDir\client-admin"
+npm install
+npm run build
+Write-Host "Build complete! Public: $baseDir\client\dist, Admin: $baseDir\client-admin\dist" -ForegroundColor Yellow
 
 # 4. Start all services via ecosystem.config.js
 Write-Host "[4/5] Starting all services with PM2..." -ForegroundColor Green

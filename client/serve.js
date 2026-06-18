@@ -7,16 +7,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = 5173;
-const BASE_PATH = '/circular';
+const BASE_PATH = '/ocsc-circular';
 const DIST_DIR = path.join(__dirname, 'dist');
 
 http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
   
-  // If request doesn't start with /circular, return 404
+  // If request doesn't start with /ocsc-circular, return 404
   if (!urlPath.startsWith(BASE_PATH)) {
     res.writeHead(404);
-    return res.end('Not found - this service expects requests under /circular');
+    return res.end('Not found - this service expects requests under /ocsc-circular');
   }
   
   // Map /circular/assets/... to /assets/...

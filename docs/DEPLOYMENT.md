@@ -70,25 +70,40 @@ pm2 start index.js --name "circular-api"
 ```
 
 ### 3.2 รัน Frontend (React)
-มี 2 วิธี:
+ระบบได้เตรียม Node.js Script ในการรันไฟล์ Static Build (Production) ไว้แล้ว ซึ่งมีประสิทธิภาพและความเสถียรมากกว่าการรันด้วย Vite Dev Server หรือเครื่องมือ `serve` ทั่วไปบน Windows:
 
-**วิธีที่ 1: รันแบบ Development (สำหรับทดสอบ)**
+**วิธีที่ 1: รันทุกบริการพร้อมกันผ่าน Ecosystem Config (แนะนำที่สุด)**
+เมื่อรันคำสั่งนี้ ระบบจะรัน Backend API (3000), Public Frontend (5173) และ Admin Frontend (5175) พร้อมกันใน Production Mode:
 ```powershell
-cd <พาธโปรเจกต์>\client
-pm2 start "npm run dev" --name "circular-frontend"
+# อยู่ที่ Root ของโปรเจกต์
+pm2 start ecosystem.config.js
 ```
 
-**วิธีที่ 2: รันแบบ Production (แนะนำ)**
-1. Build โปรเจกต์:
+**วิธีที่ 2: รันแยกเป็นรายบริการ (Production Mode)**
+1. **Build โค้ด Frontend:**
    ```powershell
+   # สำหรับหน้าเว็บหลัก (Public)
    cd <พาธโปรเจกต์>\client
+   npm install
+   npm run build
+
+   # สำหรับหน้าแอดมิน (Admin)
+   cd <พาธโปรเจกต์>\client-admin
+   npm install
    npm run build
    ```
-2. ผลลัพธ์จะได้โฟลเดอร์ `dist` นำไฟล์ข้างในไปวางใน **IIS** หรือใช้เครื่องมืออย่าง `serve` เพื่อรัน:
-   ```powershell
-   npm install -g serve
-   pm2 start "serve -s dist -l 5173" --name "circular-frontend"
-   ```
+
+2. **สั่งรันด้วย PM2 (ในโฟลเดอร์ของแต่ละระบบ):**
+   - **รัน Public Frontend (Port 5173):**
+     ```powershell
+     cd <พาธโปรเจกต์>\client
+     pm2 start serve.js --name "ocsc-circular-frontend"
+     ```
+   - **รัน Admin Frontend (Port 5175):**
+     ```powershell
+     cd <พาธโปรเจกต์>\client-admin
+     pm2 start server.mjs --name "ocsc-circular-admin" --env PORT=5175
+     ```
 
 ---
 

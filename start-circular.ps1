@@ -21,6 +21,10 @@ if (!(Test-Path "client\node_modules")) {
     Write-Host "Installing client dependencies..." -ForegroundColor Gray
     Push-Location "client"; npm install; Pop-Location
 }
+if (!(Test-Path "client-admin\node_modules")) {
+    Write-Host "Installing client-admin dependencies..." -ForegroundColor Gray
+    Push-Location "client-admin"; npm install; Pop-Location
+}
 
 # Stop existing processes
 Write-Host "Stopping any existing processes..." -ForegroundColor Gray
