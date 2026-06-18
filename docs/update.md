@@ -10,6 +10,9 @@
 - **ecosystem.config.js**: Reconfigured PM2 apps to run frontends in **Production Mode** using lightweight native Node scripts (`serve.js` and `server.mjs`) instead of launching memory-intensive Vite development servers.
 - **deploy-iis.ps1**: Updated deployment workflow to build both the public frontend (`client`) and admin frontend (`client-admin`) sequentially.
 - **start-circular.ps1**: Added dependency verification check for the `client-admin` directory before executing PM2.
+- **client/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"` to match the new system base path naming convention.
+- **client-admin/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"`.
+- **client-public/.env.production**: Changed `VITE_API_BASE_URL` to `"/ocsc-circular"`.
 - **docs/DEPLOYMENT.md**: Rewrote the frontend deployment guide to explain correct Windows PM2 execution syntax and how to start the system using production Node.js servers natively.
 
 ## [1.5.1] - 2026-06-18
