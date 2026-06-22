@@ -1,5 +1,16 @@
 # Project Update Log
 
+## [1.5.5] - 2026-06-22
+
+### Deployment & Routing: Backend Subdirectory Routing Compilation & PM2 Restart
+
+#### ⚙️ Deployment & Configuration Changes
+- **Backend Rebuild**: Compiled the TypeScript backend API server (`npm run build` in `/server`) to update `server/dist/config/adminjs.js` with the correct subdirectory configuration `rootPath: '/ocsc-circular/internal-admin'`. Previously, the running server was executing an outdated build that pointed to `/internal-admin`, which caused `{"status":false,"message":"Route not found"}` when accessed via the proxy subpath.
+- **IIS Configuration & Router Alignment**: Verified that Vite configs, proxy configurations, and IIS `web.config` rewrite rules align under the `/ocsc-circular` root subpath.
+
+#### 🔧 Actions Required
+- **Process Restart**: Since the PM2 daemon runs under Administrator/SYSTEM on this Windows Server, a process restart is required from an elevated terminal. Use `restart-production.bat` (Run as Administrator) to restart both PM2 and IIS, reloading the compiled subdirectory routes.
+
 ## [1.5.4] - 2026-06-22
 
 ### Deployment & Routing: IIS Rewrite Rule for Static Images Fix
