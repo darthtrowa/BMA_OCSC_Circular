@@ -275,7 +275,7 @@ export default function PublicPage() {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">ผู้รับผิดชอบ</label>
                   <Select isMulti placeholder="เลือกผู้รับผิดชอบ" styles={selectStyle}
                     menuPortalTarget={document.body}
-                    options={makeOptions(filters?.agency, 'ag_id', (i: any) => i.ag_name)}
+                    options={makeOptions(filters?.agency?.filter((a: any) => !a.parent_ag_id), 'ag_id', (i: any) => i.ag_name)}
                     value={searchForm.ag_id}
                     onChange={(v: any) => setSearchForm({ ...searchForm, ag_id: v })} />
                 </div>

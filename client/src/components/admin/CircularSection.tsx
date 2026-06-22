@@ -269,7 +269,7 @@ export default function CircularSection({
                 onChange={e => { setFilterAg(e.target.value); setPage(1) }}
               >
                 <option value="">ผู้รับผิดชอบทั้งหมด</option>
-                {(allData?.agency||[]).map((a: any) => (
+                {(allData?.agency||[]).filter((a: any) => !a.parent_ag_id).map((a: any) => (
                   <option key={a.ag_id} value={a.ag_id}>{a.ag_name}</option>
                 ))}
               </select>
