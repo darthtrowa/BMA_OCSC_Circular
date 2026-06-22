@@ -1,5 +1,17 @@
 # Project Update Log
 
+## [1.5.4] - 2026-06-22
+
+### Deployment & Routing: IIS Rewrite Rule for Static Images Fix
+
+#### ⚙️ Deployment & Configuration Changes
+- **web.config** & **client/public/web.config**: Added `ReverseProxy_Image` rule to proxy `/image/` requests to the Node.js backend on port 3000. This fixes the issue where IIS returns `index.html` (SPA fallback) for the top-left logo assets (`logo_BMA.png` and `bmalogo2.jpg`) because they are not located in the static frontend `client/dist` directory.
+- **start-production.ps1/bat**, **restart-production.ps1/bat**, **stop-production.ps1/bat**: Created new production management scripts in the root directory to automate starting, restarting, and stopping both PM2 services and the IIS server easily on Windows Server.
+
+#### ✅ Verification
+- Rebuilt public client locally to copy the updated `web.config` to the production `dist` directory.
+- Created and tested helper scripts wrapper on the local environment structure.
+
 ## [1.5.3] - 2026-06-18
 
 ### Upgrade & UI Fixes: Zod v4 Upgrade & Centered Logo Layout Fix
