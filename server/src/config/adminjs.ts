@@ -40,9 +40,9 @@ export const initAdminJS = async (app: any) => {
     databases: [db],
     resources: [], // We are relying on the SQL adapter or just custom pages for now
     componentLoader,
-    rootPath: '/internal-admin',
-    loginPath: '/internal-admin/login',
-    logoutPath: '/internal-admin/logout',
+    rootPath: '/ocsc-circular/internal-admin',
+    loginPath: '/ocsc-circular/internal-admin/login',
+    logoutPath: '/ocsc-circular/internal-admin/logout',
     dashboard: {
       component: Components.Dashboard,
     },
@@ -69,7 +69,7 @@ export const initAdminJS = async (app: any) => {
   }
 
   // Custom API routes for AdminJS components
-  app.get('/internal-admin/api/server-status', async (req: any, res: any) => {
+  app.get('/ocsc-circular/internal-admin/api/server-status', async (req: any, res: any) => {
     let dbStatus = 'Offline';
     let dbHealth = false;
     try {
@@ -92,7 +92,7 @@ export const initAdminJS = async (app: any) => {
     });
   });
 
-  app.get('/internal-admin/api/metrics', async (req: any, res: any) => {
+  app.get('/ocsc-circular/internal-admin/api/metrics', async (req: any, res: any) => {
     try {
       const { rows } = await pool.query('SELECT * FROM system_metrics ORDER BY timestamp DESC LIMIT 50');
       res.json(rows);
@@ -101,7 +101,7 @@ export const initAdminJS = async (app: any) => {
     }
   });
 
-  app.get('/internal-admin/api/audit-logs', async (req: any, res: any) => {
+  app.get('/ocsc-circular/internal-admin/api/audit-logs', async (req: any, res: any) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 20;
@@ -133,7 +133,7 @@ export const initAdminJS = async (app: any) => {
     }
   });
 
-  app.get('/internal-admin/api/logs', (req: any, res: any) => {
+  app.get('/ocsc-circular/internal-admin/api/logs', (req: any, res: any) => {
     try {
       const logPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/ocsc-circular-api-out.log');
       const errPath = path.join(process.env.USERPROFILE || process.env.HOME || '', '.pm2/logs/ocsc-circular-api-error.log');
@@ -151,7 +151,7 @@ export const initAdminJS = async (app: any) => {
     }
   });
 
-  app.post('/internal-admin/api/migrate', async (req: any, res: any) => {
+  app.post('/ocsc-circular/internal-admin/api/migrate', async (req: any, res: any) => {
     try {
       await runMigrations();
       res.json({ message: 'Migrations executed successfully.' });
@@ -160,7 +160,7 @@ export const initAdminJS = async (app: any) => {
     }
   });
 
-  app.get('/internal-admin/api/bot-status', (req: any, res: any) => {
+  app.get('/ocsc-circular/internal-admin/api/bot-status', (req: any, res: any) => {
     res.json({ status: 'Idle', lastRun: new Date().toISOString() });
   });
 

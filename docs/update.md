@@ -6,6 +6,7 @@
 
 #### ⚙️ Deployment & Configuration Changes
 - **web.config** & **client/public/web.config**: Added `ReverseProxy_Image` rule to proxy `/image/` requests to the Node.js backend on port 3000. This fixes the issue where IIS returns `index.html` (SPA fallback) for the top-left logo assets (`logo_BMA.png` and `bmalogo2.jpg`) because they are not located in the static frontend `client/dist` directory. Also added `ReverseProxy_InternalAdmin` rule to proxy `/internal-admin` to Node.js backend.
+- **server/src/config/adminjs.ts** & **custom dashboard components**: Prefixed all `internal-admin` routes, endpoints, and custom page fetch calls with `/ocsc-circular` to support deployments where the site is hosted inside an IIS Virtual Application subdirectory. This prevents 404 errors during logins, redirects, and custom API fetches.
 - **start-production.ps1/bat**, **restart-production.ps1/bat**, **stop-production.ps1/bat**: Created new production management scripts in the root directory to automate starting, restarting, and stopping both PM2 services and the IIS server easily on Windows Server. Also fixed a PowerShell encoding/parser error by replacing the non-ASCII checkmark character `✔` with `[OK]` to prevent errors on Windows Server system locales.
 
 #### ✅ Verification

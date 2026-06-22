@@ -10,7 +10,7 @@ const ApiStatusDashboard = () => {
   });
 
   useEffect(() => {
-    fetch('/internal-admin/api/server-status')
+    fetch('/ocsc-circular/internal-admin/api/server-status')
       .then(res => res.json())
       .then(data => {
         setStatus(data);

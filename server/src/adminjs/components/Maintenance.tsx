@@ -7,7 +7,7 @@ const Maintenance = () => {
   const runMigration = async () => {
     setStatus('Running migration...');
     try {
-      const res = await fetch('/internal-admin/api/migrate', { method: 'POST' });
+      const res = await fetch('/ocsc-circular/internal-admin/api/migrate', { method: 'POST' });
       const data = await res.json();
       setStatus(data.message || 'Done');
     } catch (e) {
