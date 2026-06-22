@@ -19,4 +19,4 @@ Write-Host "Stopping IIS Web Server..." -ForegroundColor Green
 & iisreset /stop
 
 Write-Host ""
-Write-Host "✔ System successfully stopped!" -ForegroundColor Yellow
+Write-Host "[OK] System successfully stopped!" -ForegroundColor Yellow

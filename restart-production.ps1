@@ -17,5 +17,5 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
 }
 
 Write-Host ""
-Write-Host "✔ System successfully restarted!" -ForegroundColor Green
+Write-Host "[OK] System successfully restarted!" -ForegroundColor Green
 Write-Host "Use 'pm2 status' to check service states." -ForegroundColor Gray
