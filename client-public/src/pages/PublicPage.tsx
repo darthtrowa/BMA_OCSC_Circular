@@ -210,7 +210,7 @@ export default function PublicPage() {
 
             <div className="flex gap-2">
               <a
-                href="/ocsc-circular/admin/login"
+                href="/bma_ocsc_circular/admin/login"
                 className="flex items-center px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition shadow-md"
               >
                 <i className='bx bx-user mr-2 text-lg'></i>สำหรับเจ้าหน้าที่

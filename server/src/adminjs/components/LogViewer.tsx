@@ -6,7 +6,7 @@ const LogViewer = () => {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/ocsc-circular/internal-admin/api/logs');
+      const res = await fetch('/bma_ocsc_circular/internal-admin/api/logs');
       const data = await res.json();
       setLogs(data.logs);
     } catch (e) {

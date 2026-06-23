@@ -269,10 +269,10 @@ app.get('/', async (_req: Request, res: Response) => {
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 30px;">
-          <a href="http://localhost/ocsc-circular" class="btn" style="margin-top: 0; background: #334155;">
+          <a href="http://localhost/bma_ocsc_circular" class="btn" style="margin-top: 0; background: #334155;">
             <i class='bx bx-window-open'></i> Public Portal
           </a>
-          <a href="http://localhost/ocsc-circular/admin/login" class="btn" style="margin-top: 0;">
+          <a href="http://localhost/bma_ocsc_circular/admin/login" class="btn" style="margin-top: 0;">
             <i class='bx bx-lock-alt'></i> Admin Login
           </a>
         </div>

@@ -46,7 +46,7 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/ocsc-circular/admin">
+      <BrowserRouter basename="/bma_ocsc_circular/admin">
         <Routes>
           {/* Login is the root route */}
           <Route

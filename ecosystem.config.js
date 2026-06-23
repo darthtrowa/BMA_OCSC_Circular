@@ -5,7 +5,7 @@ module.exports = {
   apps: [
     // ===== Backend API =====
     {
-      name: "ocsc-circular-api",
+      name: "bma-ocsc-circular-api",
       script: "./dist/index.js", // Use compiled JS instead of tsx
       cwd: path.join(baseDir, "server"),
       exec_mode: "fork",
@@ -18,7 +18,7 @@ module.exports = {
     },
     // ===== Frontend (Production Mode) =====
     {
-      name: "ocsc-circular-frontend",
+      name: "bma-ocsc-circular-frontend",
       script: "./serve.js",
       cwd: path.join(baseDir, "client"),
       exec_mode: "fork",
@@ -31,7 +31,7 @@ module.exports = {
     },
     // ===== Admin Frontend (Production Mode) =====
     {
-      name: "ocsc-circular-admin",
+      name: "bma-ocsc-circular-admin",
       script: "./server.mjs",
       cwd: path.join(baseDir, "client-admin"),
       exec_mode: "fork",

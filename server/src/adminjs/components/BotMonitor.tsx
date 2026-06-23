@@ -5,7 +5,7 @@ const BotMonitor = () => {
   const [status, setStatus] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/ocsc-circular/internal-admin/api/bot-status')
+    fetch('/bma_ocsc_circular/internal-admin/api/bot-status')
       .then(res => res.json())
       .then(data => setStatus(data))
       .catch(() => setStatus({ error: 'Failed to load' }));

@@ -8,7 +8,7 @@ const SystemMonitor = () => {
 
   useEffect(() => {
     const fetchData = () => {
-      fetch('/ocsc-circular/internal-admin/api/metrics')
+      fetch('/bma_ocsc_circular/internal-admin/api/metrics')
         .then(res => res.json())
         .then(resData => {
           // Data comes back ordered by timestamp DESC (newest first).

@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 // vite.config.ts — Public-only circular lookup (lightweight build)
 export default defineConfig({
   plugins: [tailwindcss(), react()],
-  base: '/ocsc-circular/',
+  base: '/bma_ocsc_circular/',
   server: {
     port: 5174,
   },

@@ -26,7 +26,7 @@ http.interceptors.response.use(
       localStorage.removeItem('admin_token')
       localStorage.removeItem('admin_name')
       localStorage.removeItem('admin_permiss')
-      window.location.href = '/ocsc-circular/admin/login'
+      window.location.href = '/bma_ocsc_circular/admin/login'
     }
     return Promise.reject(err)
   }

@@ -46,7 +46,7 @@ if ($pm2Command -eq "pm2") {
 
 Write-Host ""
 Write-Host "🚀 System is starting up in Local Mode!" -ForegroundColor Cyan
-Write-Host "  - Frontend : http://localhost/ocsc-circular/ (Mapped from :5173/ocsc-circular/)" -ForegroundColor Green
+Write-Host "  - Frontend : http://localhost/bma_ocsc_circular/ (Mapped from :5173/bma_ocsc_circular/)" -ForegroundColor Green
 Write-Host "  - Backend  : http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "💡 Tip: To enable http://localhost (Port 80)," -ForegroundColor Gray

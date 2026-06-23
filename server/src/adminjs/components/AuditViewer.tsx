@@ -11,7 +11,7 @@ const AuditViewer = () => {
 
   const fetchLogs = (p = 1, q = search) => {
     setLoading(true);
-    fetch(`/ocsc-circular/internal-admin/api/audit-logs?page=${p}&limit=${limit}&search=${encodeURIComponent(q)}`)
+    fetch(`/bma_ocsc_circular/internal-admin/api/audit-logs?page=${p}&limit=${limit}&search=${encodeURIComponent(q)}`)
       .then(res => res.json())
       .then(data => {
         setLogs(data.logs || []);

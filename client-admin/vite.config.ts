@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 // vite.config.ts — Admin-only dashboard (no public pages)
 export default defineConfig({
   plugins: [tailwindcss(), react()],
-  base: '/ocsc-circular/admin/',
+  base: '/bma_ocsc_circular/admin/',
   server: {
     port: 5175,
     host: '0.0.0.0',

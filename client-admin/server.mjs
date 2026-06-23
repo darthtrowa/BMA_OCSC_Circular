@@ -29,7 +29,7 @@ const mimeTypes = {
 
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
-  const BASE_PATH = '/ocsc-circular/admin';
+  const BASE_PATH = '/bma_ocsc_circular/admin';
 
   if (urlPath.startsWith(BASE_PATH)) {
     urlPath = urlPath.replace(BASE_PATH, '');

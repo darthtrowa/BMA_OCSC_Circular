@@ -10,7 +10,7 @@ const ApiStatusDashboard = () => {
   });
 
   useEffect(() => {
-    fetch('/ocsc-circular/internal-admin/api/server-status')
+    fetch('/bma_ocsc_circular/internal-admin/api/server-status')
       .then(res => res.json())
       .then(data => {
         setStatus(data);
@@ -76,7 +76,7 @@ const ApiStatusDashboard = () => {
         </Box>
 
         <Box style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '40px' }}>
-          <Button as="a" href="http://localhost/ocsc-circular" target="_blank" variant="secondary">
+          <Button as="a" href="http://localhost/bma_ocsc_circular" target="_blank" variant="secondary">
             <Icon icon="ExternalLink" /> Public Portal
           </Button>
           <Button as="a" href="/api-docs" target="_blank" variant="primary">

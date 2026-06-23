@@ -30,7 +30,7 @@ http.interceptors.response.use(
       !err.config?.url?.includes('/auth/verify-otp')
     ) {
       localStorage.removeItem('admin_token');
-      window.location.href = '/ocsc-circular/admin/';
+      window.location.href = '/bma_ocsc_circular/admin/';
     }
     return Promise.reject(err);
   },

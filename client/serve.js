@@ -7,14 +7,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = 5173;
-const BASE_PATH = '/ocsc-circular';
+const BASE_PATH = '/bma_ocsc_circular';
 const DIST_DIR = path.join(__dirname, 'dist');
 
 http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
   
-  // 1. Proxy /ocsc-circular/admin to admin client on port 5175
-  if (urlPath.startsWith('/ocsc-circular/admin/') || urlPath === '/ocsc-circular/admin') {
+  // 1. Proxy /bma_ocsc_circular/admin to admin client on port 5175
+  if (urlPath.startsWith('/bma_ocsc_circular/admin/') || urlPath === '/bma_ocsc_circular/admin') {
     const proxyReq = http.request({
       host: '127.0.0.1',
       port: 5175,
@@ -35,9 +35,9 @@ http.createServer((req, res) => {
     return;
   }
 
-  // 2. Proxy /ocsc-circular/api/ to backend API on port 3000
-  if (urlPath.startsWith('/ocsc-circular/api/')) {
-    const apiPath = urlPath.replace('/ocsc-circular/api', '/api');
+  // 2. Proxy /bma_ocsc_circular/api/ to backend API on port 3000
+  if (urlPath.startsWith('/bma_ocsc_circular/api/')) {
+    const apiPath = urlPath.replace('/bma_ocsc_circular/api', '/api');
     const proxyReq = http.request({
       host: '127.0.0.1',
       port: 3000,
@@ -58,9 +58,9 @@ http.createServer((req, res) => {
     return;
   }
 
-  // 3. Proxy /ocsc-circular/image/ and /ocsc-circular/uploads/ to backend on port 3000
-  if (urlPath.startsWith('/ocsc-circular/image/') || urlPath.startsWith('/ocsc-circular/uploads/')) {
-    const targetPath = urlPath.replace('/ocsc-circular', '');
+  // 3. Proxy /bma_ocsc_circular/image/ and /bma_ocsc_circular/uploads/ to backend on port 3000
+  if (urlPath.startsWith('/bma_ocsc_circular/image/') || urlPath.startsWith('/bma_ocsc_circular/uploads/')) {
+    const targetPath = urlPath.replace('/bma_ocsc_circular', '');
     const proxyReq = http.request({
       host: '127.0.0.1',
       port: 3000,
@@ -81,10 +81,10 @@ http.createServer((req, res) => {
     return;
   }
 
-  // If request doesn't start with /ocsc-circular, return 404
+  // If request doesn't start with /bma_ocsc_circular, return 404
   if (!urlPath.startsWith(BASE_PATH)) {
     res.writeHead(404);
-    return res.end('Not found - this service expects requests under /ocsc-circular');
+    return res.end('Not found - this service expects requests under /bma_ocsc_circular');
   }
   
   // Map /circular/assets/... to /assets/...

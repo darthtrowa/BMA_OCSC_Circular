@@ -5,12 +5,12 @@ import tailwindcss from '@tailwindcss/vite'
 // vite.config.ts — standalone React app (ไม่ต้องพึ่ง backend localhost:3000)
 export default defineConfig({
   plugins: [tailwindcss(), react()],
-  base: '/ocsc-circular/',
+  base: '/bma_ocsc_circular/',
   server: {
     port: 5173,
     host: '0.0.0.0',
     proxy: {
-      '^/ocsc-circular/admin/.*': {
+      '^/bma_ocsc_circular/admin/.*': {
         target: 'http://127.0.0.1:5175',
         changeOrigin: true
       },
