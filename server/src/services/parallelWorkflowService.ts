@@ -144,31 +144,76 @@ export class ParallelWorkflowService {
     docId: number,
     paId: number,
     userId: number,
-    resultComments: string
+    resultComments: string,
+    resultsId?: number | null
   ) {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
 
       const { rows } = await client.query(
-        `SELECT pa_id, assigned_by FROM c_parallel_assignments
+        `SELECT pa_id, assigned_by, result_comments, results_id FROM c_parallel_assignments
          WHERE pa_id = $1 AND in_id = $2 AND current_owner_id = $3 AND pa_status IN ('PENDING','IN_PROGRESS')`,
         [paId, docId, userId]
       );
       if (rows.length === 0) throw new Error('ไม่สามารถส่งผลใน Track นี้ได้');
 
       const assignedBy = rows[0].assigned_by;
+      const existingComments = rows[0].result_comments;
+      const existingResultsId = rows[0].results_id;
+      
+      const finalComments = resultComments || existingComments || '';
+      const finalResultsId = resultsId !== undefined ? resultsId : existingResultsId;
 
       await client.query(
-        `UPDATE c_parallel_assignments SET pa_status = 'SUBMITTED', result_comments = $1, updated_at = NOW()
-         WHERE pa_id = $2`,
-        [resultComments, paId]
+        `UPDATE c_parallel_assignments 
+         SET pa_status = 'SUBMITTED', result_comments = $1, results_id = $2, updated_at = NOW()
+         WHERE pa_id = $3`,
+        [finalComments, finalResultsId || null, paId]
       );
 
-      await this.addHistory(client, docId, paId, userId, null, 'PARALLEL_SUBMITTED', resultComments);
+      await this.addHistory(client, docId, paId, userId, null, 'PARALLEL_SUBMITTED', finalComments);
 
       // Check if all tracks are terminal
       await this.checkAndAdvance(client, docId, assignedBy);
+
+      await client.query('COMMIT');
+      return { success: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Current owner saves draft result for their parallel track (remains IN_PROGRESS)
+   */
+  static async saveTrackResult(
+    docId: number,
+    paId: number,
+    userId: number,
+    resultComments: string,
+    resultsId: number | null
+  ) {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows } = await client.query(
+        `SELECT pa_id FROM c_parallel_assignments
+         WHERE pa_id = $1 AND in_id = $2 AND current_owner_id = $3 AND pa_status IN ('PENDING','IN_PROGRESS')`,
+        [paId, docId, userId]
+      );
+      if (rows.length === 0) throw new Error('ไม่สามารถบันทึกผลใน Track นี้ได้');
+
+      await client.query(
+        `UPDATE c_parallel_assignments 
+         SET pa_status = 'IN_PROGRESS', result_comments = $1, results_id = $2, updated_at = NOW()
+         WHERE pa_id = $3`,
+        [resultComments, resultsId || null, paId]
+      );
 
       await client.query('COMMIT');
       return { success: true };
@@ -284,6 +329,8 @@ export class ParallelWorkflowService {
          pa.pa_id, pa.in_id, pa.batch_id,
          pa.ag_id, pa.ag_name,
          pa.pa_status, pa.result_comments,
+         pa.results_id,
+         r.results_detail,
          pa.created_at, pa.updated_at,
          init.a_id   AS initial_owner_id,
          init.a_name AS initial_owner_name,
@@ -300,6 +347,7 @@ export class ParallelWorkflowService {
        LEFT JOIN c_agency cur_ag  ON cur.a_agency_id  = cur_ag.ag_id
        LEFT JOIN admin assigner ON pa.assigned_by       = assigner.a_id
        LEFT JOIN admin hr       ON pa.hr_director_id    = hr.a_id
+       LEFT JOIN c_results r    ON pa.results_id        = r.results_id
        WHERE pa.in_id = $1
        ORDER BY pa.pa_id ASC`,
       [docId]

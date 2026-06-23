@@ -318,7 +318,7 @@ export default function CircularSection({
                       {(item.references_info || []).length > 0 && (
                         <div className="mt-2 flex flex-col gap-1 max-w-[300px]">
                           {item.references_info.map((r: any, i: number) => (
-                            <span key={i} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block break-words">
+                            <span key={i} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block wrap-break-word">
                               อ้างถึง: {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}
                             </span>
                           ))}

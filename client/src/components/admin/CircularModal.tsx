@@ -172,7 +172,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] animate__animated animate__zoomIn animate__faster">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h5 className="m-0 font-bold text-xl text-slate-800 font-saochingcha">
@@ -230,7 +230,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
               />
             </div>
             {/* Reference field — shown immediately after Subject */}
-            <div className="md:col-span-2 relative z-[40]">
+            <div className="md:col-span-2 relative z-40">
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">อ้างอิงหนังสือเวียน</label>
               <Select isMulti placeholder="-- เลือกหนังสืออ้างอิง --"
                 styles={{ control: (base) => ({ ...base, borderRadius: '0.75rem', borderColor: '#e2e8f0', padding: '0.1rem' }) }}
@@ -785,7 +785,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                 </select>
               </div>
             )}
-            <div className="md:col-span-2 relative z-[60] p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+            <div className="md:col-span-2 relative z-60 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <label className="text-sm font-semibold text-slate-700 flex items-center gap-2 m-0">
                   ส่วนราชการที่รับมอบ
@@ -855,7 +855,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                 })}
               </div>
             </div>
-            <div className="md:col-span-2 relative z-[50]">
+            <div className="md:col-span-2 relative z-50">
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">หมวดหมู่ <span className="text-rose-500">*</span></label>
               <Select isMulti placeholder="-- เลือกหมวดหมู่ --"
                 styles={{ control: (base) => ({ ...base, borderRadius: '0.75rem', borderColor: '#e2e8f0', padding: '0.1rem' }) }}

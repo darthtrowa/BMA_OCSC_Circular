@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { workflowApi } from '../../api/apiService';
+import { workflowApi, DelegationItem } from '../../api/apiService';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Track {
   pa_id: number;
@@ -7,13 +8,19 @@ interface Track {
   pa_status: string;
   initial_owner_name: string;
   current_owner_name: string;
+  current_owner_id: number;
   current_owner_position: string;
   result_comments: string;
+  results_detail?: string;
 }
 
 interface Props {
   docId: number | null;
   isParallel?: boolean;
+  canAct?: boolean;
+  activeDelegations?: DelegationItem[];
+  activeTabFromSidebar?: string;
+  onRecordResult?: (paId: number) => void;
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: string }> = {
@@ -23,7 +30,15 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: string }>
   REJECTED:    { label: 'ตีกลับ',             color: 'bg-red-100 text-red-700',       icon: 'bx-x-circle' },
 };
 
-export default function ParallelTracksPanel({ docId, isParallel }: Props) {
+export default function ParallelTracksPanel({ 
+  docId, 
+  isParallel, 
+  canAct = false, 
+  activeDelegations = [], 
+  activeTabFromSidebar = 'inbox', 
+  onRecordResult 
+}: Props) {
+  const { admin } = useAuth();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -69,6 +84,16 @@ export default function ParallelTracksPanel({ docId, isParallel }: Props) {
         <div className="space-y-2">
           {tracks.map(track => {
             const st = STATUS_MAP[track.pa_status] || STATUS_MAP['PENDING'];
+            
+            // Check if this track belongs to the logged-in user (or their assigner if acting)
+            const isMyTrack = Number(track.current_owner_id) === Number(admin?.id) || 
+              (activeTabFromSidebar === 'acting' && activeDelegations.some(d => Number(d.assigner_id) === Number(track.current_owner_id)));
+
+            const canSeeDetails = admin?.role === 'COORDINATOR' || 
+              admin?.permiss === 'admin' || 
+              admin?.permiss === 'superadmin' || 
+              isMyTrack;
+
             return (
               <div key={track.pa_id} className="bg-white rounded-lg border border-indigo-100 p-3 flex items-start gap-3">
                 <div className={`mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${st.color}`}>
@@ -83,13 +108,31 @@ export default function ParallelTracksPanel({ docId, isParallel }: Props) {
                       {st.label}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    ผู้ดำเนินการ: <span className="text-slate-700">{track.current_owner_name || track.initial_owner_name}</span>
-                    {track.current_owner_position && ` — ${track.current_owner_position}`}
-                  </div>
+                  {canSeeDetails && (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      ผู้ดำเนินการ: <span className="text-slate-700">{track.current_owner_name || track.initial_owner_name}</span>
+                      {track.current_owner_position && ` — ${track.current_owner_position}`}
+                    </div>
+                  )}
+                  {/* Consideration Result button inside the track card */}
+                  {canAct && isMyTrack && ['PENDING', 'IN_PROGRESS'].includes(track.pa_status) && (
+                    <button
+                      type="button"
+                      onClick={() => onRecordResult && onRecordResult(track.pa_id)}
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition text-xs font-semibold flex items-center gap-1 border border-emerald-200"
+                    >
+                      <i className="bx bx-check-shield"></i> ผลการพิจารณา
+                    </button>
+                  )}
+                  {track.results_detail && (
+                    <div className="mt-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/50 border border-emerald-100 rounded-lg px-2.5 py-1 flex items-center gap-1">
+                      <i className="bx bx-check-shield text-sm"></i>
+                      <span>ผลการพิจารณา: {track.results_detail}</span>
+                    </div>
+                  )}
                   {track.result_comments && (
-                    <div className="mt-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 italic">
-                      "{track.result_comments}"
+                    <div className="mt-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 italic">
+                      ความเห็น: "{track.result_comments}"
                     </div>
                   )}
                 </div>

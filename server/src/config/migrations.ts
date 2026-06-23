@@ -230,6 +230,25 @@ export async function runMigrations() {
     await db.query(`DROP TYPE IF EXISTS wf_assignee_type CASCADE;`).catch(() => {});
     console.log('✅ Dynamic Workflow Builder tables and columns removed');
 
+    // 12. Add results_id to c_parallel_assignments
+    await db.query(`ALTER TABLE c_parallel_assignments ADD COLUMN IF NOT EXISTS results_id INT REFERENCES c_results(results_id) ON DELETE SET NULL;`);
+    console.log('✅ Column results_id added to c_parallel_assignments');
+
+    // 13. Revert all SUBMITTED parallel assignments to IN_PROGRESS so they return to inbox
+    await db.query(`
+      UPDATE c_parallel_assignments 
+      SET pa_status = 'IN_PROGRESS' 
+      WHERE pa_status = 'SUBMITTED';
+    `);
+    await db.query(`
+      UPDATE c_information 
+      SET in_workflow_status = 'PENDING_PARALLEL', in_current_owner_id = NULL 
+      WHERE in_id IN (
+        SELECT DISTINCT in_id FROM c_parallel_assignments WHERE pa_status IN ('PENDING', 'IN_PROGRESS')
+      );
+    `);
+    console.log('✅ Reverted SUBMITTED tracks back to IN_PROGRESS');
+
     console.log('🎉 Database migrations completed successfully.');
   } catch (e: any) {
     console.error('❌ Database migration failed:', e.message);

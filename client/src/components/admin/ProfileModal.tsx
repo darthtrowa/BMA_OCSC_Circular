@@ -59,7 +59,7 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
   if (!show) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col animate__animated animate__zoomIn animate__faster">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h5 className="m-0 font-bold text-lg text-slate-800 flex items-center font-saochingcha">

@@ -284,10 +284,10 @@ export default function UserSection({ permiss }) {
       {/* Sidebar เพิ่ม/แก้ไข */}
       {showModal && createPortal(
         <>
-          <div className="fixed inset-0 z-[299] bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
-          <div className="fixed right-0 top-0 h-full z-[300] w-full max-w-xl flex flex-col bg-slate-50 shadow-2xl animate__animated animate__slideInRight animate__faster">
+          <div className="fixed inset-0 z-299 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="fixed right-0 top-0 h-full z-300 w-full max-w-xl flex flex-col bg-slate-50 shadow-2xl animate__animated animate__slideInRight animate__faster">
             {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50 shrink-0">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-linear-to-r from-emerald-50 to-teal-50 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
                   <i className={`bx ${editingUser ? 'bx-edit' : 'bx-user-plus'} text-xl`}></i>

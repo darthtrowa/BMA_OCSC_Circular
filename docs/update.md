@@ -1,5 +1,68 @@
 # Project Update Log
 
+## [1.5.7] - 2026-06-22
+
+### Feature: Custom-Tailored Workflow Inbox Actions for STAFF Role
+
+#### ⚙️ Database & Migration Changes
+- **Database Migration**: Added a new column `results_id` (foreign key referencing `c_results(results_id)`) to the `c_parallel_assignments` table to allow persisting independent decisions for each parallel agency track.
+- **Database Reset**: Added a migration step (Section 13) to revert all existing parallel assignment tracks in `'SUBMITTED'` state back to `'IN_PROGRESS'` and update their main document status back to `'PENDING_PARALLEL'`. This returns all previously processed tracks back to their respective STAFF inboxes.
+
+#### ⚙️ Backend API Changes
+- **ParallelWorkflowService**:
+  - Updated `submitTrackResult` method to accept and persist `resultsId` in the database, with automatic fallback mapping to existing values when called during forward actions.
+  - Added `saveTrackResult` method to persist track options/comments without moving them to a terminal state (`pa_status` remains `IN_PROGRESS`).
+  - Updated `getParallelTracks` SQL query to join `c_results` and return `results_detail` for each parallel assignment track.
+- **Workflow Routes**:
+  - Added `POST /api/admin/workflow/parallel-save` route handler to allow saving track details draft.
+  - Updated `POST /api/admin/workflow/parallel-submit` and `POST /api/admin/workflow/parallel-reject` to accept `resultsId`, `approval_context`, and `delegation_id` from the request body.
+  - Supported temporary acting credentials check (interim context) when submitting, saving, or rejecting parallel track results.
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **WorkflowInboxSection.tsx**:
+  - Removed the yellow **"แก้ไข" (Edit)** button for `STAFF` roles.
+  - Integrates the new `TrackSubmitModal` component.
+- **ParallelTracksPanel.tsx**:
+  - Moved the **"ผลการพิจารณา" (Consideration Result)** button inside each parallel track card under the operator details, specifically for the track owned by the logged-in user.
+  - Hidden operator details ("ผู้ดำเนินการ: ...") of other parallel tracks for standard users. These details are only visible if the logged-in user's role is `COORDINATOR` or security level is `admin`/`superadmin`, or if they own that specific track.
+  - Added `results_detail` display support under each division track to show their respective consideration result separately.
+- **TrackSubmitModal.tsx [NEW]**:
+  - Created a new modal to capture `resultsId` (dropdown selection) and `resultComments` (textarea feedback) and save them as drafts using the `parallelSave` API, supporting both normal and acting capacities.
+  - Keeps the task in the STAFF inbox until they explicitly forward/submit it.
+
+#### ✅ Verification
+- Rebuilt backend and client-admin frontends: `npm run build` completed successfully.
+- Restarted PM2 services (`ocsc-circular-api`, `ocsc-circular-admin`, `ocsc-circular-frontend`).
+
+## [1.5.6] - 2026-06-22
+
+### Git Synchronization: Pull Latest Code, Dependency Correction, and System Restart
+
+#### ⚙️ Deployment & Configuration Changes
+- **Git Sync**: Pulled the latest 7 commits from the `origin/main` branch on GitHub.
+- **Dependency Audit & Restoration**: Cleaned and restored local backend packages by running `npm install` in `/server`. This resolved a critical runtime dependency crash where the server failed to boot due to a missing `react-is` package requested by `@adminjs/design-system`'s styled-components tree.
+- **System Rebuilds**:
+  - Rebuilt the TypeScript Express backend: ran `npm run build` in `/server`.
+  - Rebuilt the public React client: ran `npm run build` in `/client`.
+  - Rebuilt all three frontend applications after style cleanups.
+- **Tailwind CSS v4 Migration Warnings Fix**: Cleaned up the IDE-reported Tailwind styling warnings across various components:
+  - `client-admin/src/components/admin/UserSection.tsx`: Simplified `z-[299]` to `z-299`, `z-[300]` to `z-300`, and updated `bg-gradient-to-r` to `bg-linear-to-r`.
+  - `client-admin/src/pages/LoginPage.tsx` & `client/src/pages/LoginPage.tsx`: Removed the space/underbar character from the `bg-[radial-gradient(...)]` class to conform with strict v4 parsing rules.
+  - `client-public/src/pages/PublicPage.tsx` & `client/src/pages/PublicPage.tsx`: Replaced legacy `bg-gradient-to-br` with `bg-linear-to-br`.
+  - `client/src/components/admin/CircularModal.tsx`: Simplified dynamic z-indices `z-[9999]`, `z-[40]`, `z-[60]`, and `z-[50]` to standard Tailwind v4 classes (`z-9999`, `z-40`, `z-60`, `z-50`).
+  - `client/src/components/admin/CircularSection.tsx`: Updated deprecated `break-words` to `wrap-break-word`.
+  - `client/src/components/admin/ProfileModal.tsx`: Simplified `z-[100]` to `z-100`.
+- **PM2 Service Restart**: Executed `start-production.ps1` to spin up the production process manager stack.
+  - `ocsc-circular-api` (Port 3000)
+  - `ocsc-circular-frontend` (Port 5173)
+  - `ocsc-circular-admin` (Port 5175)
+
+#### ✅ Verification
+- Checked API endpoint `http://localhost:3000/health` -> Successfully returns `{ "status": "ok" }`.
+- Checked Frontend SPA routing via port 5173 -> Successfully active and serving static pages.
+- Checked Admin panel routing via port 5175 -> Successfully active.
+- Successfully built and compiled all three Vite frontend configurations with zero style/linter warnings.
+
 ## [1.5.5] - 2026-06-22
 
 ### Deployment & Routing: Backend Subdirectory Routing Compilation & PM2 Restart

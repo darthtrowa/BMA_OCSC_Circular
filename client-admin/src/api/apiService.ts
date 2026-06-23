@@ -270,13 +270,38 @@ export const workflowApi = {
     return data;
   },
 
-  parallelSubmit: async (docId: number, paId: number, resultComments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/parallel-submit', { docId, paId, resultComments });
+  parallelSubmit: async (docId: number, paId: number, resultComments?: string, resultsId?: number | null, approvalContext?: 'SELF' | 'ACTING', delegationId?: number | null): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-submit', { 
+      docId, 
+      paId, 
+      resultComments, 
+      resultsId, 
+      approval_context: approvalContext, 
+      delegation_id: delegationId 
+    });
     return data;
   },
 
-  parallelReject: async (docId: number, paId: number, comments?: string): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/parallel-reject', { docId, paId, comments });
+  parallelSave: async (docId: number, paId: number, resultComments?: string, resultsId?: number | null, approvalContext?: 'SELF' | 'ACTING', delegationId?: number | null): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-save', { 
+      docId, 
+      paId, 
+      resultComments, 
+      resultsId, 
+      approval_context: approvalContext, 
+      delegation_id: delegationId 
+    });
+    return data;
+  },
+
+  parallelReject: async (docId: number, paId: number, comments?: string, approvalContext?: 'SELF' | 'ACTING', delegationId?: number | null): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/parallel-reject', { 
+      docId, 
+      paId, 
+      comments, 
+      approval_context: approvalContext, 
+      delegation_id: delegationId 
+    });
     return data;
   },
 

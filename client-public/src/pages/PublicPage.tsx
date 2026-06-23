@@ -182,7 +182,7 @@ export default function PublicPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#eef7f2] to-[#dcfce7] font-saochingcha text-slate-800 pb-12">
+    <div className="min-h-screen bg-linear-to-br from-[#eef7f2] to-[#dcfce7] font-saochingcha text-slate-800 pb-12">
       {/* Header */}
       <header className="py-4 px-4 bg-white/50 backdrop-blur-md shadow-sm sticky top-0 z-40">
         <div className="container mx-auto">

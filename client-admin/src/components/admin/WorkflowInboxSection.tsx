@@ -5,6 +5,7 @@ import WorkflowHistoryModal from './WorkflowHistoryModal';
 import CircularModal from './CircularModal';
 import ParallelAssignModal from './ParallelAssignModal';
 import ParallelTracksPanel from './ParallelTracksPanel';
+import TrackSubmitModal from './TrackSubmitModal';
 import { adminApi, workflowApi, delegationApi, DelegationItem } from '../../api/apiService';
 
 interface WorkflowInboxSectionProps {
@@ -32,6 +33,8 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
   const [viewItem, setViewItem] = useState<any>(null);
   const [showParallelModal, setShowParallelModal] = useState(false);
   const [parallelDocId, setParallelDocId] = useState<number | null>(null);
+  const [showTrackSubmitModal, setShowTrackSubmitModal] = useState(false);
+  const [selectedPaId, setSelectedPaId] = useState<number | null>(null);
 
   // Active delegations ของ user ที่ login — ใช้แสดง Acting Inbox และส่งเข้า WorkflowActionModal
   const [activeDelegations, setActiveDelegations] = useState<DelegationItem[]>([]);
@@ -184,8 +187,27 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
         <div className="text-xs text-slate-500 mt-1">{item.in_doc_date ? `ลงวันที่ ${item.in_doc_date}` : ''}</div>
       </td>
       <td className="px-6 py-4 align-top">
-        <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
-        <ParallelTracksPanel docId={item.in_id} isParallel={!!item.in_is_parallel} />
+        <ParallelTracksPanel 
+          docId={item.in_id} 
+          isParallel={!!item.in_is_parallel} 
+          canAct={canAct}
+          activeDelegations={activeDelegations}
+          activeTabFromSidebar={activeTabFromSidebar}
+          onRecordResult={(paId) => {
+            setSelectedDocId(item.in_id);
+            setSelectedPaId(paId);
+            setActionContext(activeTabFromSidebar === 'acting' ? 'ACTING' : 'SELF');
+            if (activeTabFromSidebar === 'acting') {
+              const matchedDelegation = activeDelegations.find(
+                d => checkIsCurrentOwner(item, d.assigner_id)
+              );
+              setSelectedTaskDelegationId(matchedDelegation?.delegation_id ?? null);
+            } else {
+              setSelectedTaskDelegationId(null);
+            }
+            setShowTrackSubmitModal(true);
+          }}
+        />
       </td>
       <td className="px-6 py-4 align-top">
         {renderStatusBadge(item)}
@@ -206,15 +228,14 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
             <i className="bx bx-history"></i> ประวัติ
           </button>
 
-          {/* Pencil edit button: shown for COORDINATOR on DRAFT/REJECTED, and STAFF on active tasks */}
+          {/* Pencil edit button: shown for COORDINATOR on DRAFT/REJECTED */}
           {canAct && item.in_workflow_status !== 'COMPLETED' && (
-            (admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status)) ||
-            (admin?.role === 'STAFF')
+            admin?.role === 'COORDINATOR' && ['DRAFT', 'REJECTED'].includes(item.in_workflow_status)
           ) && (
             <button
               className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition text-xs font-semibold flex items-center gap-1"
               onClick={() => { setEditItem(item); setShowEditModal(true); }}
-              title={admin?.role === 'STAFF' ? "บันทึกข้อมูลพิจารณา" : "แก้ไขข้อมูลก่อนส่ง"}
+              title="แก้ไขข้อมูลก่อนส่ง"
             >
               <i className="bx bx-pencil"></i> แก้ไข
             </button>
@@ -353,7 +374,13 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
                     </td>
                     <td className="px-6 py-4 align-top">
                       <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
-                      <ParallelTracksPanel docId={item.in_id} isParallel={!!item.in_is_parallel} />
+                      <ParallelTracksPanel 
+                        docId={item.in_id} 
+                        isParallel={!!item.in_is_parallel} 
+                        canAct={false}
+                        activeDelegations={activeDelegations}
+                        activeTabFromSidebar={activeTabFromSidebar}
+                      />
                     </td>
                     <td className="px-6 py-4 align-top">
                       {renderStatusBadge(item)}
@@ -439,7 +466,20 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
                       </td>
                       <td className="px-6 py-4 align-top">
                         <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
-                        <ParallelTracksPanel docId={item.in_id} isParallel={!!item.in_is_parallel} />
+                        <ParallelTracksPanel 
+                          docId={item.in_id} 
+                          isParallel={!!item.in_is_parallel} 
+                          canAct={true}
+                          activeDelegations={activeDelegations}
+                          activeTabFromSidebar={activeTabFromSidebar}
+                          onRecordResult={(paId) => {
+                            setSelectedDocId(item.in_id);
+                            setSelectedPaId(paId);
+                            setActionContext('ACTING');
+                            setSelectedTaskDelegationId(item._delegationId);
+                            setShowTrackSubmitModal(true);
+                          }}
+                        />
                       </td>
                       <td className="px-6 py-4 align-top">
                         {renderStatusBadge(item)}
@@ -577,6 +617,18 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
           mode="view"
         />
       )}
+
+      <TrackSubmitModal
+        isOpen={showTrackSubmitModal}
+        docId={selectedDocId}
+        preSelectedPaId={selectedPaId}
+        allData={allData}
+        actionContext={actionContext}
+        delegationId={selectedTaskDelegationId}
+        activeDelegations={activeDelegations}
+        onClose={() => { setShowTrackSubmitModal(false); setSelectedDocId(null); setSelectedPaId(null); }}
+        onSuccess={onReload}
+      />
     </div>
   );
 }
