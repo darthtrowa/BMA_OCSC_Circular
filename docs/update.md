@@ -1,5 +1,17 @@
 # Project Update Log
 
+## [1.5.8] - 2026-06-23
+
+### Hotfix: Fix TypeScript Type Assignability and Tailwind CSS Class Warning
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **TrackSubmitModal.tsx**:
+  - Explicitly typed `checkId` to `string | number | undefined` (originally inferred as `string | undefined` from `admin?.id`), resolving a compiler error when assigning `matched.assigner_id` (a `number | undefined`) to `checkId` at line 56.
+  - Simplified the custom z-index style `z-[9999]` to `z-9999` to align with Tailwind CSS v4 practices and address a style lint warning.
+
+#### ✅ Verification
+- Rebuilt client-admin frontend using `npm run build`, which compiled successfully with zero compiler/style errors or warnings.
+
 ## [1.5.7] - 2026-06-22
 
 ### Feature: Custom-Tailored Workflow Inbox Actions for STAFF Role
@@ -34,7 +46,17 @@
 - Rebuilt backend and client-admin frontends: `npm run build` completed successfully.
 - Restarted PM2 services (`ocsc-circular-api`, `ocsc-circular-admin`, `ocsc-circular-frontend`).
 
-## [1.5.6] - 2026-06-22
+## [1.5.6] - 2026-06-23
+
+### Diagnostics & Hotfix: Server Resource Loading and Service Restoration
+
+#### ⚙️ System Recovery & Actions
+- **Service Outage Resolution**: Diagnosed and resolved the "failed to load resource" issue where both the BMA logos and database API failed to load. The root cause was that all PM2 application processes (API, public client, admin client) had terminated.
+- **Database Verification**: Verified PostgreSQL database connection and table integrity using `diagnose_db.js` (successfully connected to `ocsc_circular`).
+- **Temporary Service Restoration**: Started Node.js servers manually (API on port 3000, public client on port 5173, admin client on port 5175) to verify routing and functionality. Confirmed that queries and image assets serve correctly through IIS Reverse Proxy (Port 80).
+- **Persistent Recovery Action**: Outlined steps for the user to execute `restart-production.bat` as Administrator to spin up these services under the elevated PM2 system/daemon context for persistent availability.
+
+## [1.5.6-git] - 2026-06-22
 
 ### Git Synchronization: Pull Latest Code, Dependency Correction, and System Restart
 

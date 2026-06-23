@@ -49,7 +49,7 @@ export default function TrackSubmitModal({
         const list = res.data || [];
         
         // Determine the user ID to check (either assigner if acting, or current logged-in user)
-        let checkId = admin?.id;
+        let checkId: string | number | undefined = admin?.id;
         if (actionContext === 'ACTING' && delegationId) {
           const matched = activeDelegations.find(d => Number(d.delegation_id) === Number(delegationId));
           if (matched) {
@@ -118,7 +118,7 @@ export default function TrackSubmitModal({
   if (!isOpen || !docId) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-emerald-50">
