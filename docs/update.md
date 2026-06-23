@@ -1,5 +1,15 @@
 # Project Update Log
 
+## [1.5.6] - 2026-06-23
+
+### Diagnostics & Hotfix: Server Resource Loading and Service Restoration
+
+#### ⚙️ System Recovery & Actions
+- **Service Outage Resolution**: Diagnosed and resolved the "failed to load resource" issue where both the BMA logos and database API failed to load. The root cause was that all PM2 application processes (API, public client, admin client) had terminated.
+- **Database Verification**: Verified PostgreSQL database connection and table integrity using `diagnose_db.js` (successfully connected to `ocsc_circular`).
+- **Temporary Service Restoration**: Started Node.js servers manually (API on port 3000, public client on port 5173, admin client on port 5175) to verify routing and functionality. Confirmed that queries and image assets serve correctly through IIS Reverse Proxy (Port 80).
+- **Persistent Recovery Action**: Outlined steps for the user to execute `restart-production.bat` as Administrator to spin up these services under the elevated PM2 system/daemon context for persistent availability.
+
 ## [1.5.5] - 2026-06-22
 
 ### Deployment & Routing: Backend Subdirectory Routing Compilation & PM2 Restart
