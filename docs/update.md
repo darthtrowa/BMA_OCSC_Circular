@@ -1,5 +1,34 @@
 # Project Update Log
 
+## [1.5.9] - 2026-06-23
+
+### Feature: Rename URL Base Path to /bma_ocsc_circular/
+
+#### ⚙️ Deployment & Configuration Changes
+- **IIS Reverse Proxy Configurations**:
+  - Updated `web.config` and frontend `public/web.config` files to rewrite target paths from `/ocsc-circular/...` to `/bma_ocsc_circular/...`.
+- **Vite & Client Configurations**:
+  - Set `base` configuration option to `/bma_ocsc_circular/` in Vite configs.
+  - Updated environment settings `VITE_API_BASE_URL` to `"/bma_ocsc_circular"`.
+  - Updated React Router basename settings in `App.tsx` files.
+- **Static Servers**:
+  - Updated `BASE_PATH` constants and proxy filter replacements in `client/serve.js` and `client-admin/server.mjs`.
+- **Redirections**:
+  - Replaced hardcoded references to `/ocsc-circular/` in UI elements, sidebar navigation, and auth failure redirects in frontend codes.
+
+#### ⚙️ Backend API Changes
+- **AdminJS Dashboard Paths**:
+  - Updated `rootPath`, `loginPath`, and `logoutPath` to `/bma_ocsc_circular/internal-admin/...`.
+  - Updated custom dashboard component APIs and log paths to align with renamed PM2 services.
+  - Updated fetch paths in AdminJS custom React components.
+
+#### ⚙️ Process & Startup Orchestration
+- **ecosystem.config.js**: Renamed PM2 app processes to `bma-ocsc-circular-api`, `bma-ocsc-circular-frontend`, and `bma-ocsc-circular-admin`.
+- **start-circular.ps1**: Updated printed local startup logs.
+
+#### ✅ Verification
+- Rebuilt backend (`tsc`) and all three React Vite applications successfully with zero errors.
+
 ## [1.5.8] - 2026-06-23
 
 ### Hotfix: Fix TypeScript Type Assignability and Tailwind CSS Class Warning
