@@ -12,6 +12,7 @@ interface Track {
   current_owner_position: string;
   result_comments: string;
   results_detail?: string;
+  results_id?: number | null;
 }
 
 interface Props {
@@ -28,6 +29,50 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: string }>
   IN_PROGRESS: { label: 'กำลังดำเนินการ',    color: 'bg-blue-100 text-blue-700',     icon: 'bx-loader-alt' },
   SUBMITTED:   { label: 'ส่งผลแล้ว',          color: 'bg-emerald-100 text-emerald-700', icon: 'bx-check-circle' },
   REJECTED:    { label: 'ตีกลับ',             color: 'bg-red-100 text-red-700',       icon: 'bx-x-circle' },
+};
+
+const getResultStyle = (resultsId?: number | null, text?: string) => {
+  let id = resultsId;
+  if (!id && text) {
+    if (text.includes('นำมาใช้') && !text.includes('ปรับ')) id = 2;
+    else if (text.includes('ปรับ')) id = 4;
+    else if (text.includes('ไม่ใช้') || text.includes('ไม่นำมาใช้')) id = 5;
+    else if (text.includes('รอผล')) id = 12;
+    else if (text.includes('ตกหล่น')) id = 11;
+  }
+
+  switch (id) {
+    case 2: // นำมาใช้
+      return {
+        colorClass: 'text-emerald-700 bg-emerald-50/50 border-emerald-100',
+        iconClass: 'bx-check-double',
+      };
+    case 4: // นำมาปรับใช้
+      return {
+        colorClass: 'text-amber-700 bg-amber-50/50 border-amber-100',
+        iconClass: 'bx-edit-alt',
+      };
+    case 5: // ไม่ใช้
+      return {
+        colorClass: 'text-red-700 bg-red-50/50 border-red-100',
+        iconClass: 'bx-x-circle',
+      };
+    case 12: // รอผล
+      return {
+        colorClass: 'text-orange-700 bg-orange-50/50 border-orange-100',
+        iconClass: 'bx-time-five',
+      };
+    case 11: // ตกหล่น
+      return {
+        colorClass: 'text-slate-700 bg-slate-50/50 border-slate-100',
+        iconClass: 'bx-error-circle',
+      };
+    default:
+      return {
+        colorClass: 'text-slate-700 bg-slate-50/50 border-slate-100',
+        iconClass: 'bx-check-shield',
+      };
+  }
 };
 
 export default function ParallelTracksPanel({ 
@@ -115,21 +160,24 @@ export default function ParallelTracksPanel({
                     </div>
                   )}
                   {/* Consideration Result button inside the track card */}
-                  {canAct && isMyTrack && ['PENDING', 'IN_PROGRESS'].includes(track.pa_status) && (
+                  {canAct && isMyTrack && admin?.role === 'STAFF' && ['PENDING', 'IN_PROGRESS'].includes(track.pa_status) && (
                     <button
                       type="button"
                       onClick={() => onRecordResult && onRecordResult(track.pa_id)}
-                      className="mt-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition text-xs font-semibold flex items-center gap-1 border border-emerald-200"
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition text-xs font-semibold flex items-center gap-1 border border-blue-200"
                     >
-                      <i className="bx bx-check-shield"></i> ผลการพิจารณา
+                      <i className="bx bx-check-shield"></i> บันทึกผลการพิจารณา
                     </button>
                   )}
-                  {track.results_detail && (
-                    <div className="mt-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/50 border border-emerald-100 rounded-lg px-2.5 py-1 flex items-center gap-1">
-                      <i className="bx bx-check-shield text-sm"></i>
-                      <span>ผลการพิจารณา: {track.results_detail}</span>
-                    </div>
-                  )}
+                  {track.results_detail && (() => {
+                    const resStyle = getResultStyle(track.results_id, track.results_detail);
+                    return (
+                      <div className={`mt-1.5 text-xs font-semibold border rounded-lg px-2.5 py-1 flex items-center gap-1 ${resStyle.colorClass}`}>
+                        <i className={`bx ${resStyle.iconClass} text-sm`}></i>
+                        <span>ผลการพิจารณา: {track.results_detail}</span>
+                      </div>
+                    );
+                  })()}
                   {track.result_comments && (
                     <div className="mt-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 italic">
                       ความเห็น: "{track.result_comments}"

@@ -119,10 +119,8 @@ export class WorkflowService {
         if (paRes.rows.length > 0) {
           const paId = paRes.rows[0].pa_id;
           
-          if (newFlowState) {
-            await client.query("UPDATE c_information SET in_flow_state = $1 WHERE in_id = $2", [newFlowState, docId]);
-          }
-
+          // ในแบบ Parallel เราจะไม่เปลี่ยนแปลง flow_state ของเอกสารหลักระหว่างทาง 
+          // เพื่อป้องกันไม่ให้การมอบหมายงานใน Track หนึ่งไปกระทบกับสถานะ 'รับเข้า (in)' ของ Track อื่นๆ
           await client.query("COMMIT");
           
           const { ParallelWorkflowService } = await import('./parallelWorkflowService.js');
@@ -195,10 +193,8 @@ export class WorkflowService {
         if (paRes.rows.length > 0) {
           const paId = paRes.rows[0].pa_id;
           
-          if (newFlowState) {
-            await client.query("UPDATE c_information SET in_flow_state = $1 WHERE in_id = $2", [newFlowState, docId]);
-          }
-
+          // ในแบบ Parallel เราจะไม่เปลี่ยนแปลง flow_state ของเอกสารหลักระหว่างการตีกลับภายใน Track 
+          // เพื่อไม่ให้กระทบกับสถานะ 'รับเข้า (in)' ของ Track อื่นๆ
           await client.query("COMMIT");
           
           const { ParallelWorkflowService } = await import('./parallelWorkflowService.js');
@@ -405,7 +401,9 @@ export class WorkflowService {
       user = delegatedUser;
     } else {
       const userRes = await db.query(`
-        SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type
+        SELECT a.a_id, a.a_name, a.a_role, 
+               COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
+               a.a_agency_id, ag.parent_ag_id, ag.ag_type
         FROM admin a
         LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
         WHERE a.a_id = $1
@@ -426,7 +424,9 @@ export class WorkflowService {
     const currentRank = roleRank[user.a_role] ?? 0;
 
     const allUsersRes = await db.query(`
-      SELECT a.a_id, a.a_name, a.a_role, a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
+      SELECT a.a_id, a.a_name, a.a_role, 
+             COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
+             a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
       FROM admin a
       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
       WHERE a.a_role IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
@@ -438,71 +438,216 @@ export class WorkflowService {
     let autoUpAssignee = null;
     let manualAssignees: any[] = [];
 
-    // Auto UP Logic: Traverse up the tree starting from the user's CURRENT agency
-    if (flowState !== 'in') {
-      let currentLookupAgency = user.a_agency_id;
-      while (currentLookupAgency) {
-        const higherRankUsers = allUsers.filter(u => 
-          (u.a_agency_id === currentLookupAgency || (u.parent_ag_id === currentLookupAgency && u.ag_type === 'POSITION')) &&
-          (roleRank[u.a_role] ?? 0) > currentRank
-        );
-
-        if (higherRankUsers.length > 0) {
-          higherRankUsers.sort((a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0));
-          autoUpAssignee = higherRankUsers[0];
-          break;
+    if (user.a_role === 'COORDINATOR') {
+      const groupAgencyId = user.ag_type === 'POSITION' ? user.parent_ag_id : user.a_agency_id;
+      if (groupAgencyId) {
+        // Query group's normal GRP_LEADERs
+        const grpRes = await db.query(`
+          SELECT a.a_id, a.a_name, a.a_role, 
+                 COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
+                 a.a_agency_id, ag.parent_ag_id, ag.ag_type
+          FROM admin a
+          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+          WHERE a.a_role = 'GRP_LEADER' AND (a.a_agency_id = $1 OR ag.parent_ag_id = $1)
+        `, [groupAgencyId]);
+        
+        const grpLeaders = grpRes.rows;
+        if (grpLeaders.length > 0) {
+          autoUpAssignee = grpLeaders[0];
         }
 
-        const parentRes = await db.query("SELECT parent_ag_id FROM c_agency WHERE ag_id = $1", [currentLookupAgency]);
-        if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
-          break;
+        // Query active GRP_LEADER delegations in this group
+        const actingRes = await db.query(`
+          SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
+                 a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type
+          FROM c_workflow_delegations d
+          JOIN admin a ON a.a_id = d.assignee_id
+          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+          WHERE d.delegated_role = 'GRP_LEADER' 
+            AND d.is_active = true
+            AND (d.assigner_id IN (SELECT a_id FROM admin WHERE a_agency_id = $1 OR (SELECT parent_ag_id FROM c_agency WHERE ag_id = a.a_agency_id) = $1)
+                 OR d.assigner_ag_id IN (SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1))
+        `, [groupAgencyId]);
+        
+        const actingGrpLeaders = actingRes.rows;
+        
+        const seenIds = new Set();
+        const finalManual = [];
+        for (const u of grpLeaders) {
+          if (!seenIds.has(u.a_id)) {
+            seenIds.add(u.a_id);
+            finalManual.push(u);
+          }
         }
-        currentLookupAgency = parentRes.rows[0].parent_ag_id;
+        for (const u of actingGrpLeaders) {
+          if (!seenIds.has(u.a_id)) {
+            seenIds.add(u.a_id);
+            finalManual.push(u);
+          }
+        }
+        manualAssignees = finalManual;
       }
+    } else if (user.a_role === 'GRP_LEADER') {
+      // Find HR_DIRECTOR
+      const hrRes = await db.query(`
+        SELECT a.a_id, a.a_name, a.a_role, 
+               COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
+               a.a_agency_id, ag.parent_ag_id, ag.ag_type
+        FROM admin a
+        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+        WHERE a.a_role = 'HR_DIRECTOR'
+      `);
+      const hrDirectors = hrRes.rows;
+      if (hrDirectors.length > 0) {
+        autoUpAssignee = hrDirectors[0];
+      }
+
+      // Query active delegations for HR_DIRECTOR
+      const actingHrRes = await db.query(`
+        SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
+               a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type
+        FROM c_workflow_delegations d
+        JOIN admin a ON a.a_id = d.assignee_id
+        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
+        WHERE d.delegated_role = 'HR_DIRECTOR' 
+          AND d.is_active = true
+      `);
+      const actingHrDirectors = actingHrRes.rows;
+
+      const seenIds = new Set();
+      const finalManual = [];
+      for (const u of hrDirectors) {
+        if (!seenIds.has(u.a_id)) {
+          seenIds.add(u.a_id);
+          finalManual.push(u);
+        }
+      }
+      for (const u of actingHrDirectors) {
+        if (!seenIds.has(u.a_id)) {
+          seenIds.add(u.a_id);
+          finalManual.push(u);
+        }
+      }
+      manualAssignees = finalManual;
+    } else {
+      // Auto UP Logic: Traverse up the tree starting from the user's CURRENT agency
+      if (flowState !== 'in') {
+        let currentLookupAgency = user.a_agency_id;
+        while (currentLookupAgency) {
+          const higherRankUsers = allUsers.filter(u => 
+            (u.a_agency_id === currentLookupAgency || (u.parent_ag_id === currentLookupAgency && u.ag_type === 'POSITION')) &&
+            (roleRank[u.a_role] ?? 0) > currentRank
+          );
+
+          if (higherRankUsers.length > 0) {
+            higherRankUsers.sort((a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0));
+            autoUpAssignee = higherRankUsers[0];
+            break;
+          }
+
+          const parentRes = await db.query("SELECT parent_ag_id FROM c_agency WHERE ag_id = $1", [currentLookupAgency]);
+          if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
+            break;
+          }
+          currentLookupAgency = parentRes.rows[0].parent_ag_id;
+        }
+      }
+
+      // Manual Logic (Cross or Down)
+      // Fetch descendant agencies for Forward Down
+      const startAgencyId = user.ag_type === 'POSITION' && user.parent_ag_id 
+        ? user.parent_ag_id 
+        : user.a_agency_id;
+
+      const descRes = await db.query(`
+        WITH RECURSIVE agency_tree AS (
+          SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1
+          UNION ALL
+          SELECT a.ag_id FROM c_agency a
+          INNER JOIN agency_tree t ON a.parent_ag_id = t.ag_id
+        )
+        SELECT ag_id FROM agency_tree
+      `, [startAgencyId]);
+      const childAgencyIds = descRes.rows.map((r: any) => Number(r.ag_id));
+
+      // Fetch parent mapping and types of all agencies for SEC_DIRECTOR filter logic
+      const agencyParentsRes = await db.query("SELECT ag_id, parent_ag_id, ag_type FROM c_agency");
+      const parentMap = new Map<number, number | null>();
+      const typeMap = new Map<number, string>();
+      for (const row of agencyParentsRes.rows) {
+        parentMap.set(Number(row.ag_id), row.parent_ag_id ? Number(row.parent_ag_id) : null);
+        typeMap.set(Number(row.ag_id), row.ag_type);
+      }
+
+      // Identify all agencies headed by a SEC_DIRECTOR
+      const secDirectorAgencies = new Set<number>();
+      for (const u of allUsers) {
+        if (u.a_role === 'SEC_DIRECTOR') {
+          const actualAgId = u.ag_type === 'POSITION' ? u.parent_ag_id : u.a_agency_id;
+          if (actualAgId) secDirectorAgencies.add(Number(actualAgId));
+        }
+      }
+      if (user.a_role === 'SEC_DIRECTOR') {
+        const actualAgId = user.ag_type === 'POSITION' ? user.parent_ag_id : user.a_agency_id;
+        if (actualAgId) secDirectorAgencies.add(Number(actualAgId));
+      }
+
+      manualAssignees = allUsers.filter(u => {
+        const uRank = roleRank[u.a_role] ?? 0;
+        
+        if (flowState === 'out') {
+          if (user.a_role === 'DIV_DIRECTOR') {
+            return u.a_role === 'HR_DIRECTOR';
+          } else if (user.a_role === 'HR_DIRECTOR') {
+            if (uRank < currentRank) return false;
+          } else {
+            if (uRank <= currentRank) return false;
+          }
+        } else if (flowState === 'in') {
+          if (uRank >= currentRank) return false;
+        }
+
+        // 1. Cross-Agency Forwarding (Only Rank 4 to Rank 4)
+        let isMatch = false;
+        if (currentRank === 4 && uRank === 4) {
+          isMatch = true;
+        }
+
+        // 2. Forward Down (Must be within own or child agencies)
+        if (childAgencyIds.includes(Number(u.a_agency_id))) {
+          if (uRank < currentRank) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) return false;
+
+        // Filter out users under a SEC_DIRECTOR, unless they are a GRP_LEADER at structural level 2 (โครงสร้างส่วนราชการลำดับที่ 2)
+        const uActualAgId = u.ag_type === 'POSITION' ? u.parent_ag_id : u.a_agency_id;
+        if (uActualAgId) {
+          let level = 1;
+          let curr = Number(uActualAgId);
+          const path: number[] = [];
+          while (curr) {
+            path.push(curr);
+            const parent = parentMap.get(curr);
+            if (!parent) break;
+            level++;
+            curr = parent;
+          }
+
+          const isUnderSecDirector = u.a_role !== 'SEC_DIRECTOR' && path.some(agId => secDirectorAgencies.has(agId));
+          if (isUnderSecDirector) {
+            if (u.a_role === 'GRP_LEADER' && level === 2) {
+              return true;
+            }
+            return false;
+          }
+        }
+
+        return true;
+      });
     }
-
-    // Manual Logic (Cross or Down)
-    // Fetch descendant agencies for Forward Down
-    const startAgencyId = user.ag_type === 'POSITION' && user.parent_ag_id 
-      ? user.parent_ag_id 
-      : user.a_agency_id;
-
-    const descRes = await db.query(`
-      WITH RECURSIVE agency_tree AS (
-        SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1
-        UNION ALL
-        SELECT a.ag_id FROM c_agency a
-        INNER JOIN agency_tree t ON a.parent_ag_id = t.ag_id
-      )
-      SELECT ag_id FROM agency_tree
-    `, [startAgencyId]);
-    const childAgencyIds = descRes.rows.map((r: any) => Number(r.ag_id));
-
-    manualAssignees = allUsers.filter(u => {
-      const uRank = roleRank[u.a_role] ?? 0;
-      
-      if (flowState === 'out') {
-        if (user.a_role === 'DIV_DIRECTOR') {
-          return u.a_role === 'HR_DIRECTOR';
-        } else if (user.a_role === 'HR_DIRECTOR') {
-          if (uRank < currentRank) return false;
-        } else {
-          if (uRank <= currentRank) return false;
-        }
-      } else if (flowState === 'in') {
-        if (uRank >= currentRank) return false;
-      }
-
-      // 1. Cross-Agency Forwarding (Only Rank 4 to Rank 4)
-      if (currentRank === 4 && uRank === 4) return true;
-
-      // 2. Forward Down (Must be within own or child agencies)
-      if (childAgencyIds.includes(Number(u.a_agency_id))) {
-        if (uRank < currentRank) return true;
-      }
-
-      return false;
-    });
 
     // Acting Delegation injection
     const processActing = async (targetUser: any) => {
@@ -511,8 +656,8 @@ export class WorkflowService {
         SELECT d.delegation_id, d.assignee_id, a.a_name as acting_name, a.a_position as acting_position, a.a_role as acting_role
         FROM c_workflow_delegations d
         JOIN admin a ON a.a_id = d.assignee_id
-        WHERE d.assigner_id = $1 AND d.is_active = true
-      `, [targetUser.a_id]);
+        WHERE (d.assigner_id = $1 OR (d.assigner_id IS NULL AND d.assigner_ag_id = $2)) AND d.is_active = true
+      `, [targetUser.a_id, targetUser.a_agency_id]);
       
       if (actingRes.rows.length > 0) {
         const acting = actingRes.rows[0];

@@ -1,5 +1,74 @@
 # Project Update Log
 
+## [1.6.3] - 2026-06-24
+
+### Feature: Isolated Workflow Simulator Page
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **Sidebar.tsx**:
+  - Added the "เครื่องมือจำลอง Workflow" (Workflow Simulator) menu item under the main list of pages for admins, superadmins, and coordinators.
+- **DashboardPage.tsx**:
+  - Mounted the new `<WorkflowSimulatorSection />` component.
+  - Excluded the `sec-simulator` section from rendering the production `<DashboardStats />` cards.
+- **WorkflowSimulatorSection.tsx [NEW]**:
+  - Created a comprehensive frontend-only simulator component.
+  - Used standard browser `localStorage` for absolute data isolation (test records are never saved in the database or mixed with production records).
+  - Fetched active users and agencies list from the backend to ensure realistic organizational simulation.
+  - Implemented the full BMA circular review state machine, including standard forwarding, delegation, rejects, parallel assignments/tracking, track submissions, and final COORDINATOR closing.
+  - Supported end-to-end multi-role simulation on a single screen without logging in/out, featuring simulated active identity switching and auto-switch toggles.
+  - Added reset and delete controls.
+
+## [1.6.2] - 2026-06-24
+
+### Documentation: Cline SDK Chatbot Integration Plan
+
+#### ⚙️ Integration & Documentation Changes
+- **Chatbot.md [NEW]**:
+  - Created a new documentation file at [docs/Chatbot.md](file:///e:/BMA_OCSC_Circular/docs/Chatbot.md) detailing the architectural plan and technical steps for integrating the `Cline_Free_Model_Chat` repository with the CSC Circular System.
+  - Outlined three main use cases: using Cline SDK as an alternative PDF summarizer (DeepSeek), building a RAG-based AI Circular Assistant using pgvector, and utilizing the CLI/Web GUI as a developer AI assistant.
+  - Provided code snippets demonstrating how to integrate `@cline/sdk` within the Express backend using standard ESM imports.
+
+## [1.6.1] - 2026-06-23
+
+### Feature: Filter Out Manual Assignees under SEC_DIRECTOR
+
+#### ⚙️ Backend API Changes
+- **workflowService.ts**:
+  - In `getNextAssignees`, added logic to fetch parent-child mapping for all agencies.
+  - Dynamically identified all agencies headed by a user with role `'SEC_DIRECTOR'`.
+  - Filtered the `manualAssignees` list to exclude any user whose agency is a descendant of a `SEC_DIRECTOR`'s agency (specifically `นายชัยพร รัตนดิลก ณ ภูเก็ต` and `นางสาวสุพิชญา ตันติวงส์`).
+  - Added an exception to keep any `GRP_LEADER` who is located at structural level 2 of the agency hierarchy (`level === 2`).
+
+## [1.6.0] - 2026-06-23
+
+### Bug Fix: Resolved Parallel Workflow flow_state Overwriting issue
+
+#### ⚙️ Backend & Database Operations
+- **Database Maintenance (ว5/2569 - ID 513)**:
+  - Rolled back document `513` (`นร 1008/ว 5`) status back to `'PENDING_HR_APPROVAL'` and restored the owner to `HR_Director` (a_id = 4).
+  - Deleted the active parallel assignment tracks (2 rows) from the `c_parallel_assignments` table.
+  - Cleared all subsequent workflow history logs (11 rows) in `c_workflow_history` created after the `GRP_LEADER` forwarded the document to the `HR_DIRECTOR` (wh_id > 28).
+- **workflowService.ts**:
+  - Prevented internal track actions (delegating or rejecting within a track) under Parallel Assignment mode (`isParallel = true`) from updating the global `in_flow_state` on `c_information` to `'out'`. This prevents different parallel tracks from overwriting the main document flow status for other divisions, keeping the state as `'in'` (รับเข้า) for the active divisions.
+  - Updated the SQL query in `getNextAssignees` to coalesce `a_position` with the name of the `POSITION` node (`ag.ag_name`) when `ag.ag_type = 'POSITION'`. This resolves the issue where positions under the new hierarchy model were displaying generic roles instead of the actual position name.
+
+### Feature: Update Parallel Assignment Result Button and Badge Styling
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **ParallelTracksPanel.tsx**:
+  - Renamed the "ผลการพิจารณา" button inside each parallel track card to "บันทึกผลการพิจารณา".
+  - Changed the button color scheme from green (`bg-emerald-50`) to blue (`bg-blue-50 text-blue-600 hover:bg-blue-100 border-blue-200`).
+  - Restricted the visibility of the "บันทึกผลการพิจารณา" button to users with the `STAFF` role only.
+  - Refactored the completed track's consideration result badge style to render color-coded background, text, borders, and icons dynamically corresponding to the system's statcard mapping (Green for "นำมาใช้", Orange for "นำมาปรับใช้", Red for "ไม่ใช้/ไม่นำมาใช้", Yellow/Orange for "รอผล", and Grey for "ตกหล่น").
+
+### Documentation: Updated Deployment Guide and PM2 Recovery Steps
+
+#### ⚙️ Deployment & Documentation Changes
+- **DEPLOYMENT.md**:
+  - Overwrote and updated the deployment instructions to match the renamed PM2 process architecture (`bma-ocsc-circular-api`, `bma-ocsc-circular-frontend`, and `bma-ocsc-circular-admin`).
+  - Added a troubleshooting section specifically detailing how to resolve port conflicts by deleting the legacy `ocsc-circular-*` PM2 processes.
+  - Documented setup dependencies installation, TypeScript backend build steps, and environment configuration options for server deployment.
+
 ## [1.5.9] - 2026-06-23
 
 ### Feature: Rename URL Base Path to /bma_ocsc_circular/

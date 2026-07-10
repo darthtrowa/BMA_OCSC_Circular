@@ -12,6 +12,7 @@ import PasswordModal from '../components/admin/PasswordModal'
 import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
 import BotQueueSection from '../components/admin/BotQueueSection'
 import WorkflowInboxSection from '../components/admin/WorkflowInboxSection'
+import WorkflowSimulatorSection from '../components/admin/WorkflowSimulatorSection'
 import AgencyTreeSection from '../components/admin/AgencyTreeSection'
 import Swal from 'sweetalert2'
 
@@ -227,7 +228,7 @@ export default function DashboardPage() {
                 loading={loading} 
               />
             )}
-            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && activeSection !== 'sec-workflow-inbox' && activeSection !== 'sec-agency-structure' && (
+            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && activeSection !== 'sec-workflow-inbox' && activeSection !== 'sec-agency-structure' && activeSection !== 'sec-simulator' && (
               <div className="mt-4">
                 <DashboardStats
                   allData={allData}
@@ -271,6 +272,12 @@ export default function DashboardPage() {
             )}
             {activeSection === 'sec-agency-structure' && (
               <AgencyTreeSection />
+            )}
+            {activeSection === 'sec-simulator' && (
+              <WorkflowSimulatorSection
+                allData={allData}
+                loading={loading}
+              />
             )}
           </div>
         </main>

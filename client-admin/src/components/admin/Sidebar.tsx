@@ -96,6 +96,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
           </li>
 
           {navItem('sec-bot-queue', 'คิวงานบอต', 'bx-bot', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR', 0)}
+          {navItem('sec-simulator', 'เครื่องมือจำลอง Workflow', 'bx-tachometer', isSuperAdmin || role === 'SYSTEM_ADMIN' || role === 'COORDINATOR', 0)}
           
           <li>
             <a href="/bma_ocsc_circular/" className="group flex items-center gap-x-3 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition" target="_blank" rel="noreferrer">

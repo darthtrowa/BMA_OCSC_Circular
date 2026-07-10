@@ -255,7 +255,7 @@ router.put('/reorder', requireAdmin, async (req: AdminRequest, res: Response): P
 // GET /api/admin/delegations
 // ดึงรายการ delegation ทั้งหมด (สำหรับ Management UI — SUPERADMIN)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/', requireSuperAdmin, async (_req: AdminRequest, res: Response): Promise<any> => {
+router.get('/', requireAdmin, async (_req: AdminRequest, res: Response): Promise<any> => {
   try {
     const { rows } = await db.query(`
       SELECT

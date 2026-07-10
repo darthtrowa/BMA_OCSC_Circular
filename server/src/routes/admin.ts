@@ -498,7 +498,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
 
     // --- Fetch all active users (filtered by role if provided) ---
     const params: any[] = ['1'];
-    let sql = `SELECT a.a_id, a.a_name, COALESCE(c.ag_role, 'STAFF') AS a_role, COALESCE(c.ag_name, a.a_position) AS a_position, a.a_agency_id, c.parent_ag_id 
+    let sql = `SELECT a.a_id, a.a_name, COALESCE(c.ag_role, 'STAFF') AS a_role, COALESCE(c.ag_name, a.a_position) AS a_position, a.a_agency_id, c.parent_ag_id, c.ag_type 
            FROM admin a 
            LEFT JOIN c_agency c ON a.a_agency_id = c.ag_id 
            WHERE a.a_status = $1`;

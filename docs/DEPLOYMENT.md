@@ -1,128 +1,130 @@
-# คู่มือการติดตั้งและใช้งานระบบ BMA Circular บน Windows Server
+# 🏛️ คู่มือการติดตั้งและเริ่มทำงานระบบ BMA OCSC Circular (Production)
 
-คู่มือนี้จะอธิบายขั้นตอนการติดตั้งระบบทั้งส่วนของ **Backend (API)** และ **Frontend (React)** เพื่อใช้งานจริงบน Windows Server
+คู่มือนี้รวบรวมขั้นตอนการติดตั้ง ตั้งค่า และเริ่มทำงานระบบทั้งหมด ทั้งส่วนของ **Backend (API)**, **Public Frontend**, และ **Admin Frontend** บน Windows Server โดยใช้ PM2 เป็นตัวจัดการบริการ (Process Manager)
 
 ---
 
-## 1. สิ่งที่ต้องติดตั้ง (Prerequisites)
+## 🛠️ 1. สิ่งที่ต้องติดตั้งก่อนเริ่ม (Prerequisites)
 
-ก่อนเริ่มการติดตั้ง กรุณาติดตั้งซอฟต์แวร์ดังต่อไปนี้:
-1. **Node.js** (แนะนำเวอร์ชัน 18 LTS ขึ้นไป)
+กรุณาตรวจสอบว่าเซิร์ฟเวอร์ได้รับการติดตั้งซอฟต์แวร์เหล่านี้เรียบร้อยแล้ว:
+1. **Node.js** (แนะนำเวอร์ชัน 18 ขึ้นไป หรือ LTS ล่าสุด)
 2. **PostgreSQL** (แนะนำเวอร์ชัน 14 ขึ้นไป)
-3. **PM2** (Process Manager สำหรับ Node.js เพื่อให้รันเบื้องหลังได้ตลอดเวลา)
-   - ติดตั้งผ่าน Terminal: `npm install pm2 -g`
-
----
-
-## 2. ขั้นตอนการติดตั้ง
-
-### 2.1 เตรียมฐานข้อมูล (Database Setup)
-1. เปิด **pgAdmin** หรือเครื่องมือจัดการ PostgreSQL
-2. สร้าง Database ชื่อ `circular`
-3. Import ข้อมูลจากไฟล์ SQL สำรอง (ถ้ามี) หรือสร้าง Table ตามโครงสร้างเดิม
-
-### 2.2 ตั้งค่า Backend (API Server)
-1. เข้าไปที่โฟลเดอร์ `server`:
+3. **PM2 (Process Manager)** ติดตั้งทั่วทั้งระบบ (Global) ผ่าน Command Line (รันในสิทธิ์ Administrator):
    ```powershell
-   cd <พาธโปรเจกต์>\server
-   ```
-2. ติดตั้ง Dependencies:
-   ```powershell
-   npm install
-   ```
-3. ตรวจสอบไฟล์ `.env` ในโฟลเดอร์ `server` ว่าข้อมูลฐานข้อมูลถูกต้อง:
-   ```env
-   PORT=3000
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_USER=postgres
-   DB_PASSWORD=your_password
-   DB_NAME=circular
-   JWT_SECRET=L^opNlkilogmL
-   ```
-
-### 2.3 ตั้งค่า Frontend (React Client)
-1. เข้าไปที่โฟลเดอร์ `client`:
-   ```powershell
-   cd <พาธโปรเจกต์>\client
-   ```
-2. ติดตั้ง Dependencies:
-   ```powershell
-   npm install
-   ```
-3. ตรวจสอบไฟล์ `.env` ในโฟลเดอร์ `client`:
-   ```env
-   VITE_API_MODE=real
-   VITE_API_BASE_URL=http://localhost:3000
+   npm install pm2 -g
    ```
 
 ---
 
-## 3. วิธีการรันระบบ (Execution)
+## ⚙️ 2. การตั้งค่าสภาพแวดล้อม (Environment Config)
 
-เพื่อให้ระบบทำงานได้ตลอดเวลาบน Windows Server แนะนำให้ใช้ **PM2**
+ระบบมีการทำงานแยกเป็น 3 ส่วนหลัก ซึ่งต้องการการตั้งค่าไฟล์ `.env` ที่ถูกต้องดังนี้:
 
-### 3.1 รัน Backend (API)
-เปิด Terminal (Admin) และพิมพ์คำสั่ง:
-```powershell
-cd <พาธโปรเจกต์>\server
-pm2 start index.js --name "circular-api"
+### 2.1 Backend Server (`/server/.env`)
+สร้างหรือแก้ไขไฟล์ `.env` ในโฟลเดอร์ `server` เพื่อระบุการเชื่อมต่อ PostgreSQL และข้อมูลความปลอดภัย:
+```env
+PORT=3000
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=รหัสผ่านฐานข้อมูลของคุณ
+DB_NAME=ocsc_circular
+JWT_SECRET=รหัสลับความปลอดภัยสำหรับสร้างโทเค็น
 ```
 
-### 3.2 รัน Frontend (React)
-ระบบได้เตรียม Node.js Script ในการรันไฟล์ Static Build (Production) ไว้แล้ว ซึ่งมีประสิทธิภาพและความเสถียรมากกว่าการรันด้วย Vite Dev Server หรือเครื่องมือ `serve` ทั่วไปบน Windows:
+### 2.2 Frontends (`.env.production`)
+ตรวจสอบไฟล์ `.env.production` ของส่วนหน้าบ้านทั้ง 3 ส่วนว่าชี้เส้นทาง API ไปที่ Subdirectory ที่ถูกต้อง (ปกติใช้ `/bma_ocsc_circular` เพื่อทำ URL Rewrite ผ่าน IIS):
+* **Public Client:** `client/.env.production` -> `VITE_API_BASE_URL="/bma_ocsc_circular"`
+* **Admin Client:** `client-admin/.env.production` -> `VITE_API_BASE_URL="/bma_ocsc_circular"`
+* **Public Search Client:** `client-public/.env.production` -> `VITE_API_BASE_URL="/bma_ocsc_circular"`
 
-**วิธีที่ 1: รันทุกบริการพร้อมกันผ่าน Ecosystem Config (แนะนำที่สุด)**
-เมื่อรันคำสั่งนี้ ระบบจะรัน Backend API (3000), Public Frontend (5173) และ Admin Frontend (5175) พร้อมกันใน Production Mode:
+---
+
+## 📦 3. ขั้นตอนการติดตั้ง Dependencies และ Build ระบบ
+
+เนื่องจากระบบใช้ภาษา TypeScript ใน Backend และใช้ Vite สำหรับ Frontend จึงจำเป็นต้องดาวน์โหลดแพ็กเกจและคอมไพล์โค้ดก่อนเริ่มรันระบบเสมอ โดยรันคำสั่งเหล่านี้ตามลำดับ:
+
 ```powershell
-# อยู่ที่ Root ของโปรเจกต์
+# 1. ติดตั้งและคอมไพล์โค้ดส่วนหลังบ้าน (Backend Server)
+cd server
+npm install
+npm run build
+cd ..
+
+# 2. ติดตั้งและคอมไพล์โค้ดส่วนหน้าเว็บทั่วไป (Public Client)
+cd client
+npm install
+npm run build
+cd ..
+
+# 3. ติดตั้งและคอมไพล์โค้ดส่วนควบคุมดูแล (Admin Client)
+cd client-admin
+npm install
+npm run build
+cd ..
+```
+
+---
+
+## 💾 4. การเตรียมและทดสอบฐานข้อมูล (Database Setup & Diagnostic)
+
+ระบบมีระบบ **Auto-Migrations** อยู่ในตัว (เมื่อสั่งรันเซิร์ฟเวอร์หลังบ้าน จะตรวจเช็คและสร้างตารางที่จำเป็นให้โดยอัตโนมัติ) 
+
+แต่แนะนำให้ตรวจสอบความพร้อมของการเชื่อมต่อก่อนโดยทำตามขั้นตอนดังนี้:
+1. เข้าไปที่โฟลเดอร์ `server`
+2. รันสคริปต์วินิจฉัยฐานข้อมูล:
+   ```powershell
+   node diagnose_db.js
+   ```
+   *สคริปต์นี้จะพยายามเชื่อมต่อและสร้างฐานข้อมูล `ocsc_circular` ให้ทันทีหากระบบตรวจไม่พบ*
+3. หากมีไฟล์ข้อมูลสำรองล่าสุด (เช่น `docs/circular_docker_export.sql`) ให้สั่ง Import ข้อมูลเข้า PostgreSQL ก่อนรันเซิร์ฟเวอร์จริง
+
+---
+
+## 🚀 5. วิธีเริ่มทำงานระบบและการเคลียร์โปรเซสเก่า (PM2 Execution)
+
+บริการใหม่ทั้งหมดจะถูกรันผ่านการตั้งค่าในไฟล์ `ecosystem.config.js` ที่อยู่บริเวณ Root Folder โดยจะแสดงผลลัพธ์เป็น 3 บริการหลัก ได้แก่:
+1. **bma-ocsc-circular-api** (Port 3000)
+2. **bma-ocsc-circular-frontend** (Port 5173)
+3. **bma-ocsc-circular-admin** (Port 5175)
+
+### ⚠️ กรณีตรวจพบปัญหาพอร์ตชนกัน (Port Conflict กับชื่อระบบเก่า)
+หากเคยรันระบบชื่อเก่า (`ocsc-circular-api`, `ocsc-circular-frontend`, `ocsc-circular-admin`) ค้างไว้ใน PM2 พอร์ตเดิมจะโดนบล็อกและทำให้ชื่อใหม่ไม่สามารถเริ่มทำงานได้ (สถานะจะเป็น `stopped`) ให้แก้ปัญหาโดย:
+
+1. **ลบโปรเซสระบบเก่าออกทั้งหมด:**
+   ```powershell
+   pm2 delete ocsc-circular-api ocsc-circular-frontend ocsc-circular-admin
+   ```
+   *(หรือสั่งระบุตาม ID จากตาราง pm2 เช่น: `pm2 delete 0 1 2`)*
+
+2. **สั่งเริ่มบริการระบบชื่อใหม่ที่หยุดอยู่:**
+   ```powershell
+   pm2 start bma-ocsc-circular-admin bma-ocsc-circular-frontend
+   ```
+
+### 🎬 วิธีเริ่มทำงานระบบทั้งหมดตั้งแต่ต้น (โหมดใช้งานจริง)
+อยู่ที่ Root Folder ของโปรเจกต์ (เปิด PowerShell ด้วยสิทธิ์ Administrator) และใช้คำสั่งดังนี้:
+
+**วิธีรันผ่านสคริปต์สำเร็จรูป (แนะนำ):**
+```powershell
+.\start-production.ps1
+```
+*(สคริปต์นี้จะทำการเปิดบริการ IIS Web Server, รันโปรเซสทั้งหมดผ่าน `ecosystem.config.js` และทำคำสั่ง `pm2 save` ให้อัตโนมัติ)*
+
+**วิธีรันด้วยคำสั่ง PM2 ตรงๆ:**
+```powershell
 pm2 start ecosystem.config.js
+pm2 save
 ```
-
-**วิธีที่ 2: รันแยกเป็นรายบริการ (Production Mode)**
-1. **Build โค้ด Frontend:**
-   ```powershell
-   # สำหรับหน้าเว็บหลัก (Public)
-   cd <พาธโปรเจกต์>\client
-   npm install
-   npm run build
-
-   # สำหรับหน้าแอดมิน (Admin)
-   cd <พาธโปรเจกต์>\client-admin
-   npm install
-   npm run build
-   ```
-
-2. **สั่งรันด้วย PM2 (ในโฟลเดอร์ของแต่ละระบบ):**
-   - **รัน Public Frontend (Port 5173):**
-     ```powershell
-     cd <พาธโปรเจกต์>\client
-     pm2 start serve.js --name "ocsc-circular-frontend"
-     ```
-   - **รัน Admin Frontend (Port 5175):**
-     ```powershell
-     cd <พาธโปรเจกต์>\client-admin
-     pm2 start server.mjs --name "ocsc-circular-admin" --env PORT=5175
-     ```
 
 ---
 
-## 4. คำสั่งจัดการระบบเบื้องต้น (PM2 Commands)
+## 📊 6. คำสั่งจัดการระบบทั่วไป (PM2 Useful Commands)
 
 | คำสั่ง | คำอธิบาย |
-|--------|----------|
-| `pm2 status` | ดูสถานะว่าระบบยังรันอยู่ไหม |
-| `pm2 restart all` | เริ่มการทำงานของทุกระบบใหม่ |
-| `pm2 logs` | ดู error หรือ log การทำงาน |
-| `pm2 stop all` | หยุดการทำงานทั้งหมด |
-| `pm2 save` | บันทึกสถานะเพื่อให้เปิดโปรแกรมอัตโนมัติเมื่อ Restart Windows |
-
----
-
-## 5. การเปิด Port บน Firewall
-อย่าลืมเปิด Port ใน Windows Firewall:
-- **Port 3000**: สำหรับ API
-- **Port 5173**: สำหรับ Frontend (หรือ Port อื่นที่กำหนด)
-
----
-> **หมายเหตุ:** โฟลเดอร์ `Old/` คือโค้ดดั้งเดิม ไม่จำเป็นต้องรันในขั้นตอนนี้ เก็บไว้เพื่ออ้างอิงเท่านั้น
+| :--- | :--- |
+| `pm2 status` หรือ `pm2 list` | ดูสถานะและพอร์ตของทุกบริการที่กำลังทำงานอยู่ |
+| `pm2 logs` | เรียกดูประวัติการทำงานและข้อผิดพลาด (Error Logs) ของทุกบริการแบบสดๆ |
+| `pm2 restart all` | เริ่มต้นการทำงานของทุกบริการใหม่ทั้งหมด (ใช้หลังดึงโค้ดอัปเดตและ build เสร็จ) |
+| `pm2 stop all` | สั่งหยุดการทำงานของทุกบริการชั่วคราว |
+| `pm2 save` | บันทึกรายการระบบล่าสุด เพื่อให้ระบบเริ่มบริการใหม่อัตโนมัติเมื่อรีสตาร์ท Windows Server |
