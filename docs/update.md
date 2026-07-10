@@ -1917,17 +1917,26 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 
 ## [1.2.4] - 2026-07-10
 
-### Fix: IDE Spellcheck Warnings Suppression
+### Fix: IDE Spellcheck Warnings & Package Compiler Error Resolution
 
 #### ⚙️ Configuration Changes
 
 - **.vscode/settings.json**:
   - Added `cSpell.ignoreRegExpList` to ignore Thai characters/scripts globally using Unicode regex pattern `/[\\u0E00-\\u0E7F]+/g`.
-  - Added `cSpell.words` containing technical terms and custom library names (e.g., `pgdata`, `xyflow`, `reactflow`, `sweetalert`, `ocsc`, `permiss`, `saochingcha`, `superadmin`, `Swal`, `mati`, `Cooldown`) to suppress spelling warnings.
-- **cspell.json** [NEW]:
-  - Created a global `cspell.json` file to establish project-wide spellchecker compliance for all directories and external tooling.
+  - Expanded `cSpell.words` to include custom fonts, library prefixes, database keywords, and specific terms (e.g., `Anuphan`, `Sarabun`, `Boxicons`, `boxicons`, `TIMESTAMPTZ`, `Authorisation`, `uuidv`, `ILIKE`, `notuse`, `KHTML`, `networkidle`, `Dedup`).
+  - Added `files.exclude` pattern for `**/node_modules/@adminjs/express/tsconfig.json` to prevent the IDE's TypeScript Language Server from indexing and compiling the library's internal configuration, successfully resolving the missing type definitions compilation error (`Cannot find type definition file for './src/typings/express-session'`).
+- **cspell.json**:
+  - Updated the global word list with the same technical and fonts whitelists to maintain workspace-wide spellchecking hygiene.
+
+#### 📝 Documentation & Typo Fixes
+
+- **docs/update.md**:
+  - Resolved corrupted prefix control characters: `\x07piService.ts` ➔ `apiService.ts`, `\x07uthLimiter` ➔ `authLimiter`, `\x07iService.ts` ➔ `aiService.ts`, and `\x08ot_payload` ➔ `bot_payload`.
+  - Corrected actual typos in the text: `equireAdmin` ➔ `requireAdmin`, `equireSuperAdmin` ➔ `requireSuperAdmin`, and `alidate` ➔ `validate`.
+  - Fixed placeholder syntax question marks (`??` ➔ `⚙️`).
 
 #### ✅ Verification
 
-- Verified configurations format cleanly and spelling warning signals in the IDE are suppressed.
+- Confirmed that the TypeScript Compiler errors in the IDE for the `@adminjs/express` package are gone.
+- Spelling warning signals in the IDE are fully resolved.
 
