@@ -1915,6 +1915,19 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 - **PM2 Services**: Successfully restarted all services and confirmed stable status.
 - **Browser Verification**: Used the browser subagent to verify render, state binding, form inputs, dynamic updates, SweetAlert modals, and page transitions. Everything loads successfully without any runtime console errors.
 
+## [1.2.4] - 2026-07-10
 
+### Fix: IDE Spellcheck Warnings Suppression
 
+#### ⚙️ Configuration Changes
+
+- **.vscode/settings.json**:
+  - Added `cSpell.ignoreRegExpList` to ignore Thai characters/scripts globally using Unicode regex pattern `/[\\u0E00-\\u0E7F]+/g`.
+  - Added `cSpell.words` containing technical terms and custom library names (e.g., `pgdata`, `xyflow`, `reactflow`, `sweetalert`, `ocsc`, `permiss`, `saochingcha`, `superadmin`, `Swal`, `mati`, `Cooldown`) to suppress spelling warnings.
+- **cspell.json** [NEW]:
+  - Created a global `cspell.json` file to establish project-wide spellchecker compliance for all directories and external tooling.
+
+#### ✅ Verification
+
+- Verified configurations format cleanly and spelling warning signals in the IDE are suppressed.
 

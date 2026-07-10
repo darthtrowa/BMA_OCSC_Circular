@@ -1,0 +1,33 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"sqltools.connections": [
+			{
+				"name": "BMA Circular (Local)",
+				"driver": "PostgreSQL",
+				"previewLimit": 50,
+				"server": "localhost",
+				"port": 5432,
+				"database": "circular",
+				"username": "postgres",
+				"password": "1956wine",
+				"askForPassword": false
+			},
+			{
+				"ssh": "Disabled",
+				"previewLimit": 50,
+				"server": "localhost",
+				"port": 5433,
+				"name": "BMA Circular (Docker)",
+				"driver": "PostgreSQL",
+				"database": "circular_db",
+				"username": "admin",
+				"password": "MKhNYeMDtZ4nuUCy"
+			}
+		]
+	}
+}
