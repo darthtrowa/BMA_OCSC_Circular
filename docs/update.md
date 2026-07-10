@@ -1619,31 +1619,31 @@
 
 ### Bug Fix: Database Schema & API Route Alignment
 
-#### ?? Backend Changes
+#### ⚙️ Backend Changes
 
-- **Schema Consistency**: Added missing columns (in_doc_date to c_information and ot_payload to c_bot_findings as jsonb) to the Docker PostgreSQL instance to resolve HTTP 500 errors during public search and admin dashboard loads.
-- **API Namespace**: Corrected missed /admin/... frontend API calls in piService.ts (e.g. getDashboardData, getUsers) to /api/admin/... ensuring the Nginx proxy correctly routes dashboard data requests instead of serving static HTML.
-- **Security Patch**: Updated uthLimiter path to /api/admin/auth and mitigated SSRF vulnerabilities in iService.ts by explicitly enforcing maxRedirects: 0 and catching HTTP 3xx status codes to throw proper generic errors.
+- **Schema Consistency**: Added missing columns (in_doc_date to c_information and bot_payload to c_bot_findings as jsonb) to the Docker PostgreSQL instance to resolve HTTP 500 errors during public search and admin dashboard loads.
+- **API Namespace**: Corrected missed /admin/... frontend API calls in apiService.ts (e.g. getDashboardData, getUsers) to /api/admin/... ensuring the Nginx proxy correctly routes dashboard data requests instead of serving static HTML.
+- **Security Patch**: Updated authLimiter path to /api/admin/auth and mitigated SSRF vulnerabilities in aiService.ts by explicitly enforcing maxRedirects: 0 and catching HTTP 3xx status codes to throw proper generic errors.
 - **TLS Handling**: Added ca-certificates to the Alpine node image and enabled a local TLS bypass (SMTP_TLS_REJECT_UNAUTHORIZED=false) for Nodemailer to ensure OTP emails are successfully dispatched through constrained network environments without triggering self-signed certificate errors.
 
 ## [1.1.50] - 2026-05-23
 
 ### Security & Scaling Refactoring
 
-#### ?? Backend Changes
+#### ⚙️ Backend Changes
 
 - **admin.ts (Transactions)**: Wrapped the multi-table INSERT and UPDATE SQL queries inside /circular/create and /circular/update with PostgreSQL transactions (BEGIN, COMMIT, ROLLBACK). This guarantees atomicity and prevents orphaned relations (e.g. categories, agencies, references) if an insert fails mid-execution.
 - **admin.ts (IDOR Fix)**: Upgraded access control for PATCH /users/:id/2fa from
-  equireAdmin to
-  equireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
+  requireAdmin to
+  requireSuperAdmin to prevent IDOR (Insecure Direct Object Reference) vulnerabilities, ensuring only super-administrators can toggle 2FA constraints for other users.
 - **admin.ts (Scalability)**: Documented an architectural TODO flag for implementing LIMIT/OFFSET pagination inside the heavy GET /admin/dashboard SQL query to prevent future Out-Of-Memory (OOM) risks as database volume grows.
-- **index.ts & aiService.ts**: Confirmed and validated prior critical patches including uthLimiter namespacing to /api/admin/auth and SSRF prevention via maxRedirects: 0 during PDF text extraction.
+- **index.ts & aiService.ts**: Confirmed and validated prior critical patches including authLimiter namespacing to /api/admin/auth and SSRF prevention via maxRedirects: 0 during PDF text extraction.
 
 ## [1.1.51] - 2026-05-23
 
 ### Data Integrity & Validation
 
-#### ?? Backend Changes
+#### ⚙️ Backend Changes
 
 - **admin.ts (Zod Validation)**: Integrated zod schema validation (circularSchema) into the POST /circular/create and POST /circular/update endpoints.
 - **Validation Gate**: Applied strict type enforcement (safeParse) on incoming multipart/form-data payload fields (e.g., in_num_date, in_detail) immediately after Multer processing. Requests with missing or malformed data are now instantly rejected with a 400 Bad Request and detailed error formatting, halting execution before any database transaction begins.
@@ -1652,9 +1652,9 @@
 
 ### Final Architectural Cleanup
 
-#### ?? Backend Changes
+#### ⚙️ Backend Changes
 
-- **admin.ts (Middleware Validation)**: Refactored Zod validation into a reusable alidate(schema) middleware function, elegantly chaining it into route definitions (e.g., alidate(circularSchema)) to keep endpoint controllers clean and DRY.
+- **admin.ts (Middleware Validation)**: Refactored Zod validation into a reusable validate(schema) middleware function, elegantly chaining it into route definitions (e.g., validate(circularSchema)) to keep endpoint controllers clean and DRY.
 - **admin.ts (Server-side Pagination)**: Upgraded the heavy GET /admin/dashboard endpoint to support server-side pagination to prevent potential Out-Of-Memory (OOM) issues as the database grows. Implemented query parameter extraction (page and limit), LIMIT/OFFSET SQL injections, and total count calculations. The API now returns a structured pagination metadata object alongside the data.
 
 ## [1.1.53] - 2026-05-25
