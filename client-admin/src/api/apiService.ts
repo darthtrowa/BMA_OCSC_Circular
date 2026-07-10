@@ -206,6 +206,11 @@ export const adminApi = {
 }
 
 export const workflowApi = {
+  simulateWorkflowAction: async (payload: any): Promise<any> => {
+    const { data } = await http.post('/api/admin/workflow/simulate', payload);
+    return data;
+  },
+
   startWorkflow: async (docId: number): Promise<any> => {
     const { data } = await http.post('/api/admin/workflow/start', { docId });
     return data;

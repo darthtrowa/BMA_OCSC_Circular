@@ -63,7 +63,7 @@ interface WorkflowSimulatorSectionProps {
 
 const roleRank: Record<string, number> = {
   "STAFF": 1,
-  "COORDINATOR": 1,
+  "COORDINATOR": 0,
   "GRP_LEADER": 2,
   "SEC_DIRECTOR": 3,
   "DIV_DIRECTOR": 4,
@@ -78,7 +78,6 @@ const statusMap: Record<string, { label: string, color: string }> = {
   'PENDING_DIRECTOR_APPROVAL': { label: 'รอ ผอ.กองฯ พิจารณา', color: 'bg-sky-100 text-sky-700' },
   'PENDING_DELEGATION': { label: 'รอมอบหมาย', color: 'bg-blue-100 text-blue-700' },
   'PENDING_EXECUTION': { label: 'รอเจ้าหน้าที่ดำเนินการ', color: 'bg-indigo-100 text-indigo-700' },
-  'PENDING_REVIEW': { label: 'รอตรวจสอบผล', color: 'bg-purple-100 text-purple-700' },
   'PENDING_PARALLEL': { label: 'รอผลหลายส่วนราชการ', color: 'bg-violet-100 text-violet-700' },
   'PENDING_CLOSE': { label: 'รอผู้ตั้งเรื่องปิดงาน', color: 'bg-rose-100 text-rose-700' },
   'COMPLETED': { label: 'เสร็จสิ้น (Close)', color: 'bg-emerald-100 text-emerald-700' },
@@ -116,6 +115,66 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   const [selectedNextOwnerId, setSelectedNextOwnerId] = useState<string>('');
   const [selectedResultsId, setSelectedResultsId] = useState<string>('');
   const [parallelTracksInput, setParallelTracksInput] = useState<Record<number, { comments: string, resultsId: string }>>({});
+
+  // Backend-driven simulation options
+  const [simOptions, setSimOptions] = useState<{
+    autoUpAssignee: any;
+    manualAssignees: any[];
+    useParallelAssign: boolean;
+    rejectAssignees: any[];
+  }>({
+    autoUpAssignee: null,
+    manualAssignees: [],
+    useParallelAssign: false,
+    rejectAssignees: []
+  });
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  // Load simulation options dynamically from the backend simulation API
+  useEffect(() => {
+    const fetchSimOptions = async () => {
+      const task = getSelectedTask();
+      const activeUser = getActiveUser();
+      if (!task || !activeUser) {
+        setSimOptions({
+          autoUpAssignee: null,
+          manualAssignees: [],
+          useParallelAssign: false,
+          rejectAssignees: []
+        });
+        return;
+      }
+
+      setLoadingOptions(true);
+      try {
+        const taskHistory = simLogs.filter(log => log.in_id === task.id);
+        const res = await workflowApi.simulateWorkflowAction({
+          task: {
+            in_workflow_status: task.in_workflow_status,
+            in_flow_state: task.in_flow_state,
+            agencies: task.agencies
+          },
+          activeUserId: activeUser.a_id,
+          history: taskHistory
+        });
+
+        if (res.success && res.data) {
+          setSimOptions({
+            autoUpAssignee: res.data.autoUpAssignee || null,
+            manualAssignees: res.data.manualAssignees || [],
+            useParallelAssign: !!res.data.useParallelAssign,
+            rejectAssignees: res.data.rejectAssignees || []
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load backend simulation options:", err);
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
+    fetchSimOptions();
+  }, [activeTaskId, activeSimUserId, simTasks]);
 
   // Mock bot queue findings
   const mockBotQueueFindings = [
@@ -183,40 +242,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     return simTasks.find(t => t.id === activeTaskId) || null;
   };
 
-  // ── Helper to resolve the top director of an agency ──────────────────────
-  const findAgencyDirector = (agencyId: number) => {
-    // 1. Search users for DIV_DIRECTOR or HR_DIRECTOR in that agency
-    const dir = users.find(u => 
-      Number(u.a_agency_id) === agencyId && 
-      ['DIV_DIRECTOR', 'HR_DIRECTOR'].includes(u.a_role)
-    );
-    if (dir) return dir;
 
-    // 2. Fallback to any supervisor in the agency
-    const backup = users.find(u => Number(u.a_agency_id) === agencyId);
-    return backup || null;
-  };
-
-  // Calculate workflow progression status based on roles
-  const getNextStatus = (fromRole: string, toRole: string): string => {
-    if (toRole === "COORDINATOR") return "PENDING_CLOSE";
-    if (toRole === "STAFF") return "PENDING_EXECUTION";
-    
-    const fromRank = roleRank[fromRole] || 0;
-    const toRank = roleRank[toRole] || 0;
-
-    if (fromRank > toRank) {
-      return "PENDING_DELEGATION";
-    } else {
-      if (toRole === "GRP_LEADER") return "PENDING_GRP_REVIEW";
-      if (toRole === "SEC_DIRECTOR") return "PENDING_SEC_APPROVAL";
-      if (toRole === "HR_DIRECTOR") return "PENDING_HR_APPROVAL";
-      if (toRole === "DIV_DIRECTOR") return "PENDING_DIRECTOR_APPROVAL";
-      return "PENDING_GRP_REVIEW";
-    }
-  };
-
-  // Mock botqueue item selection
+  // Mock bot queue item selection
   const handleOpenImport = (botItem: any) => {
     setSelectedBotItem(botItem);
     setMockDocNum(`ที่ กท 0503/ว ${Math.floor(Math.random() * 100) + 1}`);
@@ -388,7 +415,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   };
 
   // ── Forward Action (เสนอเรื่อง / ส่งต่อ / มอบหมาย) ─────────────────────────────
-  const handleForward = (e: React.FormEvent) => {
+  const handleForward = async (e: React.FormEvent) => {
     e.preventDefault();
     const task = getSelectedTask();
     const activeUser = getActiveUser();
@@ -400,10 +427,6 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
       return Swal.fire('คำเตือน', 'กรุณาเข้าสู่กระบวนการนำเข้าโดยเลือกส่วนราชการผู้รับผิดชอบก่อน', 'warning');
     }
 
-    const { role: effectiveRole } = getSimEffectiveUser(task, activeUser, delegations);
-    const { autoUpAssignee, manualAssignees, useParallelAssign } = getSimNextAssignees(task, activeUser, users, allData?.agency || [], delegations);
-    
-    // If parallel assign is required (HR_DIRECTOR forwards to multiple divisions)
     if (useParallelAssign) {
       Swal.fire({
         title: 'ยืนยันการกระจายงาน?',
@@ -412,70 +435,31 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         showCancelButton: true,
         confirmButtonText: 'ยืนยัน',
         cancelButtonText: 'ยกเลิก'
-      }).then((result) => {
+      }).then(async (result) => {
         if (result.isConfirmed) {
-          const batchId = Math.random().toString(36).substring(7);
-          const parallelTracks: SimParallelAssignment[] = task.agencies.map((agId, idx) => {
-            const ag = allData?.agency?.find((a: any) => a.ag_id === agId);
-            const director = findAgencyDirector(agId);
-            
-            return {
-              pa_id: Date.now() + idx,
-              ag_id: agId,
-              ag_name: ag?.ag_name || `หน่วยงาน ${agId}`,
-              initial_owner_id: director ? director.a_id : activeUser.a_id,
-              current_owner_id: director ? director.a_id : activeUser.a_id,
-              pa_status: 'PENDING',
-              result_comments: '',
-              results_id: null,
-              updated_at: new Date().toISOString()
-            };
-          });
+          try {
+            const res = await workflowApi.simulateWorkflowAction({
+              task,
+              activeUserId: activeUser.a_id,
+              action: 'PARALLEL_ASSIGN',
+              comments: actionComments
+            });
 
-          const updatedTasks = simTasks.map(t => {
-            if (t.id === task.id) {
-              return {
-                ...t,
-                in_workflow_status: 'PENDING_PARALLEL',
-                in_is_parallel: true,
-                in_current_owner_id: null,
-                in_flow_state: 'in' as const,
-                parallel_assignments: parallelTracks
-              };
+            if (res.success && res.data) {
+              const { updatedTask, newHistoryEntries } = res.data;
+              const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+              saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+              setActionComments('');
+
+              if (autoSwitch && updatedTask.parallel_assignments?.length > 0) {
+                setActiveSimUserId(updatedTask.parallel_assignments[0].initial_owner_id);
+              }
+
+              Swal.fire('กระจายงานแล้ว', 'มอบหมายงานคู่ขนานส่งออกไปยังส่วนราชการปลายทางเรียบร้อยแล้ว', 'success');
             }
-            return t;
-          });
-
-          // Add history logs for each parallel assignment
-          const newHistoryEntries: SimHistoryEntry[] = parallelTracks.map((pa, idx) => {
-            const director = users.find(u => u.a_id === pa.initial_owner_id);
-            return {
-              id: Date.now() + idx,
-              in_id: task.id,
-              pa_id: pa.pa_id,
-              from_user_id: activeUser.a_id,
-              from_user_name: activeUser.a_name,
-              from_user_position: activeUser.a_position,
-              from_user_role: effectiveRole,
-              to_user_id: pa.initial_owner_id,
-              to_user_name: director ? director.a_name : 'ไม่พบรายชื่อ',
-              to_user_position: director ? director.a_position : 'ผอ.ส่วนราชการ',
-              to_user_role: director ? director.a_role : 'DIV_DIRECTOR',
-              action: 'PARALLEL_ASSIGNED',
-              comments: `เสนอพิจารณาคู่ขนาน (หน่วยงาน: ${pa.ag_name}): ${actionComments || 'โปรดพิจารณาดำเนินการ'}`,
-              created_at: new Date().toISOString()
-            };
-          });
-
-          saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
-          setActionComments('');
-          
-          // Auto switch to the first track owner if switch is active
-          if (autoSwitch && parallelTracks.length > 0) {
-            setActiveSimUserId(parallelTracks[0].initial_owner_id);
+          } catch (err: any) {
+            Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถกระจายงานได้', 'error');
           }
-          
-          Swal.fire('กระจายงานแล้ว', 'มอบหมายงานคู่ขนานส่งออกไปยังส่วนราชการปลายทางเรียบร้อยแล้ว', 'success');
         }
       });
       return;
@@ -483,88 +467,50 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
     // Single recipient forward
     if (!selectedNextOwnerId) return Swal.fire('คำเตือน', 'กรุณาเลือกผู้รับมอบหมายคนถัดไป', 'warning');
-    
     const targetUserId = Number(selectedNextOwnerId);
     const targetUser = users.find(u => u.a_id === targetUserId);
     if (!targetUser) return Swal.fire('Error', 'ไม่พบข้อมูลผู้รับปลายทาง', 'error');
 
-    let newStatus = getNextStatus(effectiveRole, targetUser.a_role);
-    let action = 'APPROVED';
-    let newFlowState = task.in_flow_state;
+    try {
+      const res = await workflowApi.simulateWorkflowAction({
+        task,
+        activeUserId: activeUser.a_id,
+        action: 'FORWARD',
+        targetUserId,
+        comments: actionComments
+      });
 
-    if (targetUser.a_role === 'COORDINATOR') {
-      newStatus = 'PENDING_CLOSE';
-      action = 'FINALIZED';
-    }
+      if (res.success && res.data) {
+        const { updatedTask, newHistoryEntries } = res.data;
+        const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+        saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+        setActionComments('');
+        setSelectedNextOwnerId('');
 
-    // Update flow_state dynamically
-    if (effectiveRole === 'COORDINATOR') {
-      newFlowState = 'out';
-    } else if (effectiveRole === 'HR_DIRECTOR' && targetUser.a_role === 'DIV_DIRECTOR') {
-      newFlowState = 'in';
-    } else if (targetUser.a_role === 'STAFF') {
-      newFlowState = 'out';
-    } else if (effectiveRole === 'STAFF') {
-      newFlowState = 'out';
-    } else if (effectiveRole === 'DIV_DIRECTOR' && targetUser.a_role === 'HR_DIRECTOR') {
-      newFlowState = 'in';
-    }
+        if (autoSwitch) {
+          setActiveSimUserId(targetUserId);
+        }
 
-    const updatedTasks = simTasks.map(t => {
-      if (t.id === task.id) {
-        return {
-          ...t,
-          in_workflow_status: newStatus,
-          in_current_owner_id: targetUserId,
-          in_flow_state: newFlowState
-        };
+        Swal.fire({
+          icon: 'success',
+          title: 'ส่งต่อเอกสารแล้ว',
+          text: `งานอยู่ในกล่องข้อความของ ${targetUser.a_name} (${targetUser.a_role})`,
+          timer: 1500,
+          showConfirmButton: false
+        });
       }
-      return t;
-    });
-
-    const newHistory: SimHistoryEntry = {
-      id: Date.now(),
-      in_id: task.id,
-      pa_id: null,
-      from_user_id: activeUser.a_id,
-      from_user_name: activeUser.a_name,
-      from_user_position: activeUser.a_position,
-      from_user_role: effectiveRole,
-      to_user_id: targetUserId,
-      to_user_name: targetUser.a_name,
-      to_user_position: targetUser.a_position,
-      to_user_role: targetUser.a_role,
-      action: action,
-      comments: actionComments || 'เห็นชอบและส่งดำเนินการขั้นถัดไป',
-      created_at: new Date().toISOString()
-    };
-
-    saveSimulatorState(updatedTasks, [newHistory, ...simLogs]);
-    setActionComments('');
-    setSelectedNextOwnerId('');
-
-    // Auto-switch simulated user
-    if (autoSwitch) {
-      setActiveSimUserId(targetUserId);
+    } catch (err: any) {
+      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถส่งต่อเอกสารได้', 'error');
     }
-
-    Swal.fire({
-      icon: 'success',
-      title: 'ส่งต่อเอกสารแล้ว',
-      text: `งานอยู่ในกล่องข้อความของ ${targetUser.a_name} (${targetUser.a_role})`,
-      timer: 1500,
-      showConfirmButton: false
-    });
   };
 
   // ── Reject Action (ส่งงานกลับ / ตีกลับ) ──────────────────────────────────
-  const handleReject = () => {
+  const handleReject = async () => {
     const task = getSelectedTask();
     const activeUser = getActiveUser();
     if (!task || !activeUser) return;
 
-    const previousUsers = getSimRejectAssignees(task, activeUser, simLogs);
-    if (previousUsers.length === 0) {
+    if (rejectAssignees.length === 0) {
       return Swal.fire('ไม่พบผู้รับงานตีกลับ', 'งานนี้ยังไม่มีประวัติการส่งต่อก่อนหน้าให้ตีกลับ', 'warning');
     }
 
@@ -576,67 +522,44 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     const targetUser = users.find(u => u.a_id === targetUserId);
     if (!targetUser) return;
 
-    let newFlowState = task.in_flow_state;
-    if (targetUser.a_role === 'STAFF') {
-      newFlowState = 'out';
-    }
+    try {
+      const res = await workflowApi.simulateWorkflowAction({
+        task,
+        activeUserId: activeUser.a_id,
+        action: 'REJECT',
+        targetUserId,
+        comments: actionComments
+      });
 
-    const updatedTasks = simTasks.map(t => {
-      if (t.id === task.id) {
-        return {
-          ...t,
-          in_workflow_status: 'REJECTED',
-          in_current_owner_id: targetUserId,
-          in_flow_state: newFlowState
-        };
+      if (res.success && res.data) {
+        const { updatedTask, newHistoryEntries } = res.data;
+        const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+        saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+        setActionComments('');
+        setSelectedNextOwnerId('');
+
+        if (autoSwitch) {
+          setActiveSimUserId(targetUserId);
+        }
+
+        Swal.fire('ตีกลับเอกสารแล้ว', `ส่งข้อมูลกลับคืนให้คุณ ${targetUser.a_name} ตรวจสอบแล้ว`, 'success');
       }
-      return t;
-    });
-
-    const newHistory: SimHistoryEntry = {
-      id: Date.now(),
-      in_id: task.id,
-      pa_id: null,
-      from_user_id: activeUser.a_id,
-      from_user_name: activeUser.a_name,
-      from_user_position: activeUser.a_position,
-      from_user_role: activeUser.a_role,
-      to_user_id: targetUserId,
-      to_user_name: targetUser.a_name,
-      to_user_position: targetUser.a_position,
-      to_user_role: targetUser.a_role,
-      action: 'REJECTED',
-      comments: actionComments || 'ส่งงานกลับพิจารณาแก้ไข',
-      created_at: new Date().toISOString()
-    };
-
-    saveSimulatorState(updatedTasks, [newHistory, ...simLogs]);
-    setActionComments('');
-    setSelectedNextOwnerId('');
-
-    if (autoSwitch) {
-      setActiveSimUserId(targetUserId);
+    } catch (err: any) {
+      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถตีกลับเอกสารได้', 'error');
     }
-
-    Swal.fire('ตีกลับเอกสารแล้ว', `ส่งข้อมูลกลับคืนให้คุณ ${targetUser.a_name} ตรวจสอบแล้ว`, 'success');
   };
 
   // ── Record & Submit results inside a parallel track (STAFF / DIVISION LEVEL) ──────
-  const handleSubmitTrackResult = (paId: number) => {
+  const handleSubmitTrackResult = async (paId: number) => {
     const task = getSelectedTask();
     const activeUser = getActiveUser();
     if (!task || !activeUser) return;
-
-    const track = task.parallel_assignments.find(pa => pa.pa_id === paId);
-    if (!track) return;
 
     const trackInput = parallelTracksInput[paId] || { comments: '', resultsId: '' };
     if (!trackInput.resultsId) {
       return Swal.fire('คำเตือน', 'กรุณาเลือกผลการพิจารณาสำหรับ Track นี้', 'warning');
     }
 
-    const results = allData?.results?.find((r: any) => r.results_id === Number(trackInput.resultsId));
-    
     Swal.fire({
       title: 'ส่งผลพิจารณาของกอง?',
       text: `บันทึกความคิดเห็น: "${trackInput.comments || '-'}" และส่งให้ศูนย์สารสนเทศฯ ทราบ`,
@@ -644,160 +567,78 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
       showCancelButton: true,
       confirmButtonText: 'ยืนยันส่งผล',
       cancelButtonText: 'ยกเลิก'
-    }).then((result) => {
+    }).then(async (result) => {
       if (result.isConfirmed) {
-        // Update this parallel assignment to SUBMITTED
-        const updatedTracks = task.parallel_assignments.map(pa => {
-          if (pa.pa_id === paId) {
-            return {
-              ...pa,
-              pa_status: 'SUBMITTED' as const,
-              result_comments: trackInput.comments,
-              results_id: Number(trackInput.resultsId),
-              updated_at: new Date().toISOString()
-            };
+        try {
+          const res = await workflowApi.simulateWorkflowAction({
+            task,
+            activeUserId: activeUser.a_id,
+            action: 'PARALLEL_SUBMIT',
+            paId,
+            resultsId: Number(trackInput.resultsId),
+            comments: trackInput.comments
+          });
+
+          if (res.success && res.data) {
+            const { updatedTask, newHistoryEntries } = res.data;
+            const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+            saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+
+            // Reset local input
+            setParallelTracksInput(prev => {
+              const c = { ...prev };
+              delete c[paId];
+              return c;
+            });
+
+            if (autoSwitch && updatedTask.in_current_owner_id) {
+              setActiveSimUserId(updatedTask.in_current_owner_id);
+            }
+
+            Swal.fire('บันทึกผลสำเร็จ', 'ส่งความคิดเห็นเข้าสู่ระบบเรียบร้อยแล้ว', 'success');
           }
-          return pa;
-        });
-
-        // Add history log for track submit
-        const trackHistory: SimHistoryEntry = {
-          id: Date.now(),
-          in_id: task.id,
-          pa_id: paId,
-          from_user_id: activeUser.a_id,
-          from_user_name: activeUser.a_name,
-          from_user_position: activeUser.a_position,
-          from_user_role: activeUser.a_role,
-          to_user_id: null,
-          to_user_name: null,
-          to_user_position: null,
-          to_user_role: null,
-          action: 'PARALLEL_SUBMITTED',
-          comments: `รายงานผลของกอง (${track.ag_name}): [ผล: ${results?.results_detail || 'พิจารณาแล้ว'}] - ${trackInput.comments || 'เรียบร้อย'}`,
-          created_at: new Date().toISOString()
-        };
-
-        // Check if all tracks are terminal (SUBMITTED or REJECTED)
-        const totalTracksCount = updatedTracks.length;
-        const terminalTracksCount = updatedTracks.filter(pa => ['SUBMITTED', 'REJECTED'].includes(pa.pa_status)).length;
-        
-        let newStatus = 'PENDING_PARALLEL';
-        let newCurrentOwnerId = task.in_current_owner_id;
-        const nextLogs = [trackHistory];
-
-        if (totalTracksCount === terminalTracksCount) {
-          // All tracks terminal, route back to HR_DIRECTOR
-          const hrDir = users.find(u => u.a_role === 'HR_DIRECTOR') || users[0];
-          newStatus = 'PENDING_HR_APPROVAL';
-          newCurrentOwnerId = hrDir ? hrDir.a_id : null;
-          
-          const advanceHistory: SimHistoryEntry = {
-            id: Date.now() + 1,
-            in_id: task.id,
-            pa_id: null,
-            from_user_id: null,
-            from_user_name: 'ระบบรวมผลอัตโนมัติ',
-            from_user_position: 'SYSTEM PROCESSOR',
-            from_user_role: 'SYSTEM',
-            to_user_id: hrDir?.a_id || null,
-            to_user_name: hrDir?.a_name || 'ผอ.ศูนย์ฯ',
-            to_user_position: hrDir?.a_position || 'HR_DIRECTOR',
-            to_user_role: hrDir?.a_role || 'HR_DIRECTOR',
-            action: 'SUBMITTED',
-            comments: 'ทุกส่วนราชการพิจารณาตรวจสอบข้อมูลครบถ้วนแล้ว - ระบบส่งคืนให้ ผอ.ศูนย์ฯ (HR_DIRECTOR) พิจารณาลงนามจบเรื่อง',
-            created_at: new Date().toISOString()
-          };
-          nextLogs.push(advanceHistory);
-          
-          if (autoSwitch && hrDir) {
-            setActiveSimUserId(hrDir.a_id);
-          }
+        } catch (err: any) {
+          Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถบันทึกผลได้', 'error');
         }
-
-        const updatedTasks = simTasks.map(t => {
-          if (t.id === task.id) {
-            return {
-              ...t,
-              in_workflow_status: newStatus,
-              in_current_owner_id: newCurrentOwnerId,
-              parallel_assignments: updatedTracks
-            };
-          }
-          return t;
-        });
-
-        saveSimulatorState(updatedTasks, [...nextLogs, ...simLogs]);
-        
-        // Reset local input
-        setParallelTracksInput(prev => {
-          const c = { ...prev };
-          delete c[paId];
-          return c;
-        });
-
-        Swal.fire('บันทึกผลสำเร็จ', 'ส่งความคิดเห็นเข้าสู่ระบบเรียบร้อยแล้ว', 'success');
       }
     });
   };
 
   // ── delegate parallel track within division ───────────────────────
-  const handleDelegateWithinTrack = (paId: number, targetSubordinateId: number) => {
+  const handleDelegateWithinTrack = async (paId: number, targetSubordinateId: number) => {
     const task = getSelectedTask();
     const activeUser = getActiveUser();
     if (!task || !activeUser || !targetSubordinateId) return;
 
-    const track = task.parallel_assignments.find(pa => pa.pa_id === paId);
     const subUser = users.find(u => u.a_id === targetSubordinateId);
-    if (!track || !subUser) return;
+    if (!subUser) return;
 
-    const updatedTracks = task.parallel_assignments.map(pa => {
-      if (pa.pa_id === paId) {
-        return {
-          ...pa,
-          current_owner_id: targetSubordinateId,
-          pa_status: 'IN_PROGRESS' as const
-        };
+    try {
+      const res = await workflowApi.simulateWorkflowAction({
+        task,
+        activeUserId: activeUser.a_id,
+        action: 'PARALLEL_DELEGATE',
+        paId,
+        targetUserId: targetSubordinateId,
+        comments: actionComments
+      });
+
+      if (res.success && res.data) {
+        const { updatedTask, newHistoryEntries } = res.data;
+        const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+        saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+        setActionComments('');
+        setSelectedNextOwnerId('');
+
+        if (autoSwitch) {
+          setActiveSimUserId(targetSubordinateId);
+        }
+
+        Swal.fire('มอบหมายงานแล้ว', `ส่งงานต่อให้ ${subUser.a_name} ภายใน Track ของกองแล้ว`, 'success');
       }
-      return pa;
-    });
-
-    const newHistory: SimHistoryEntry = {
-      id: Date.now(),
-      in_id: task.id,
-      pa_id: paId,
-      from_user_id: activeUser.a_id,
-      from_user_name: activeUser.a_name,
-      from_user_position: activeUser.a_position,
-      from_user_role: activeUser.a_role,
-      to_user_id: targetSubordinateId,
-      to_user_name: subUser.a_name,
-      to_user_position: subUser.a_position,
-      to_user_role: subUser.a_role,
-      action: 'PARALLEL_DELEGATED',
-      comments: `มอบหมายตรวจสอบในสายงานของกอง: ${actionComments || 'โปรดดำเนินตรวจสอบข้อมูล'}`,
-      created_at: new Date().toISOString()
-    };
-
-    const updatedTasks = simTasks.map(t => {
-      if (t.id === task.id) {
-        return {
-          ...t,
-          parallel_assignments: updatedTracks
-        };
-      }
-      return t;
-    });
-
-    saveSimulatorState(updatedTasks, [newHistory, ...simLogs]);
-    setActionComments('');
-    setSelectedNextOwnerId('');
-
-    if (autoSwitch) {
-      setActiveSimUserId(targetSubordinateId);
+    } catch (err: any) {
+      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถมอบหมายงานได้', 'error');
     }
-
-    Swal.fire('มอบหมายงานแล้ว', `ส่งงานต่อให้ ${subUser.a_name} ภายใน Track ของกองแล้ว`, 'success');
   };
 
   // ── Close / Finalize Workflow (COORDINATOR) ──────────────────────────────────
@@ -813,58 +654,39 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
       showCancelButton: true,
       confirmButtonText: 'ตกลง, จบงาน',
       cancelButtonText: 'ยกเลิก'
-    }).then((result) => {
+    }).then(async (result) => {
       if (result.isConfirmed) {
-        const updatedTasks = simTasks.map(t => {
-          if (t.id === task.id) {
-            return {
-              ...t,
-              in_workflow_status: 'COMPLETED',
-              in_current_owner_id: null,
-              in_flow_state: 'end' as const
-            };
+        try {
+          const res = await workflowApi.simulateWorkflowAction({
+            task,
+            activeUserId: activeUser.a_id,
+            action: 'CLOSE',
+            comments: actionComments
+          });
+
+          if (res.success && res.data) {
+            const { updatedTask, newHistoryEntries } = res.data;
+            const updatedTasks = simTasks.map(t => t.id === task.id ? updatedTask : t);
+            saveSimulatorState(updatedTasks, [...newHistoryEntries, ...simLogs]);
+            setActionComments('');
+
+            Swal.fire('ปิดงานสำเร็จ', 'ระบบบันทึกความสมบูรณ์ของ Workflow เรียบร้อย', 'success');
           }
-          return t;
-        });
-
-        const newHistory: SimHistoryEntry = {
-          id: Date.now(),
-          in_id: task.id,
-          pa_id: null,
-          from_user_id: activeUser.a_id,
-          from_user_name: activeUser.a_name,
-          from_user_position: activeUser.a_position,
-          from_user_role: activeUser.a_role,
-          to_user_id: null,
-          to_user_name: null,
-          to_user_position: null,
-          to_user_role: null,
-          action: 'FINALIZED',
-          comments: actionComments || 'ปิดงานพิจารณาหนังสือเวียนและเก็บประวัติประมวลผล',
-          created_at: new Date().toISOString()
-        };
-
-        saveSimulatorState(updatedTasks, [newHistory, ...simLogs]);
-        setActionComments('');
-
-        Swal.fire('ปิดงานสำเร็จ', 'ระบบบันทึกความสมบูรณ์ของ Workflow เรียบร้อย', 'success');
+        } catch (err: any) {
+          Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถปิดงานได้', 'error');
+        }
       }
     });
   };
+
+
 
   // Helper values for selectors
   const activeUser = getActiveUser();
   const task = getSelectedTask();
   
-  // Calculate next assignees options
-  const { autoUpAssignee, manualAssignees, useParallelAssign } = task && activeUser
-    ? getSimNextAssignees(task, activeUser, users, allData?.agency || [], delegations)
-    : { autoUpAssignee: null, manualAssignees: [], useParallelAssign: false };
-
-  // Calculate reject options
-  const rejectAssignees = task && activeUser
-    ? getSimRejectAssignees(task, activeUser, simLogs)
-    : [];
+  // Use simulation options fetched from the backend simulation endpoint
+  const { autoUpAssignee, manualAssignees, useParallelAssign, rejectAssignees } = simOptions;
 
   const handleUpdateDraftAgencies = (selectedOptions: any) => {
     if (!task) return;
@@ -895,7 +717,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     <div className="space-y-6">
       
       {/* ── Top Bar Control Panel ────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-3xl p-6 shadow-lg border border-emerald-500/20 animate__animated animate__fadeIn">
+      <div className="bg-linear-to-r from-emerald-600 to-teal-700 text-white rounded-3xl p-6 shadow-lg border border-emerald-500/20 animate__animated animate__fadeIn">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           
           {/* Identity Selection Block */}
@@ -1385,7 +1207,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                           {/* Reject Block */}
                           {rejectAssignees.length > 0 && (
                             <div className="flex-1 bg-white border border-slate-100 rounded-xl p-3 space-y-2">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide text-red-500">
+                              <span className="text-[10px] uppercase font-bold block tracking-wide text-red-500">
                                 ตีกลับ / คืนเรื่องก่อนหน้า
                               </span>
                               <div className="flex gap-1">
@@ -1461,7 +1283,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                       <div key={log.id} className="relative">
                         
                         {/* Timeline dot */}
-                        <span className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full border-2 border-white ${
+                        <span className={`absolute left-[-21px] top-1 w-3 h-3 rounded-full border-2 border-white ${
                           log.action === 'STARTED'
                             ? 'bg-emerald-500'
                             : log.action === 'REJECTED'
@@ -1512,7 +1334,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
       {/* ── Mock Bot findings import Modal ── */}
       {showImportModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] animate__animated animate__zoomIn animate__faster">
             
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
@@ -1645,256 +1467,4 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   );
 }
 
-// ── Helper to resolve simulated effective user role ──
-function getSimEffectiveUser(task: SimTask, user: any, delegations: any[]) {
-  if (!task || !user) return { role: '', agencyId: null };
 
-  const requiredRoleMap: Record<string, string> = {
-    'DRAFT': 'COORDINATOR',
-    'PENDING_GRP_REVIEW': 'GRP_LEADER',
-    'PENDING_SEC_APPROVAL': 'SEC_DIRECTOR',
-    'PENDING_DIRECTOR_APPROVAL': 'DIV_DIRECTOR',
-    'PENDING_HR_APPROVAL': 'HR_DIRECTOR',
-    'PENDING_EXECUTION': 'STAFF',
-    'PENDING_CLOSE': 'COORDINATOR'
-  };
-  const requiredRole = requiredRoleMap[task.in_workflow_status];
-
-  let role = user.a_role;
-  let agencyId = user.a_agency_id;
-
-  if (requiredRole && user.a_role !== requiredRole) {
-    const activeDel = delegations.find(d => 
-      Number(d.assignee_id) === Number(user.a_id) && 
-      d.delegated_role === requiredRole && 
-      d.is_active
-    );
-    if (activeDel) {
-      role = requiredRole;
-      agencyId = activeDel.assigner_ag_id || activeDel.assigner_id;
-    }
-  }
-
-  return { role, agencyId };
-}
-
-// ── Helper to resolve simulated next assignees ──
-function getSimNextAssignees(task: SimTask, currentUser: any, allUsers: any[], agencies: any[], delegations: any[] = []) {
-  const { role: effectiveRole, agencyId: effectiveAgencyId } = getSimEffectiveUser(task, currentUser, delegations);
-  const currentRank = roleRank[effectiveRole] || 0;
-  const flowState = task.in_flow_state;
-  
-  let autoUpAssignee: any = null;
-  let manualAssignees: any[] = [];
-
-  const processActing = (targetUser: any) => {
-    if (!targetUser) return null;
-    const acting = delegations.find(d => 
-      (d.assigner_id === targetUser.a_id || (!d.assigner_id && d.assigner_ag_id === targetUser.a_agency_id)) && 
-      d.is_active
-    );
-    if (acting) {
-      return {
-        ...targetUser,
-        acting_info: {
-          id: acting.assignee_id,
-          name: acting.assignee_name,
-          position: acting.assignee_position || acting.assignee_role
-        }
-      };
-    }
-    return targetUser;
-  };
-
-  if (effectiveRole === 'COORDINATOR') {
-    const curAg = agencies.find(a => Number(a.ag_id) === Number(effectiveAgencyId));
-    const groupAgencyId = curAg && curAg.ag_type === 'POSITION' ? Number(curAg.parent_ag_id) : Number(effectiveAgencyId);
-    if (groupAgencyId) {
-      // Find normal GRP_LEADERs in group
-      const grpLeaders = allUsers.filter(u => {
-        if (u.a_role !== 'GRP_LEADER') return false;
-        const uAg = agencies.find(a => Number(a.ag_id) === Number(u.a_agency_id));
-        return (
-          Number(u.a_agency_id) === groupAgencyId || 
-          (uAg && Number(uAg.parent_ag_id) === groupAgencyId && uAg.ag_type === 'POSITION')
-        );
-      });
-      
-      if (grpLeaders.length > 0) {
-        autoUpAssignee = processActing(grpLeaders[0]);
-      }
-
-      // Find acting GRP_LEADERs in group
-      const actingGrpLeaders = delegations
-        .filter(d => d.delegated_role === 'GRP_LEADER' && d.is_active)
-        .filter(d => {
-          if (d.assigner_id) {
-            const assigner = allUsers.find(u => Number(u.a_id) === Number(d.assigner_id));
-            if (assigner) {
-              const assignerAg = agencies.find(a => Number(a.ag_id) === Number(assigner.a_agency_id));
-              const assignerGrp = assignerAg && assignerAg.ag_type === 'POSITION' ? Number(assignerAg.parent_ag_id) : Number(assigner.a_agency_id);
-              return assignerGrp === groupAgencyId;
-            }
-          }
-          if (d.assigner_ag_id) {
-            const ag = agencies.find(a => Number(a.ag_id) === Number(d.assigner_ag_id));
-            if (ag) {
-              return Number(ag.ag_id) === groupAgencyId || Number(ag.parent_ag_id) === groupAgencyId;
-            }
-          }
-          return false;
-        })
-        .map(d => {
-          const assignee = allUsers.find(u => Number(u.a_id) === Number(d.assignee_id));
-          return assignee ? { ...assignee, is_acting: true } : null;
-        })
-        .filter(Boolean);
-
-      const seenIds = new Set();
-      const finalManual: any[] = [];
-      for (const u of grpLeaders) {
-        if (!seenIds.has(u.a_id)) {
-          seenIds.add(u.a_id);
-          finalManual.push(u);
-        }
-      }
-      for (const u of actingGrpLeaders) {
-        if (u && !seenIds.has(u.a_id)) {
-          seenIds.add(u.a_id);
-          finalManual.push(u);
-        }
-      }
-      manualAssignees = finalManual;
-    }
-  } else if (effectiveRole === 'GRP_LEADER') {
-    // Find HR_DIRECTORs
-    const hrDirectors = allUsers.filter(u => u.a_role === 'HR_DIRECTOR');
-    if (hrDirectors.length > 0) {
-      autoUpAssignee = processActing(hrDirectors[0]);
-    }
-
-    // Find acting HR_DIRECTORs
-    const actingHrDirectors = delegations
-      .filter(d => d.delegated_role === 'HR_DIRECTOR' && d.is_active)
-      .map(d => {
-        const assignee = allUsers.find(u => u.a_id === d.assignee_id);
-        return assignee ? { ...assignee, is_acting: true } : null;
-      })
-      .filter(Boolean);
-
-    const seenIds = new Set();
-    const finalManual: any[] = [];
-    for (const u of hrDirectors) {
-      if (!seenIds.has(u.a_id)) {
-        seenIds.add(u.a_id);
-        finalManual.push(u);
-      }
-    }
-    for (const u of actingHrDirectors) {
-      if (u && !seenIds.has(u.a_id)) {
-        seenIds.add(u.a_id);
-        finalManual.push(u);
-      }
-    }
-    manualAssignees = finalManual;
-  } else {
-    // Standard Auto UP Logic
-    if (flowState !== 'in') {
-      let currentLookupAgency = effectiveAgencyId;
-      while (currentLookupAgency) {
-        const higherRankUsers = allUsers.filter(u => 
-          u.a_id !== currentUser.a_id &&
-          Number(u.a_agency_id) === currentLookupAgency &&
-          (roleRank[u.a_role] || 0) > currentRank
-        );
-
-        if (higherRankUsers.length > 0) {
-          higherRankUsers.sort((a, b) => (roleRank[a.a_role] || 0) - (roleRank[b.a_role] || 0));
-          autoUpAssignee = processActing(higherRankUsers[0]);
-          break;
-        }
-
-        const parentAgency = agencies.find(a => a.ag_id === currentLookupAgency);
-        if (!parentAgency || !parentAgency.parent_ag_id) {
-          break;
-        }
-        currentLookupAgency = parentAgency.parent_ag_id;
-      }
-    }
-
-    const childAgencyIds: number[] = [];
-    const getDescendants = (agId: number) => {
-      childAgencyIds.push(agId);
-      agencies.filter(a => a.parent_ag_id === agId).forEach(child => {
-        getDescendants(child.ag_id);
-      });
-    };
-    if (effectiveAgencyId) {
-      getDescendants(effectiveAgencyId);
-    }
-
-    manualAssignees = allUsers.filter(u => {
-      if (u.a_id === currentUser.a_id) return false;
-      const uRank = roleRank[u.a_role] || 0;
-      
-      if (flowState === 'out') {
-        if (effectiveRole === 'DIV_DIRECTOR') {
-          return u.a_role === 'HR_DIRECTOR';
-        } else if (effectiveRole === 'HR_DIRECTOR') {
-          if (uRank < currentRank) return false;
-        } else {
-          if (uRank <= currentRank) return false;
-        }
-      } else if (flowState === 'in') {
-        if (uRank >= currentRank) return false;
-      }
-
-      if (currentRank === 4 && uRank === 4) {
-        return true;
-      }
-
-      if (childAgencyIds.includes(u.a_agency_id) && uRank < currentRank) {
-        return true;
-      }
-
-      return false;
-    }).map(processActing);
-  }
-
-  let useParallelAssign = false;
-  const taskAgencies = task.agencies || [];
-  if (effectiveRole === 'HR_DIRECTOR' && (flowState === 'out' || !flowState)) {
-    if (taskAgencies.length > 1) {
-      useParallelAssign = true;
-    }
-  }
-
-  return {
-    autoUpAssignee,
-    manualAssignees,
-    useParallelAssign
-  };
-}
-
-// ── Helper to resolve simulated reject assignees ──
-function getSimRejectAssignees(task: SimTask, currentUser: any, history: SimHistoryEntry[]) {
-  const taskHistory = history.filter(h => h.in_id === task.id);
-  const seen = new Set<number>();
-  const rejectAssignees: any[] = [];
-  
-  for (let i = taskHistory.length - 1; i >= 0; i--) {
-    const h = taskHistory[i];
-    const uid = h.from_user_id;
-    if (uid && uid !== currentUser.a_id && !seen.has(uid)) {
-      seen.add(uid);
-      rejectAssignees.push({
-        a_id: uid,
-        a_name: h.from_user_name,
-        a_position: h.from_user_position,
-        a_role: h.from_user_role || 'ผู้ร่วมทวนทาน'
-      });
-    }
-  }
-  
-  return rejectAssignees;
-}

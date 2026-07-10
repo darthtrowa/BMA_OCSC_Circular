@@ -523,4 +523,67 @@ router.get(
   }
 );
 
+/**
+ * POST /api/admin/workflow/simulate
+ * stateless workflow simulation
+ */
+router.post(
+  '/simulate',
+  requireAdmin,
+  async (req: AdminRequest, res: Response): Promise<any> => {
+    try {
+      const { task, activeUserId, action, targetUserId, comments, delegationId, resultsId, paId } = req.body;
+      
+      if (!task || !activeUserId) {
+        return res.status(400).json({ success: false, message: 'ข้อมูลไม่ครบถ้วน: ต้องระบุ task และ activeUserId' });
+      }
+
+      if (action) {
+        const result = await WorkflowService.simulateNextAction(task, Number(activeUserId), action, {
+          targetUserId: targetUserId ? Number(targetUserId) : undefined,
+          comments: comments || '',
+          delegationId: delegationId ? Number(delegationId) : undefined,
+          resultsId: resultsId ? Number(resultsId) : undefined,
+          paId: paId ? Number(paId) : undefined
+        });
+        return res.json({ success: true, data: result });
+      } else {
+        const options = await WorkflowService.simulateNextAssignees(task, Number(activeUserId), delegationId ? Number(delegationId) : undefined);
+        
+        // Compute reject assignees statelessly using log history
+        const history = req.body.history || [];
+        const seen = new Set<number>();
+        const rejectAssignees: any[] = [];
+        for (let i = history.length - 1; i >= 0; i--) {
+          const h = history[i];
+          const uid = h.from_user_id;
+          if (uid && Number(uid) !== Number(activeUserId) && !seen.has(Number(uid))) {
+            seen.add(Number(uid));
+            rejectAssignees.push({
+              a_id: uid,
+              a_name: h.from_user_name,
+              a_position: h.from_user_position,
+              a_role: h.from_user_role || 'ผู้ร่วมทวนทาน'
+            });
+          }
+        }
+
+        return res.json({ 
+          success: true, 
+          data: {
+            autoUpAssignee: options.autoUpAssignee,
+            manualAssignees: options.manualAssignees,
+            assignedAgencies: options.assignedAgencies,
+            useParallelAssign: options.useParallelAssign,
+            rejectAssignees
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Simulation error:', error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+);
+
 export default router;

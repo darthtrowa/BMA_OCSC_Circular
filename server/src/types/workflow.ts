@@ -8,7 +8,8 @@ export type WorkflowStatus =
   | 'PENDING_EXECUTION'
   | 'PENDING_CLOSE'
   | 'COMPLETED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'PENDING_PARALLEL';
 
 export type WorkflowAction =
   | 'SUBMITTED'

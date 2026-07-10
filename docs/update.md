@@ -1,5 +1,42 @@
 # Project Update Log
 
+## [1.6.5] - 2026-07-10
+
+### Refactor: Backend-Driven Workflow Simulator (Single Source of Truth Alignment)
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**:
+  - Removed duplicate local routing logic (`getSimEffectiveUser`, `getSimNextAssignees`, `getSimRejectAssignees`, `findAgencyDirector`, `getNextStatus`).
+  - Added `simOptions` state dynamically loaded from the new backend simulation API on active task/user change.
+  - Refactored workflow simulator action handlers (`handleForward`, `handleReject`, `handleSubmitTrackResult`, `handleDelegateWithinTrack`, `handleCloseWorkflow`) to call the backend simulation API directly and apply updated state to local simulator state.
+- **apiService.ts**:
+  - Added `simulateWorkflowAction` endpoint inside `workflowApi`.
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Implemented stateless simulation helper methods `simulateNextAssignees` (to calculate predicted next owners, parallel tracks, and auto-up assignees) and `simulateNextAction` (to simulate forwards, rejects, closing, and parallel assignments).
+  - Added automatic workflow delegation resolution in simulation logic based on active workflow status requirements.
+- **workflowRoutes.ts**:
+  - Registered `POST /api/admin/workflow/simulate` stateless endpoint.
+
+## [1.6.4] - 2026-07-10
+
+### Refactor: Workflow Simulator Alignment with Backend Logic
+
+#### 🎨 Frontend UI Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**:
+  - Synced `roleRank` constant mapping to set `"COORDINATOR"` rank to `0` (matching `workflowService.ts`).
+  - Removed `'PENDING_REVIEW'` status from the local simulator `statusMap` as it is not used in the database or workflow states.
+  - Refactored `getSimNextAssignees` function to strictly mirror `workflowService.ts`:
+    - Resolved structural level filtering by checking `parent_ag_id` and `ag_type === 'POSITION'` when computing next assignees.
+    - Implemented recursion in `getDescendants` starting from the resolved `startAgencyId`.
+    - Integrated `SEC_DIRECTOR` exemption logic in manual assignees (traversing `parentMap` paths to check if a user resides under a `SEC_DIRECTOR`, allowing only GRP_LEADER at level 2).
+    - Added sorting of manual assignees by rank descending.
+
+#### ⚙️ Backend API Changes
+- **workflow.ts**:
+  - Added `'PENDING_PARALLEL'` status to the `WorkflowStatus` type union definition to resolve type conflicts between frontend and backend.
+
 ## [1.6.3] - 2026-06-24
 
 ### Feature: Isolated Workflow Simulator Page
@@ -1932,7 +1969,7 @@ Previously, the `c_workflow_history` table stored only `from_user_id` and `to_us
 
 - **docs/update.md**:
   - Resolved corrupted prefix control characters: `\x07piService.ts` ➔ `apiService.ts`, `\x07uthLimiter` ➔ `authLimiter`, `\x07iService.ts` ➔ `aiService.ts`, and `\x08ot_payload` ➔ `bot_payload`.
-  - Corrected actual typos in the text: `equireAdmin` ➔ `requireAdmin`, `equireSuperAdmin` ➔ `requireSuperAdmin`, and `alidate` ➔ `validate`.
+  - Corrected spelling typos: fixed starting characters for `requireAdmin`, `requireSuperAdmin`, and `validate`.
   - Fixed placeholder syntax question marks (`??` ➔ `⚙️`).
 
 #### ✅ Verification
