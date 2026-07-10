@@ -149,10 +149,11 @@ export const adminApi = {
 
   getUsers: (): Promise<any[]> => http.get<ApiResponse<any[]>>('/api/admin/users').then(res => res.data.response),
   getPositions: (): Promise<string[]> => http.get<ApiResponse<string[]>>('/api/admin/users/positions').then(res => res.data.response),
-  getUsersByRole: (roles: string[], approvalContext?: string, delegationId?: number): Promise<any[]> => {
+  getUsersByRole: (roles: string[], approvalContext?: string, delegationId?: number, isSimulator?: boolean): Promise<any[]> => {
     let url = `/api/admin/users/by-role?roles=${roles.join(',')}`;
     if (approvalContext) url += `&approval_context=${approvalContext}`;
     if (delegationId) url += `&delegation_id=${delegationId}`;
+    if (isSimulator) url += `&is_simulator=true`;
     return http.get<ApiResponse<any[]>>(url).then(res => res.data.response);
   },
   createUser: (payload: any): Promise<any> => http.post('/api/admin/users', payload).then(res => res.data),

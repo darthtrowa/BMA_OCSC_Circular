@@ -188,7 +188,12 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     const fetchMetadata = async () => {
       setLoadingMetadata(true);
       try {
-        const uRes = await adminApi.getUsersByRole(['COORDINATOR', 'HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF']);
+        const uRes = await adminApi.getUsersByRole(
+          ['COORDINATOR', 'HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF'],
+          undefined,
+          undefined,
+          true // isSimulator
+        );
         setUsers(uRes || []);
         
         try {
