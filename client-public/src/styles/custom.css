@@ -46,7 +46,7 @@ body, input, button, select, textarea {
 
 /* Fix Boxicons appearing as squares */
 [class^="bx-"], [class*=" bx-"], .bx {
-  font-family: 'boxicons' !important;
+  font-family: 'boxicons', sans-serif !important;
 }
 
 html {

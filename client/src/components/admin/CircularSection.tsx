@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
-import Swal from 'sweetalert2'
+import { useEffect, useMemo, useState } from 'react'
 import { adminApi, BASE_URL, workflowApi } from '../../api/apiService'
 import { useAuth } from '../../contexts/AuthContext'
 import CircularModal from './CircularModal'
 import moment from 'moment/min/moment-with-locales'
+import Swal from 'sweetalert2'
 moment.locale('th')
 
 interface CircularSectionProps {
@@ -37,19 +37,21 @@ export default function CircularSection({
   const info = allData?.information || []
 
   // Base filtered: year/agency/search
-  const baseFiltered = info.filter(item => {
-    const matchSearch = !search ||
-      (item.in_num_date||'').toLowerCase().includes(search.toLowerCase()) ||
-      (item.in_detail||'').toLowerCase().includes(search.toLowerCase()) ||
-      (item.year?.year_value||'').toLowerCase().includes(search.toLowerCase())
-    const matchYear = !filterYear || item.year?.year_id == filterYear
-    const matchAg   = !filterAg   || (item.agency||[]).some(a => a.ag_id == filterAg)
-    return matchSearch && matchYear && matchAg
-  })
+  const baseFiltered = useMemo(() => {
+    return info.filter(item => {
+      const matchSearch = !search ||
+        (item.in_num_date||'').toLowerCase().includes(search.toLowerCase()) ||
+        (item.in_detail||'').toLowerCase().includes(search.toLowerCase()) ||
+        (item.year?.year_value||'').toLowerCase().includes(search.toLowerCase())
+      const matchYear = !filterYear || item.year?.year_id === Number(filterYear)
+      const matchAg   = !filterAg   || (item.agency||[]).some(a => a.ag_id === Number(filterAg))
+      return matchSearch && matchYear && matchAg
+    })
+  }, [info, search, filterYear, filterAg])
 
   // Full filtered: include results_id
   const filtered = baseFiltered.filter(item =>
-    !filterResult || item.results?.results_id == filterResult
+    !filterResult || String(item.results?.results_id) === String(filterResult)
   )
 
   // Defensive sorting: newest to oldest, with natural numeric sort for circular numbers
@@ -69,36 +71,6 @@ export default function CircularSection({
     return (Number(b.in_id) || 0) - (Number(a.in_id) || 0);
   });
 
-  const renderFileBadge = (text: string, label: string, colorClass: string, icon: string) => {
-    if (!text || text === '-') return null;
-    const url = text.startsWith('http') ? text : `${BASE_URL}/uploads/${text}`;
-    return (
-      <a href={url} target="_blank" rel="noreferrer" className={`px-2 py-0.5 ${colorClass} text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1`}>
-        <i className={`bx ${icon}`}></i> {label}
-      </a>
-    );
-  };
-
-  const renderAttachmentBadges = (text: string) => {
-    if (!text || text === '-') return null;
-    let parsed: string[] = [];
-    try {
-      const p = JSON.parse(text);
-      if (Array.isArray(p)) parsed = p;
-      else parsed = [text];
-    } catch {
-      parsed = [text];
-    }
-    
-    if (parsed.length === 0) return null;
-    
-    return parsed.map((att, idx) => (
-      <a key={idx} href={`${BASE_URL}/uploads/${att}`} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-violet-50 text-violet-600 border-violet-100 text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1">
-        <i className='bx bx-paperclip'></i> เอกสารแนบท้าย{parsed.length > 1 ? ` (${idx + 1})` : ''}
-      </a>
-    ));
-  };
-
   const renderWebsiteLink = (text: string) => {
     if (!text || text === '-' || text.trim() === '') return null;
     const url = text.startsWith('http') ? text : `https://${text}`;
@@ -116,7 +88,7 @@ export default function CircularSection({
 
   useEffect(() => {
     onBaseFilteredChange?.(baseFiltered)
-  }, [allData, search, filterYear, filterAg]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onBaseFilteredChange, baseFiltered])
 
   const totalPages = Math.ceil(sorted.length / perPage)
   const paged = sorted.slice((page-1)*perPage, page*perPage)
@@ -200,6 +172,7 @@ export default function CircularSection({
             {(admin?.role === 'SYSTEM_ADMIN' || admin?.role === 'COORDINATOR') && (
               <>
                 <button 
+                  type="button"
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow"
                   onClick={handleSyncBot}
                 >
@@ -207,6 +180,7 @@ export default function CircularSection({
                   <span>ตรวจสอบหนังสือเวียน (Bot)</span>
                 </button>
                 <button 
+                  type="button"
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow"
                   onClick={() => { setEditItem(null); setShowModal(true) }}
                 >
@@ -317,8 +291,8 @@ export default function CircularSection({
                       {item.in_doc_date && <div className="text-xs text-slate-500 mt-1"><i className='bx bx-calendar-event mr-1'></i>ลงวันที่ {item.in_doc_date}</div>}
                       {(item.references_info || []).length > 0 && (
                         <div className="mt-2 flex flex-col gap-1 max-w-[300px]">
-                          {item.references_info.map((r: any, i: number) => (
-                            <span key={i} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block wrap-break-word">
+                          {item.references_info.map((r: { in_num_date: string; in_doc_date?: string }) => (
+                            <span key={r.in_num_date} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block wrap-break-word">
                               อ้างถึง: {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}
                             </span>
                           ))}
@@ -329,8 +303,8 @@ export default function CircularSection({
                       <div className="text-slate-700 line-clamp-2 max-w-[350px] mb-2">{item.in_detail}</div>
                       {item.agency && item.agency.length > 0 && (
                         <div className="text-xs font-medium text-emerald-700 flex flex-col gap-1 mb-2">
-                          {item.agency.map((a: any, idx: number) => (
-                            <span key={idx} className="flex items-center gap-1">
+                          {item.agency.map((a: { ag_id: number; ag_name: string }) => (
+                            <span key={a.ag_id} className="flex items-center gap-1">
                               <i className='bx bx-buildings'></i>
                               <span className="leading-snug">{a.ag_name}</span>
                             </span>
@@ -366,6 +340,7 @@ export default function CircularSection({
                       <div className="flex justify-end gap-2">
                         {(!item.in_workflow_status) && (admin?.role === 'COORDINATOR' || admin?.role === 'SYSTEM_ADMIN' || admin?.permiss === 'superadmin' || admin?.permiss === 'admin') && (
                           <button 
+                            type="button"
                             className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition flex items-center justify-center" 
                             onClick={() => handleStartWorkflow(item)}
                             title="เริ่มเวียนหนังสือ"
@@ -374,6 +349,7 @@ export default function CircularSection({
                           </button>
                         )}
                         <button 
+                          type="button"
                           className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100 transition flex items-center justify-center" 
                           onClick={() => { setEditItem(item); setShowModal(true) }}
                           title="แก้ไข"
@@ -381,6 +357,7 @@ export default function CircularSection({
                           <i className='bx bx-edit-alt'></i>
                         </button>
                         <button 
+                          type="button"
                           className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center" 
                           onClick={() => handleDelete(item)}
                           title="ลบ"
@@ -404,6 +381,7 @@ export default function CircularSection({
           </div>
           <nav className="flex items-center gap-1">
             <button 
+              type="button"
               className={`w-8 h-8 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 transition ${page<=1?'opacity-50 cursor-not-allowed pointer-events-none':''}`}
               onClick={()=>setPage(p=>p-1)}
             >
@@ -415,6 +393,7 @@ export default function CircularSection({
               if(p < 1 || p > totalPages) return null
               return (
                 <button 
+                  type="button"
                   key={p} 
                   className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold transition ${p===page ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}
                   onClick={()=>setPage(p)}
@@ -425,6 +404,7 @@ export default function CircularSection({
             })}
             
             <button 
+              type="button"
               className={`w-8 h-8 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 transition ${page>=totalPages?'opacity-50 cursor-not-allowed pointer-events-none':''}`}
               onClick={()=>setPage(p=>p+1)}
             >

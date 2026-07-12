@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import Select from 'react-select'
-import Swal from 'sweetalert2'
 import { adminApi, BASE_URL } from '../../api/apiService'
+import Select from 'react-select'
 import moment from 'moment/min/moment-with-locales'
+import Swal from 'sweetalert2'
 moment.locale('th')
 
 export default function CircularModal({ allData, editItem, onClose, onSaved, mode = 'edit' }) {
@@ -21,7 +21,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
   })
   const [file, setFile]     = useState<File | null>(null)
   const [origFile, setOrigFile] = useState<File | null>(null)
-  const [attFiles, setAttFiles] = useState<(File | null)[]>([])
+  const [attFiles, setAttFiles] = useState<{ id: string; file: File | null }[]>([])
   const [keptAttachments, setKeptAttachments] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [summarizing, setSummarizing] = useState(false)
@@ -126,15 +126,15 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
     }
 
     // Attachment File
-    const filesToUpload = attFiles.filter((f): f is File => f !== null)
+    const filesToUpload = attFiles.map(item => item.file).filter((f): f is File => f !== null)
     if (filesToUpload.length > 0) {
-      filesToUpload.forEach(f => fd.append('in_attachment_file', f))
+      filesToUpload.forEach(f => { fd.append('in_attachment_file', f) })
     }
     fd.append('in_attachment_link', keptAttachments.length > 0 ? JSON.stringify(keptAttachments) : '-')
 
     if (!form.in_link) fd.append('lkk_none', '-')
-    form.ag_id.forEach(o  => fd.append('ag_id[]', o.value))
-    form.cat_id.forEach(o => fd.append('cat_id[]', o.value))
+    form.ag_id.forEach(o  => { fd.append('ag_id[]', o.value) })
+    form.cat_id.forEach(o => { fd.append('cat_id[]', o.value) })
 
     if (form.mkk_file_mode === 'link' && form.mkk_ref_link_in) {
       fd.append('mkk_ref_link_in', form.mkk_ref_link_in)
@@ -148,7 +148,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
 
     if (form.in_id_ref.length > 0) {
       fd.append('ref_none', 'has_ref')
-      form.in_id_ref.forEach(o => fd.append('in_id_ref[]', o.value))
+      form.in_id_ref.forEach(o => { fd.append('in_id_ref[]', o.value) })
     } else {
       fd.append('ref_none', '-')
     }
@@ -245,7 +245,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                   className="flex items-center gap-1.5 px-3 py-1 bg-violet-50 text-violet-600 hover:bg-violet-100 rounded-lg text-xs font-bold transition disabled:opacity-50"
                   onClick={async () => {
                     // Check if new un-uploaded files exist
-                    const hasUnsavedUploads = origFile || file || attFiles.some(f => f !== null);
+                    const hasUnsavedUploads = origFile || file || attFiles.some(item => item.file !== null);
                     if (hasUnsavedUploads) {
                        return Swal.fire({ 
                          icon: 'info', 
@@ -606,8 +606,8 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">เอกสารแนบท้าย (อัปโหลดได้หลายไฟล์)</label>
               
               <div className="space-y-2 mb-3">
-                {keptAttachments.map((link, idx) => (
-                  <div key={`kept-${idx}`} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                {keptAttachments.map((link) => (
+                  <div key={link} className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
                       <span className="text-sm text-emerald-800 font-medium truncate">{link}</span>
@@ -625,7 +625,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                       <button 
                         type="button" 
                         className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                        onClick={() => setKeptAttachments(prev => prev.filter((_, i) => i !== idx))}
+                        onClick={() => setKeptAttachments(prev => prev.filter(item => item !== link))}
                       >
                         <i className='bx bx-trash text-sm'></i>
                         <span>ลบไฟล์</span>
@@ -634,94 +634,95 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                   </div>
                 ))}
 
-                {attFiles.map((fileObj, idx) => (
-                  <div key={`new-${idx}`} className="flex items-center gap-2">
-                    <div className="flex-1">
-                      {fileObj ? (
-                        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between animate__animated animate__fadeIn">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
-                            <span className="text-sm text-indigo-800 font-medium truncate">{fileObj.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <a 
-                              href={URL.createObjectURL(fileObj)} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className="px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 hover:text-indigo-800 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                            >
-                              <i className='bx bx-show text-sm'></i>
-                              <span>ดูไฟล์</span>
-                            </a>
-                            <button
-                              type="button"
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
-                              onClick={async () => {
-                                if (!fileObj) return
-                                const fd = new FormData()
-                                fd.append('in_attachment_file', fileObj)
-                                try {
-                                  Swal.showLoading()
-                                  const res = await adminApi.uploadSingle(fd)
-                                  if (res.status && res.response?.filename) {
-                                    setKeptAttachments(prev => [...prev, res.response.filename])
-                                    setAttFiles(prev => prev.filter((_, i) => i !== idx))
-                                    Swal.fire({ icon: 'success', text: 'อัปโหลดเอกสารแนบท้ายสำเร็จ', timer: 1500, showConfirmButton: false })
-                                  } else {
-                                    Swal.fire('ผิดพลาด', res.message || 'อัปโหลดล้มเหลว', 'error')
+                {attFiles.map((item) => {
+                  const fileObj = item.file
+                  const itemId = item.id
+                  return (
+                    <div key={itemId} className="flex items-center gap-2">
+                      <div className="flex-1">
+                        {fileObj ? (
+                          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between animate__animated animate__fadeIn">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <i className='bx bxs-file-pdf text-rose-500 text-xl shrink-0'></i>
+                              <span className="text-sm text-indigo-800 font-medium truncate">{fileObj.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <a 
+                                href={URL.createObjectURL(fileObj)} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 hover:text-indigo-800 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                              >
+                                <i className='bx bx-show text-sm'></i>
+                                <span>ดูไฟล์</span>
+                              </a>
+                              <button
+                                type="button"
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                                onClick={async () => {
+                                  if (!fileObj) return
+                                  const fd = new FormData()
+                                  fd.append('in_attachment_file', fileObj)
+                                  try {
+                                    Swal.showLoading()
+                                    const res = await adminApi.uploadSingle(fd)
+                                    if (res.status && res.response?.filename) {
+                                      setKeptAttachments(prev => [...prev, res.response.filename])
+                                      setAttFiles(prev => prev.filter(att => att.id !== itemId))
+                                      Swal.fire({ icon: 'success', text: 'อัปโหลดเอกสารแนบท้ายสำเร็จ', timer: 1500, showConfirmButton: false })
+                                    } else {
+                                      Swal.fire('ผิดพลาด', res.message || 'อัปโหลดล้มเหลว', 'error')
+                                    }
+                                  } catch (err: unknown) {
+                                    const apiMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+                                    Swal.fire('ผิดพลาด', apiMsg || 'เกิดข้อผิดพลาดในการอัปโหลด', 'error')
                                   }
-                                } catch (err: any) {
-                                  Swal.fire('ผิดพลาด', err.response?.data?.message || 'เกิดข้อผิดพลาดในการอัปโหลด', 'error')
-                                }
-                              }}
-                            >
-                              <i className='bx bx-upload text-sm'></i>
-                              <span>อัปโหลดทันที</span>
-                            </button>
-                            <button 
-                              type="button" 
-                              className="px-2.5 py-1 bg-indigo-100/50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                              onClick={() => {
-                                const updated = [...attFiles]
-                                updated[idx] = null
-                                setAttFiles(updated)
-                              }}
-                            >
-                              <i className='bx bx-x text-sm'></i>
-                              <span>เปลี่ยนไฟล์</span>
-                            </button>
+                                }}
+                              >
+                                <i className='bx bx-upload text-sm'></i>
+                                <span>อัปโหลดทันที</span>
+                              </button>
+                              <button 
+                                type="button" 
+                                className="px-2.5 py-1 bg-indigo-100/50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                                onClick={() => {
+                                  setAttFiles(prev => prev.map(att => att.id === itemId ? { ...att, file: null } : att))
+                                }}
+                              >
+                                <i className='bx bx-x text-sm'></i>
+                                <span>เปลี่ยนไฟล์</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <input 
-                          type="file"
-                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
-                          accept=".pdf"
-                          onChange={e => {
-                            const selectedFile = e.target.files?.[0] || null
-                            const updated = [...attFiles]
-                            updated[idx] = selectedFile
-                            setAttFiles(updated)
-                          }} 
-                        />
-                      )}
+                        ) : (
+                          <input 
+                            type="file"
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
+                            accept=".pdf"
+                            onChange={e => {
+                              const selectedFile = e.target.files?.[0] || null
+                              setAttFiles(prev => prev.map(att => att.id === itemId ? { ...att, file: selectedFile } : att))
+                            }} 
+                          />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-xl transition flex items-center justify-center shrink-0 border border-rose-100"
+                        onClick={() => setAttFiles(prev => prev.filter(att => att.id !== itemId))}
+                        title="ลบรายการนี้"
+                      >
+                        <i className='bx bx-trash text-lg'></i>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 rounded-xl transition flex items-center justify-center shrink-0 border border-rose-100"
-                      onClick={() => setAttFiles(prev => prev.filter((_, i) => i !== idx))}
-                      title="ลบรายการนี้"
-                    >
-                      <i className='bx bx-trash text-lg'></i>
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               <button
                 type="button"
                 className="w-full py-2.5 border-2 border-dashed border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/20 text-slate-500 hover:text-emerald-600 rounded-xl transition flex items-center justify-center gap-2 text-sm font-semibold cursor-pointer mt-2"
-                onClick={() => setAttFiles(prev => [...prev, null])}
+                onClick={() => setAttFiles(prev => [...prev, { id: `att-${Date.now()}-${Math.random()}`, file: null }])}
               >
                 <i className='bx bx-plus text-lg'></i>
                 <span>เพิ่มรายการไฟล์สิ่งที่ส่งมาด้วย</span>
@@ -884,7 +885,7 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
                   type="button"
                   className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-xs font-bold rounded-r-xl transition disabled:opacity-50 shrink-0 whitespace-nowrap"
                   onClick={async () => {
-                    const hasUnsavedUploads = origFile || file || attFiles.some(f => f !== null)
+                    const hasUnsavedUploads = origFile || file || attFiles.some(item => item.file !== null)
                     if (hasUnsavedUploads) {
                       return Swal.fire({
                         icon: 'info',
@@ -1036,12 +1037,14 @@ export default function CircularModal({ allData, editItem, onClose, onSaved, mod
         </div>
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
           <button 
+            type="button"
             className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition" 
             onClick={onClose}
           >
             ยกเลิก
           </button>
           <button 
+            type="button"
             className="px-5 py-2.5 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed" 
             onClick={handleSave} 
             disabled={saving}

@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Swal from 'sweetalert2'
-import { useAuth } from '../contexts/AuthContext'
 import { adminApi } from '../api/apiService'
+import { useAuth } from '../contexts/AuthContext'
+import Swal from 'sweetalert2'
 
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ loginUsername: '', loginPassword: '' })
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const otpRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [showPwd, setShowPwd] = useState(false)
 
@@ -17,6 +19,10 @@ export default function LoginPage() {
   const [emailHint, setEmailHint] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [resendCooldown, setResendCooldown] = useState(0)
+
+  // Focus management (replaces autoFocus)
+  useEffect(() => { usernameRef.current?.focus() }, [])
+  useEffect(() => { if (is2fa) otpRef.current?.focus() }, [is2fa])
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -138,7 +144,7 @@ export default function LoginPage() {
                         placeholder="กรอกชื่อผู้ใช้งาน..."
                         value={form.loginUsername}
                         onChange={handleChange}
-                        autoFocus
+                        ref={usernameRef}
                       />
                     </div>
                   </div>
@@ -206,7 +212,7 @@ export default function LoginPage() {
                       placeholder="000000"
                       value={otpCode}
                       onChange={e => setOtpCode(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))}
-                      autoFocus
+                      ref={otpRef}
                     />
                   </div>
 

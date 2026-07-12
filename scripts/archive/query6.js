@@ -1,0 +1,38 @@
+import pkg from 'pg';
+const { Pool } = pkg;
+import dotenv from 'dotenv';
+dotenv.config();
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+});
+
+async function run() {
+  const res = await pool.query(`
+    SELECT in_id, in_num_date, in_workflow_status, in_flow_state, in_current_owner_id, in_is_parallel
+    FROM c_information
+    WHERE in_num_date LIKE '%1008%' OR in_num_date LIKE '%5%'
+  `);
+  console.log('Found documents:', res.rows);
+  
+  if (res.rows.length === 1) {
+    const docId = res.rows[0].in_id;
+    await pool.query("UPDATE c_information SET in_flow_state = 'out' WHERE in_id = $1", [docId]);
+    console.log(`Updated document ${docId} to out state`);
+  } else {
+    // If multiple, try to find the one with '1008/ว 5'
+    const target = res.rows.find(r => r.in_num_date.includes('1008') && r.in_num_date.includes('5'));
+    if (target) {
+        await pool.query("UPDATE c_information SET in_flow_state = 'out' WHERE in_id = $1", [target.in_id]);
+        console.log(`Updated document ${target.in_id} to out state`);
+    } else {
+        console.log('Multiple or no documents found, not updating automatically');
+    }
+  }
+  process.exit(0);
+}
+run();

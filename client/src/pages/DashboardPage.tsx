@@ -1,18 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
 import { adminApi, delegationApi } from '../api/apiService'
-import Sidebar from '../components/admin/Sidebar'
-import DashboardStats from '../components/admin/DashboardStats'
-import CircularSection from '../components/admin/CircularSection'
-import MasterDataSection from '../components/admin/MasterDataSection'
-import UserSection from '../components/admin/UserSection'
-import ProfileModal from '../components/admin/ProfileModal'
-import PasswordModal from '../components/admin/PasswordModal'
-import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
-import BotQueueSection from '../components/admin/BotQueueSection'
-import WorkflowInboxSection from '../components/admin/WorkflowInboxSection'
 import AgencyTreeSection from '../components/admin/AgencyTreeSection'
+import BotQueueSection from '../components/admin/BotQueueSection'
+import CircularSection from '../components/admin/CircularSection'
+import DashboardStats from '../components/admin/DashboardStats'
+import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
+import MasterDataSection from '../components/admin/MasterDataSection'
+import PasswordModal from '../components/admin/PasswordModal'
+import ProfileModal from '../components/admin/ProfileModal'
+import Sidebar from '../components/admin/Sidebar'
+import UserSection from '../components/admin/UserSection'
+import WorkflowInboxSection from '../components/admin/WorkflowInboxSection'
+import { useAuth } from '../contexts/AuthContext'
 import Swal from 'sweetalert2'
 
 export default function DashboardPage() {
@@ -30,13 +30,13 @@ export default function DashboardPage() {
 
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
       const data = await adminApi.getDashboardData()
       if (data) {
         const lastItems = ["ไม่ระบุ", "*ไม่พิจารณา", "ไม่พิจารณา"];
-        const sortList = (list, key) => {
+        const sortList = (list: { [key: string]: string }[], key: string) => {
           if (!list) return [];
           const top = list.filter(i => !lastItems.some(last => (i[key] || '').includes(last)));
           const bottom = list.filter(i => lastItems.some(last => (i[key] || '').includes(last)));
@@ -52,18 +52,10 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => { 
-    loadData()
-    syncProfile()
-    delegationApi.getMyActive()
-      .then(data => setActiveDelegations(data || []))
-      .catch(() => setActiveDelegations([]))
   }, [])
 
   // ── Sync Profile to ensure role is always up-to-date in AuthContext ──
-  const syncProfile = async () => {
+  const syncProfile = useCallback(async () => {
     try {
       const res = await adminApi.getProfile()
       if (res.status && res.response) {
@@ -74,7 +66,15 @@ export default function DashboardPage() {
         }
       }
     } catch {}
-  }
+  }, [admin, login])
+
+  useEffect(() => { 
+    loadData()
+    syncProfile()
+    delegationApi.getMyActive()
+      .then(data => setActiveDelegations(data || []))
+      .catch(() => setActiveDelegations([]))
+  }, [loadData, syncProfile])
 
   // ปิด dropdown เมื่อคลิกที่อื่น
   useEffect(() => {
@@ -143,6 +143,7 @@ export default function DashboardPage() {
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-end gap-x-4 border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
           <div className="relative">
             <button 
+              type="button"
               className="flex items-center gap-2 p-2 hover:bg-slate-100 rounded-xl transition"
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDropdownOpen(!dropdownOpen) }}
             >
@@ -165,12 +166,14 @@ export default function DashboardPage() {
                   <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลผู้ใช้งาน</div>
                   <div className="border-t border-slate-100 my-1"></div>
                   <button 
+                    type="button"
                     className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-emerald-600 transition"
                     onClick={(e) => { e.preventDefault(); profileRef.current?.open(); setDropdownOpen(false) }}
                   >
                     <i className="bx bx-user text-lg"></i> โปรไฟล์
                   </button>
                   <button 
+                    type="button"
                     className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-emerald-600 transition"
                     onClick={(e) => { e.preventDefault(); passwordRef.current?.open(); setDropdownOpen(false) }}
                   >
@@ -178,6 +181,7 @@ export default function DashboardPage() {
                   </button>
                   <div className="border-t border-slate-100 my-1"></div>
                   <button 
+                    type="button"
                     className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition font-medium"
                     onClick={(e) => { e.preventDefault(); doLogout(); setDropdownOpen(false) }}
                   >

@@ -1,20 +1,56 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { adminApi, agencyApi } from '../../api/apiService'
-import Swal from 'sweetalert2'
 import moment from 'moment/min/moment-with-locales'
-import { useAuth } from '../../contexts/AuthContext'
+import Swal from 'sweetalert2'
+import { adminApi, agencyApi } from '../../api/apiService'
 moment.locale('th')
 
-export default function UserSection({ permiss }) {
-  const [users, setUsers] = useState([])
-  const [agencies, setAgencies] = useState<any[]>([])
+interface Agency {
+  ag_id: number;
+  parent_ag_id?: number | null;
+  ag_status: string;
+  agency_ordering?: number;
+  ag_name?: string;
+  ag_level?: number;
+  children?: Agency[];
+}
+
+interface User {
+  a_id: number;
+  a_name: string;
+  a_username: string;
+  a_email?: string;
+  a_password?: string;
+  a_permiss: string;
+  a_role?: string;
+  a_position?: string;
+  a_status: string;
+  a_agency?: string;
+  a_agency_id?: number | string;
+  a_last_login?: string;
+}
+
+interface FormData {
+  a_name: string;
+  a_username: string;
+  a_email: string;
+  a_password: string;
+  a_permiss: string;
+  a_role: string;
+  a_position: string;
+  a_status: string;
+  a_agency: string;
+  a_agency_id: string;
+}
+
+export default function UserSection({ permiss }: { permiss?: string }) {
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showModal, setShowModal] = useState(false)
-  const [editingUser, setEditingUser] = useState(null)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     a_name: '',
     a_username: '',
     a_email: '',
@@ -27,35 +63,33 @@ export default function UserSection({ permiss }) {
     a_agency_id: ''
   })
 
-  useEffect(() => {
-    loadUsers()
-    loadAgencies()
-  }, [])
-
-  const loadAgencies = async () => {
+  const loadAgencies = useCallback(async () => {
     try {
-      const flatData = await agencyApi.getTree()
-      if (!flatData) return setAgencies([])
+      const flatData: Agency[] = await agencyApi.getTree()
+      if (!flatData) return
 
       // 1. สร้าง Tree เพื่อจัดกลุ่มและเรียงตาม agency_ordering
-      const map = new Map<number, any>()
-      flatData.forEach((n: any) => map.set(n.ag_id, { ...n, children: [] }))
-      const roots: any[] = []
+      const map = new Map<number, Agency & { children: Agency[] }>()
+      flatData.forEach((n) => { map.set(n.ag_id, { ...n, children: [] }) })
+      const roots: (Agency & { children: Agency[] })[] = []
       
       map.forEach(n => {
         if (n.parent_ag_id && map.has(n.parent_ag_id)) {
-          map.get(n.parent_ag_id)!.children!.push(n)
+          const parent = map.get(n.parent_ag_id)
+          if (parent) {
+            parent.children.push(n)
+          }
         } else {
           roots.push(n)
         }
       })
 
       roots.sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0))
-      map.forEach(n => n.children!.sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0)))
+      map.forEach(n => { n.children.sort((a, b) => (a.agency_ordering || 0) - (b.agency_ordering || 0)) })
 
       // 2. แปลงกลับเป็น Flat List พร้อมตัดตัวที่ status ไม่ใช่ active ออก
-      const flatten = (nodes: any[], currentLevel = 1): any[] => {
-        let result: any[] = []
+      const flatten = (nodes: Agency[], currentLevel = 1): Agency[] => {
+        let result: Agency[] = []
         nodes.forEach(n => {
           if (n.ag_status === 'active') {
             result.push({ ...n, ag_level: currentLevel })
@@ -68,16 +102,17 @@ export default function UserSection({ permiss }) {
       }
       
       const orderedActiveAgencies = flatten(roots)
-      setAgencies(orderedActiveAgencies)
+      // Store for future use if needed; suppressing unused var by consuming value
+      void orderedActiveAgencies
     } catch (err) {
       console.error('Error loading agencies:', err)
     }
-  }
+  }, [])
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await adminApi.getUsers()
+      const data: User[] = await adminApi.getUsers()
       setUsers(data || [])
     } catch (err) {
       console.error(err)
@@ -85,9 +120,14 @@ export default function UserSection({ permiss }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const handleOpenModal = (user = null) => {
+  useEffect(() => {
+    loadUsers()
+    loadAgencies()
+  }, [loadUsers, loadAgencies])
+
+  const handleOpenModal = (user: User | null = null) => {
     if (user) {
       setEditingUser(user)
       setFormData({
@@ -120,7 +160,7 @@ export default function UserSection({ permiss }) {
     setShowModal(true)
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Validation
@@ -141,7 +181,7 @@ export default function UserSection({ permiss }) {
         Swal.fire({ title: 'สำเร็จ', text: 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว', icon: 'success', timer: 1500 })
       }
       setShowModal(false)
-      await loadUsers() // รอให้โหลดข้อมูลใหม่เสร็จก่อน
+      await loadUsers()
     } catch (err) {
       console.error(err)
       Swal.fire('Error', 'บันทึกข้อมูลไม่สำเร็จ', 'error')
@@ -150,7 +190,7 @@ export default function UserSection({ permiss }) {
     }
   }
 
-  const handleDelete = (user) => {
+  const handleDelete = (user: User) => {
     if (user.a_permiss === 'superadmin') {
       return Swal.fire('แจ้งเตือน', 'ไม่สามารถลบ Super Admin ได้', 'error')
     }
@@ -190,6 +230,7 @@ export default function UserSection({ permiss }) {
           จัดการผู้ใช้งาน
         </h5>
         <button
+          type="button"
           className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
           onClick={() => handleOpenModal()}
         >
@@ -222,7 +263,7 @@ export default function UserSection({ permiss }) {
             ) : users.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-12 text-slate-400">ไม่พบข้อมูลผู้ใช้งาน</td></tr>
             ) : (
-              users.map((u: any, i: number) => (
+              users.map((u, i) => (
                 <tr key={u.a_id} className="hover:bg-slate-50 border-b border-slate-100 transition last:border-0">
                   <td className="px-6 py-4 text-slate-400">{i + 1}</td>
                   <td className="px-6 py-4">
@@ -256,6 +297,7 @@ export default function UserSection({ permiss }) {
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button
+                        type="button"
                         className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100 transition flex items-center justify-center"
                         title="แก้ไข"
                         onClick={() => handleOpenModal(u)}
@@ -265,6 +307,7 @@ export default function UserSection({ permiss }) {
 
                       {u.a_permiss !== 'superadmin' && (
                         <button
+                          type="button"
                           className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 transition flex items-center justify-center"
                           title="ลบ"
                           onClick={() => handleDelete(u)}
@@ -284,7 +327,12 @@ export default function UserSection({ permiss }) {
       {/* Sidebar เพิ่ม/แก้ไข */}
       {showModal && createPortal(
         <>
-          <div className="fixed inset-0 z-299 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <button
+            type="button"
+            aria-label="ปิด"
+            className="fixed inset-0 z-299 bg-slate-900/40 backdrop-blur-sm cursor-default"
+            onClick={() => setShowModal(false)}
+          />
           <div className="fixed right-0 top-0 h-full z-300 w-full max-w-xl flex flex-col bg-slate-50 shadow-2xl animate__animated animate__slideInRight animate__faster">
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-linear-to-r from-emerald-50 to-teal-50 shrink-0">
@@ -313,8 +361,9 @@ export default function UserSection({ permiss }) {
             <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
               <form id="userForm" onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล</label>
+                  <label htmlFor="a_name" className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล</label>
                   <input
+                    id="a_name"
                     type="text"
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
                     value={formData.a_name}
@@ -326,8 +375,9 @@ export default function UserSection({ permiss }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้ (Username)</label>
+                    <label htmlFor="a_username" className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้ (Username)</label>
                     <input
+                      id="a_username"
                       type="text"
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
                       value={formData.a_username}
@@ -337,8 +387,9 @@ export default function UserSection({ permiss }) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (สำหรับ 2FA)</label>
+                    <label htmlFor="a_email" className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (สำหรับ 2FA)</label>
                     <input
+                      id="a_email"
                       type="email"
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
                       value={formData.a_email}
@@ -348,13 +399,12 @@ export default function UserSection({ permiss }) {
                   </div>
                 </div>
 
-
-
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  <label htmlFor="a_password" className="block text-sm font-semibold text-slate-700 mb-1.5">
                     รหัสผ่าน {editingUser && <span className="text-emerald-600 text-xs font-normal ml-2">(ปล่อยว่างถ้าไม่ต้องการเปลี่ยน)</span>}
                   </label>
                   <input
+                    id="a_password"
                     type="password"
                     name="new-password"
                     placeholder="••••••••"
@@ -365,13 +415,11 @@ export default function UserSection({ permiss }) {
                   />
                 </div>
 
-
-
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">สิทธิ์การเข้าระบบ (Security)</label>
+                    <label htmlFor="a_permiss" className="block text-sm font-semibold text-slate-700 mb-1.5">สิทธิ์การเข้าระบบ (Security)</label>
                     <select
+                      id="a_permiss"
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition appearance-none"
                       value={formData.a_permiss}
                       onChange={e => setFormData({ ...formData, a_permiss: e.target.value })}
@@ -384,8 +432,9 @@ export default function UserSection({ permiss }) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">สถานะ</label>
+                    <label htmlFor="a_status" className="block text-sm font-semibold text-slate-700 mb-1.5">สถานะ</label>
                     <select
+                      id="a_status"
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition appearance-none"
                       value={formData.a_status}
                       onChange={e => setFormData({ ...formData, a_status: e.target.value })}

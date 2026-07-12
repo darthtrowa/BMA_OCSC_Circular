@@ -1,20 +1,26 @@
-import { useState, useImperativeHandle, forwardRef } from 'react'
-import Swal from 'sweetalert2'
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import { adminApi } from '../../api/apiService'
 import { useAuth } from '../../contexts/AuthContext'
+import Swal from 'sweetalert2'
 
 interface ProfileModalProps {
   onUpdated?: (newName: string) => void;
 }
 
-const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => {
-  const { admin } = useAuth()
+interface ProfileData {
+  a_username?: string;
+  a_permiss?: string;
+  a_2fa_enabled?: boolean;
+}
+
+const ProfileModal = forwardRef<{ open: () => void }, ProfileModalProps>(({ onUpdated }, ref) => {
+  useAuth() // Access context for side effects if needed
   const [show, setShow]       = useState(false)
   const [name, setName]       = useState('')
   const [email, setEmail]     = useState('')
   const [role, setRole]       = useState('STAFF')
   const [position, setPosition] = useState('')
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<ProfileData | null>(null)
   const [saving, setSaving]   = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -49,8 +55,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
       } else {
         Swal.fire('ผิดพลาด', data.message, 'error')
       }
-    } catch (err: any) {
-      Swal.fire('ผิดพลาด', err.response?.data?.message || 'เกิดข้อผิดพลาด', 'error')
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      Swal.fire('ผิดพลาด', apiMsg || 'เกิดข้อผิดพลาด', 'error')
     } finally {
       setSaving(false)
     }
@@ -81,8 +88,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
             {/* Row 1 */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล <span className="text-rose-500">*</span></label>
+              <label htmlFor="profile_name" className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล <span className="text-rose-500">*</span></label>
               <input 
+                id="profile_name"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={name} 
                 onChange={e=>setName(e.target.value)} 
@@ -90,8 +98,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (Email)</label>
+              <label htmlFor="profile_email" className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (Email)</label>
               <input 
+                id="profile_email"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={email} 
                 onChange={e=>setEmail(e.target.value)} 
@@ -101,9 +110,10 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
             {/* Row 2 */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">บทบาทในสายงาน (Workflow Role)</label>
+              <label htmlFor="profile_role" className="block text-sm font-semibold text-slate-700 mb-1.5">บทบาทในสายงาน (Workflow Role)</label>
               <div className="relative">
                 <select
+                  id="profile_role"
                   className="w-full px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none font-bold text-blue-800 transition"
                   value={role}
                   onChange={e => setRole(e.target.value)}
@@ -123,8 +133,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่งทางการ (Official Position)</label>
+              <label htmlFor="profile_position" className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่งทางการ (Official Position)</label>
               <input 
+                id="profile_position"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={position} 
                 onChange={e=>setPosition(e.target.value)} 
@@ -134,15 +145,15 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
             {/* Row 3 - Read Only Info */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
-              <div className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
+              <label htmlFor="profile_username" className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
+              <div id="profile_username" className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
                 <i className='bx bx-lock-alt mr-2'></i>
                 {profile?.a_username || '-'}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ระดับสิทธิ์ (Permission Level)</label>
-              <div className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
+              <label htmlFor="profile_permiss" className="block text-sm font-semibold text-slate-700 mb-1.5">ระดับสิทธิ์ (Permission Level)</label>
+              <div id="profile_permiss" className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
                 <i className='bx bx-shield-alt-2 mr-2'></i>
                 {profile?.a_permiss === 'superadmin' ? 'ผู้ดูแลระบบสูงสุด (SuperAdmin)' : 
                  profile?.a_permiss === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 
@@ -164,9 +175,12 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
                 </div>
                 <div className="form-check form-switch m-0">
                   <input 
+                    id="toggle_2fa"
                     className="form-check-input h-6 w-11 cursor-pointer" 
                     type="checkbox" 
-                    role="switch" 
+                    role="switch"
+                    aria-checked={profile?.a_2fa_enabled || false}
+                    aria-label="เปิด/ปิด ยืนยันตัวตน 2 ชั้น (2FA)"
                     checked={profile?.a_2fa_enabled || false}
                     onChange={async (e) => {
                       const newVal = e.target.checked
@@ -176,8 +190,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
                           setProfile({ ...profile, a_2fa_enabled: newVal })
                           Swal.fire({ icon: 'success', text: res.message, timer: 1500, showConfirmButton: false })
                         }
-                      } catch (err: any) {
-                        Swal.fire('Error', err.response?.data?.message || 'ไม่สามารถเปลี่ยนสถานะได้', 'error')
+                      } catch (err: unknown) {
+                        const apiMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+                        Swal.fire('Error', apiMsg || 'ไม่สามารถเปลี่ยนสถานะได้', 'error')
                       }
                     }}
                   />
@@ -189,12 +204,14 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
           <button 
+            type="button"
             className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-800 transition" 
             onClick={() => setShow(false)}
           >
             ยกเลิก
           </button>
           <button 
+            type="button"
             className="px-6 py-2.5 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-200 transition flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed" 
             onClick={handleSave} 
             disabled={saving}

@@ -1,7 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { LOGO_URL } from '../../api/apiService'
 
-export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, actingCount = 0, trackingCount = 0, onLogout, onProfile, onPassword, isCollapsed = false }) {
+export default function Sidebar({ activeSection, onNavigate, permiss, role, inboxCount = 0, actingCount = 0, trackingCount = 0, isCollapsed = false }: {
+  activeSection: string;
+  onNavigate: (sec: string) => void;
+  permiss?: string;
+  role?: string;
+  inboxCount?: number;
+  actingCount?: number;
+  trackingCount?: number;
+  isCollapsed?: boolean;
+  // Legacy props kept for API compat but unused:
+  onLogout?: () => void;
+  onProfile?: () => void;
+  onPassword?: () => void;
+}) {
   const isSuperAdmin = permiss === 'superadmin' || permiss === 'admin'
 
   const [openInbox, setOpenInbox] = useState(false)
@@ -25,13 +38,13 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
     { key: 'status', label: 'สถานะการใช้งาน', icon: 'bx-toggle-left' },
   ]
 
-  const navItem = (secId: string, label: string, icon: string, show = true, count = 0, isSub = false) =>
+  const navItem = (secId: string, label: string, icon: string, show = true, count = 0, _isSub = false) =>
     show && (
       <li key={secId}>
-        <a
-          href="#"
-          className={`group flex items-center justify-between rounded-xl py-2.5 px-3 text-xs font-semibold transition ${activeSection === secId ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-700'}`}
-          onClick={e => { e.preventDefault(); onNavigate(secId) }}
+        <button
+          type="button"
+          className={`group flex w-full items-center justify-between rounded-xl py-2.5 px-3 text-xs font-semibold transition ${activeSection === secId ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-700'}`}
+          onClick={() => onNavigate(secId)}
         >
           <div className="flex items-center gap-x-3">
             <i className={`bx ${icon} text-lg ${activeSection === secId ? 'text-emerald-700' : 'text-slate-400 group-hover:text-emerald-600'}`}></i>
@@ -42,7 +55,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
               {count}
             </span>
           )}
-        </a>
+        </button>
       </li>
     )
 
@@ -73,6 +86,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
           
           <li className="mt-2">
             <button
+              type="button"
               className={`flex w-full items-center justify-between p-2 text-xs font-bold uppercase tracking-wider transition ${openInbox ? 'text-emerald-700' : 'text-slate-400 hover:text-slate-600'}`}
               onClick={() => setOpenInbox(!openInbox)}
             >
@@ -109,6 +123,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
             <>
               <li className="mt-4">
                 <button
+                  type="button"
                   className="flex w-full items-center justify-between p-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 transition"
                   onClick={() => setOpenMaster(!openMaster)}
                 >
@@ -124,6 +139,7 @@ export default function Sidebar({ activeSection, onNavigate, permiss, role, inbo
 
               <li className="mt-2">
                 <button
+                  type="button"
                   className="flex w-full items-center justify-between p-2 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 transition"
                   onClick={() => setOpenManage(!openManage)}
                 >

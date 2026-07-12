@@ -1,8 +1,22 @@
 {
-  "dependencies": {
-    "nodemailer": "^8.0.7"
-  },
-  "devDependencies": {
-    "@types/nodemailer": "^8.0.0"
+  "name": "bma-ocsc-circular",
+  "version": "1.0.0",
+  "description": "BMA OCSC Circular — Monorepo Root",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client",
+    "client-admin",
+    "client-public"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:admin": "npm run dev --workspace=client-admin",
+    "dev:public": "npm run dev --workspace=client-public",
+    "build:server": "npm run build --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "build:admin": "npm run build --workspace=client-admin",
+    "build:public": "npm run build --workspace=client-public"
   }
 }

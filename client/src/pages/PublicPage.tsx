@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import Select from 'react-select'
-import Swal from 'sweetalert2'
-import moment from 'moment/min/moment-with-locales'
-import StatsCards from '../components/public/StatsCards'
-import ResultCards from '../components/public/ResultCards'
-moment.locale('th')
+import { useEffect, useState } from 'react'
 
 import { publicApi, LOGO_URL } from '../api/apiService'
+import ResultCards from '../components/public/ResultCards'
+import StatsCards from '../components/public/StatsCards'
+import Select from 'react-select'
+import moment from 'moment/min/moment-with-locales'
+import Swal from 'sweetalert2'
+moment.locale('th')
 
 export default function PublicPage() {
   const [filters, setFilters] = useState<any>(null)
@@ -146,7 +145,7 @@ export default function PublicPage() {
   const displayData = (() => {
     if (!results) return []
     const filtered = activeCard && activeCard.id !== 'all'
-      ? results.filter(item => item.results?.results_id == activeCard.resultId)
+      ? results.filter(item => String(item.results?.results_id) === String(activeCard.resultId))
       : results
 
     const extractWNumber = (text: string) => {
@@ -248,8 +247,8 @@ export default function PublicPage() {
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
                 {/* แถวที่ 1: ปี, เลขที่, ชื่อเรื่อง */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">ปี พ.ศ.</label>
-                  <Select isMulti placeholder="ปี" styles={selectStyle}
+                  <label htmlFor="search_year" className="block text-sm font-semibold text-slate-700 mb-1">ปี พ.ศ.</label>
+                  <Select id="search_year" isMulti placeholder="ปี" styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.year, 'year_id', (i: any) => i.year_value)}
                     value={searchForm.in_year_id}
@@ -257,23 +256,23 @@ export default function PublicPage() {
                 </div>
 
                 <div className="md:col-span-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">เลขที่หนังสือ/ลงวันที่</label>
-                  <input type="text" className="w-full border border-slate-200 rounded-xl px-4 py-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="ระบุเลขที่..."
+                  <label htmlFor="search_num_date" className="block text-sm font-semibold text-slate-700 mb-1">เลขที่หนังสือ/ลงวันที่</label>
+                  <input id="search_num_date" type="text" className="w-full border border-slate-200 rounded-xl px-4 py-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="ระบุเลขที่..."
                     value={searchForm.in_num_date}
                     onChange={e => setSearchForm({ ...searchForm, in_num_date: e.target.value })} />
                 </div>
 
                 <div className="md:col-span-6">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">ชื่อเรื่อง</label>
-                  <input type="text" className="w-full border border-slate-200 rounded-xl px-4 py-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="ระบุชื่อเรื่อง..."
+                  <label htmlFor="search_detail" className="block text-sm font-semibold text-slate-700 mb-1">ชื่อเรื่อง</label>
+                  <input id="search_detail" type="text" className="w-full border border-slate-200 rounded-xl px-4 py-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" placeholder="ระบุชื่อเรื่อง..."
                     value={searchForm.in_detail}
                     onChange={e => setSearchForm({ ...searchForm, in_detail: e.target.value })} />
                 </div>
 
                 {/* แถวที่ 2: ผู้รับผิดชอบ, หมวดหมู่, ผลการพิจารณา */}
                 <div className="md:col-span-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">ผู้รับผิดชอบ</label>
-                  <Select isMulti placeholder="เลือกผู้รับผิดชอบ" styles={selectStyle}
+                  <label htmlFor="search_agency" className="block text-sm font-semibold text-slate-700 mb-1">ผู้รับผิดชอบ</label>
+                  <Select id="search_agency" isMulti placeholder="เลือกผู้รับผิดชอบ" styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.agency?.filter((a: any) => !a.parent_ag_id), 'ag_id', (i: any) => i.ag_name)}
                     value={searchForm.ag_id}
@@ -281,8 +280,8 @@ export default function PublicPage() {
                 </div>
 
                 <div className="md:col-span-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">หมวดหมู่</label>
-                  <Select isMulti placeholder="เลือกหมวดหมู่" styles={selectStyle}
+                  <label htmlFor="search_cat" className="block text-sm font-semibold text-slate-700 mb-1">หมวดหมู่</label>
+                  <Select id="search_cat" isMulti placeholder="เลือกหมวดหมู่" styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.categories, 'cat_id', (i: any) => i.cat_name)}
                     value={searchForm.cat_id}
@@ -290,8 +289,8 @@ export default function PublicPage() {
                 </div>
 
                 <div className="md:col-span-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">ผลการพิจารณา</label>
-                  <Select isMulti placeholder="เลือกผลการพิจารณา" styles={selectStyle}
+                  <label htmlFor="search_results" className="block text-sm font-semibold text-slate-700 mb-1">ผลการพิจารณา</label>
+                  <Select id="search_results" isMulti placeholder="เลือกผลการพิจารณา" styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.results, 'results_id', (i: any) => i.results_detail)}
                     value={searchForm.in_results_id}
@@ -300,8 +299,8 @@ export default function PublicPage() {
 
                 {/* แถวที่ 3: มติคณะทำงาน, มติ ก.ก. */}
                 <div className="md:col-span-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">มติคณะทำงาน</label>
-                  <Select isMulti placeholder="ระบุมติคณะทำงาน" styles={selectStyle}
+                  <label htmlFor="search_mw" className="block text-sm font-semibold text-slate-700 mb-1">มติคณะทำงาน</label>
+                  <Select id="search_mw" isMulti placeholder="ระบุมติคณะทำงาน" styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.mati_work, 'mw_id', (i: any) => formatMati(i, 'mw_name', 'mw_date'))}
                     value={searchForm.in_mw_id}
@@ -309,8 +308,8 @@ export default function PublicPage() {
                 </div>
 
                 <div className="md:col-span-8">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">มติ ก.ก.</label>
-                  <Select isMulti placeholder="ระบุมติ ก.ก." styles={selectStyle}
+                  <label htmlFor="search_mkk" className="block text-sm font-semibold text-slate-700 mb-1">มติ ก.ก.</label>
+                  <Select id="search_mkk" isMulti placeholder="ระบุมติ ก.ก." styles={selectStyle}
                     menuPortalTarget={document.body}
                     options={makeOptions(filters?.mati_kk, 'mkk_id', (i: any) => formatMati(i, 'mkk_name', 'mkk_date'))}
                     value={searchForm.in_mkk_id}

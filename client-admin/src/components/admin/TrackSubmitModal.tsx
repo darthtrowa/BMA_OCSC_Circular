@@ -1,14 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { workflowApi, DelegationItem } from '../../api/apiService';
+import type { DelegationItem } from '../../api/apiService';
+import { workflowApi } from '../../api/apiService';
 import { useAuth } from '../../contexts/AuthContext';
 import Swal from 'sweetalert2';
+
+interface ResultItem {
+  results_id: number;
+  results_detail: string;
+}
+
+interface TrackItem {
+  pa_id: number;
+  pa_status: string;
+  current_owner_id: number | string;
+  results_id?: number | string;
+  result_comments?: string;
+}
 
 interface Props {
   isOpen: boolean;
   docId: number | null;
   preSelectedPaId?: number | null;
-  allData: any;
+  allData: { results?: ResultItem[] } | null;
   actionContext?: 'SELF' | 'ACTING';
   delegationId?: number | null;
   activeDelegations?: DelegationItem[];
@@ -46,7 +60,7 @@ export default function TrackSubmitModal({
 
     workflowApi.getParallelTracks(docId)
       .then(res => {
-        const list = res.data || [];
+        const list: TrackItem[] = res.data || [];
         
         // Determine the user ID to check (either assigner if acting, or current logged-in user)
         let checkId: string | number | undefined = admin?.id;
@@ -58,8 +72,8 @@ export default function TrackSubmitModal({
         }
 
         const track = preSelectedPaId 
-          ? list.find((t: any) => Number(t.pa_id) === Number(preSelectedPaId))
-          : list.find((t: any) => 
+          ? list.find((t) => Number(t.pa_id) === Number(preSelectedPaId))
+          : list.find((t) => 
               Number(t.current_owner_id) === Number(checkId) && 
               ['PENDING', 'IN_PROGRESS'].includes(t.pa_status)
             );
@@ -79,7 +93,7 @@ export default function TrackSubmitModal({
         onClose();
       })
       .finally(() => setLoading(false));
-  }, [isOpen, docId, preSelectedPaId, actionContext, delegationId, admin, activeDelegations]);
+  }, [isOpen, docId, preSelectedPaId, actionContext, delegationId, admin, activeDelegations, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,8 +122,10 @@ export default function TrackSubmitModal({
       });
       onSuccess();
       onClose();
-    } catch (err: any) {
-      Swal.fire('ผิดพลาด', err.response?.data?.message || err.message || 'เกิดข้อผิดพลาด', 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
+      const apiMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      Swal.fire('ผิดพลาด', apiMsg || message, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -131,6 +147,7 @@ export default function TrackSubmitModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 hover:bg-red-100 hover:text-red-600 transition"
           >
@@ -148,17 +165,18 @@ export default function TrackSubmitModal({
             <>
               {/* Dropdown: ผลการพิจารณา */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label htmlFor="resultsId" className="block text-sm font-semibold text-slate-700 mb-2">
                   ผลการพิจารณา <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="resultsId"
                   value={resultsId}
                   onChange={e => setResultsId(e.target.value ? Number(e.target.value) : '')}
                   required
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
                 >
                   <option value="">-- เลือกผลการพิจารณา --</option>
-                  {results.map((r: any) => (
+                  {results.map((r) => (
                     <option key={r.results_id} value={r.results_id}>
                       {r.results_detail}
                     </option>
@@ -168,10 +186,11 @@ export default function TrackSubmitModal({
 
               {/* Textarea: การพิจารณาจากส่วนราชการ */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label htmlFor="resultComments" className="block text-sm font-semibold text-slate-700 mb-2">
                   การพิจารณาจากส่วนราชการ (ความคิดเห็น)
                 </label>
                 <textarea
+                  id="resultComments"
                   value={resultComments}
                   onChange={e => setResultComments(e.target.value)}
                   rows={5}
@@ -193,7 +212,8 @@ export default function TrackSubmitModal({
             ยกเลิก
           </button>
           <button
-            onClick={handleSubmit}
+            type="submit"
+            form="trackSubmitForm"
             disabled={submitting || loading || !paId}
             className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition flex items-center gap-2 disabled:opacity-50"
           >

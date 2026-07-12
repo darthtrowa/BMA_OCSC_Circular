@@ -1,5 +1,111 @@
 # Project Update Log
 
+## [1.7.2] - 2026-07-12
+
+### Hotfix: Fix TypeScript implicit any, any-casting, and static reference warnings in workflowService.ts
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Replaced implicit `any` in `user` variable inside `simulateNextAssignees`.
+  - Added new type definitions: `WorkflowHistoryRow`, `ReturnedAssignee`, and `SimulatedUser`.
+  - Typed all mapping arrays (`childAgencyIds`, `assignedAgencies`, `parallelTracks`) and processActing parameters/returns.
+  - Replaced class reference `this` inside static methods (`getHistory`, `getSimulatedEffectiveUser`, `getNextStatus`) with `WorkflowService`.
+  - Used optional chaining (`myLastReceive?.from_user_id`) to silence Biome formatting recommendations.
+  - Successfully compiled server code and restarted `bma-ocsc-circular-api` service in PM2.
+
+## [1.7.1] - 2026-07-12
+
+### Hotfix: Fix TypeScript implicit any, non-null assertions, and type warnings in workflowRoutes.ts
+
+#### ⚙️ Backend API Changes (server)
+- **workflowRoutes.ts**:
+  - Replaced type-only named imports with `type` modifiers (`type Response`, `type AdminRequest`).
+  - Removed all unsafe non-null assertions (`!`) on `req.admin!` by verifying authentication context with `const admin = req.admin; if (!admin) ...` and accessing `admin` properties directly.
+  - Replaced unsafe global `isNaN` calls with `Number.isNaN`.
+  - Declared structured interface `RejectAssignee` to type simulation reject assignees.
+  - Removed explicit `any` return types on request handlers (`Promise<any>`) and catch blocks (`catch (error: any)`) in favor of implicit inference and casting caught errors as `Error`.
+  - Compiled the TypeScript Express backend successfully and restarted the `bma-ocsc-circular-api` service in PM2.
+
+## [1.7.0] - 2026-07-12
+
+### Hotfix: Fix TypeScript implicit any and linter warnings in botService.ts
+
+#### ⚙️ Backend API Changes (server)
+- **botService.ts**:
+  - Declared structured interfaces `BotPayload` and `BotFinding` to type the parsed results from the browser crawler.
+  - Explicitly typed the headless browser variable as `Browser | undefined` (imported from `puppeteer`).
+  - Cast the promise resolution of `page.evaluate` as `BotFinding[]` to clear implicit `any` parameter types inside the map/loop handlers.
+  - Removed catch block explicit `any` signatures, casting `err` and `error` as `Error` instances.
+  - Compiled the TypeScript Express backend successfully and restarted the `bma-ocsc-circular-api` service in PM2.
+
+## [1.6.9] - 2026-07-12
+
+### Refactor: Fixed Linter Issues and Associated Form Labels in Public Page
+
+#### 🎨 Frontend UI Changes (client-public)
+- **PublicPage.tsx**:
+  - Associated all form labels with their corresponding fields using `htmlFor` on labels, `id` on text inputs, and `inputId` on `react-select` components.
+  - Replaced explicit `any` types with proper type definitions/interfaces (`SelectOption`, `YearItem`, `AgencyItem`, `CategoryItem`, `ResultItem`, `MatiWorkItem`, `MatiKkItem`, `FiltersData`, `CardInfo`, and `CircularItem`), resolving the Biome `lint/suspicious/noExplicitAny` warnings.
+- **ResultCards.tsx**:
+  - Exported the `CircularItem` interface so it can be reused in `PublicPage.tsx`.
+  - Replaced all numeric array indices key properties (e.g. `key={idx}`, `key={i}`) with stable domain property IDs (`key={a.ag_id}`, `key={c.cat_id}`, `key={r.in_id}`, `key={att}`) to improve React rendering stability.
+  - Upgraded reference `div` containers to semantically correct `<button type="button">` elements.
+  - Added accessibility roles, tabIndex, and `onKeyDown` triggers on dynamic expandable elements to support mouse/keyboard parity.
+  - Replaced loose comparisons `==` with type-safe `===` checks.
+  - Removed the unused `loadingRef` React state.
+  - Silenced minor syntax warnings (changed `z-[100]` to `z-100`, used template strings instead of string concatenation, and sorted imports).
+
+## [1.6.8] - 2026-07-12
+
+### Hotfix: Fix TypeScript Implicit Any Error in Workflow Service (Line 946)
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Added explicit `any` type annotation to the `user` variable declaration at line 946 to resolve the `implicitly has the any type` compiler warning.
+  - Rebuilt the TypeScript Express backend and restarted the `bma-ocsc-circular-api` service via PM2.
+
+## [1.6.7] - 2026-07-12
+
+### Hotfix: Fix TypeScript Implicit Any Error in Workflow Service
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Added explicit `any` type annotation to the `user` variable inside `getNextAssignees` (line 399) to resolve the `implicitly has the any type` compilation error under `"strict": true` configuration.
+  - Rebuilt the TypeScript Express backend successfully and restarted the `bma-ocsc-circular-api` service via PM2.
+
+## [1.6.6] - 2026-07-12
+
+### Refactor: Fixed IDE Linting Problems Across the Project
+
+#### 🎨 Frontend UI Changes (client-admin, client, client-public)
+- **LoginPage.tsx (client-admin, client)**:
+  - Replaced `autoFocus` with `useRef` + `useEffect` to safely handle input autofocus on mount/state changes.
+  - Organized and sorted imports.
+- **DashboardPage.tsx (client-admin, client)**:
+  - Wrapped `loadData` and `syncProfile` in `useCallback` to prevent infinite rendering loops and satisfy dependency rule constraints.
+  - Moved `syncProfile` definition above its first usage in `useEffect` to resolve hoisting limitations.
+  - Added explicit `type="button"` to header, profile, password, and logout buttons.
+- **Sidebar.tsx (client)**:
+  - Replaced non-semantic navigation anchor tags (`<a href="#">`) with semantic buttons (`<button type="button">`).
+  - Added strict TypeScript prop interfaces.
+- **ProfileModal.tsx (client)**:
+  - Associated form labels with inputs using `htmlFor` and unique `id`s.
+  - Swapped `any` type with a structured `ProfileData` interface.
+  - Added `aria-checked` and `aria-label` to the 2FA switch for compliance.
+- **CircularSection.tsx (client)**:
+  - Fixed accessibility issues by adding `type="button"` to table tools and pagination elements.
+  - Cleaned up unused functions (`renderFileBadge` and `renderAttachmentBadges`).
+  - Ensured stable array item keys in referencing maps instead of indices.
+  - Fixed `==` comparison to use strict `===`.
+- **CircularModal.tsx (client)**:
+  - Added explicit `type="button"` to footer cancel and submit buttons.
+  - Sorted imports.
+- **PublicPage.tsx (client, client-public)**:
+  - Corrected label associations and set explicit input IDs.
+  - Fixed loose comparison operators (`==` -> `===`).
+- **custom.css (client-public)**:
+  - Corrected custom icon font rule to include a generic fallback (`sans-serif`).
+
 ## [1.6.5] - 2026-07-10
 
 ### Refactor: Backend-Driven Workflow Simulator (Single Source of Truth Alignment)
