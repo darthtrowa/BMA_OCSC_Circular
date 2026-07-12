@@ -578,7 +578,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
       if (userAgIds.length > 0) {
         const placeholdersAg = userAgIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
         const { rows: dRows } = await db.query(
-          `SELECT d.assigner_ag_id, assignee.a_id AS assignee_id, assignee.a_name AS assignee_name
+          `SELECT d.assigner_ag_id, assignee.a_id AS assignee_id, assignee.a_name AS assignee_name, d.delegation_id
            FROM c_workflow_delegations d
            JOIN admin assignee ON assignee.a_id = d.assignee_id
            WHERE d.is_active = TRUE AND d.assigner_ag_id IN (${placeholdersAg})`,
@@ -600,7 +600,8 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
             a_id: r.a_id, // Keep original role's ID so backend routes to Acting Inbox correctly
             a_name: `${del.assignee_name} (รักษาการแทน ${r.a_name})`,
             isActing: true,
-            actingFor: r.a_name
+            actingFor: r.a_name,
+            delegationId: del.delegation_id
           });
         }
       });

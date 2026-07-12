@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Swal from 'sweetalert2'
 import { adminApi, BASE_URL, workflowApi } from '../../api/apiService'
 import { useAuth } from '../../contexts/AuthContext'
@@ -36,68 +36,48 @@ export default function CircularSection({
 
   const info = allData?.information || []
 
-  // Base filtered: year/agency/search
-  const baseFiltered = info.filter(item => {
-    const matchSearch = !search ||
-      (item.in_num_date||'').toLowerCase().includes(search.toLowerCase()) ||
-      (item.in_detail||'').toLowerCase().includes(search.toLowerCase()) ||
-      (item.year?.year_value||'').toLowerCase().includes(search.toLowerCase())
-    const matchYear = !filterYear || item.year?.year_id == filterYear
-    const matchAg   = !filterAg   || (item.agency||[]).some(a => a.ag_id == filterAg)
-    return matchSearch && matchYear && matchAg
-  })
-
-  // Full filtered: include results_id
-  const filtered = baseFiltered.filter(item =>
-    !filterResult || item.results?.results_id == filterResult
-  )
-
   // Defensive sorting: newest to oldest, with natural numeric sort for circular numbers
   const extractWNumber = (text: string) => {
     if (!text) return 0;
     const match = text.match(/\/ว\s*(\d+)/i);
-    return match && match[1] ? parseInt(match[1], 10) : 0;
+    return match?.[1] ? parseInt(match[1], 10) : 0;
   };
 
-  const sorted = [...filtered].sort((a, b) => {
-    const yearDiff = (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0);
-    if (yearDiff !== 0) return yearDiff;
-    const numA = extractWNumber(a.in_num_date);
-    const numB = extractWNumber(b.in_num_date);
-    const numDiff = numB - numA;
-    if (numDiff !== 0) return numDiff;
-    return (Number(b.in_id) || 0) - (Number(a.in_id) || 0);
-  });
+  // Base filtered: year/agency/search
+  const baseFiltered = useMemo(() => {
+    return info.filter((item: any) => {
+      const matchSearch = !search ||
+        (item.in_num_date||'').toLowerCase().includes(search.toLowerCase()) ||
+        (item.in_detail||'').toLowerCase().includes(search.toLowerCase()) ||
+        (item.year?.year_value||'').toLowerCase().includes(search.toLowerCase())
+      const matchYear = !filterYear || String(item.year?.year_id) === String(filterYear)
+      const matchAg   = !filterAg   || (item.agency||[]).some((a: any) => String(a.ag_id) === String(filterAg))
+      return matchSearch && matchYear && matchAg
+    })
+  }, [info, search, filterYear, filterAg])
 
-  const renderFileBadge = (text: string, label: string, colorClass: string, icon: string) => {
-    if (!text || text === '-') return null;
-    const url = text.startsWith('http') ? text : `${BASE_URL}/uploads/${text}`;
-    return (
-      <a href={url} target="_blank" rel="noreferrer" className={`px-2 py-0.5 ${colorClass} text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1`}>
-        <i className={`bx ${icon}`}></i> {label}
-      </a>
-    );
-  };
+  // Full filtered: include results_id
+  const filtered = useMemo(() => {
+    return baseFiltered.filter((item: any) =>
+      !filterResult || String(item.results?.results_id) === String(filterResult)
+    )
+  }, [baseFiltered, filterResult])
 
-  const renderAttachmentBadges = (text: string) => {
-    if (!text || text === '-') return null;
-    let parsed: string[] = [];
-    try {
-      const p = JSON.parse(text);
-      if (Array.isArray(p)) parsed = p;
-      else parsed = [text];
-    } catch {
-      parsed = [text];
-    }
-    
-    if (parsed.length === 0) return null;
-    
-    return parsed.map((att, idx) => (
-      <a key={idx} href={`${BASE_URL}/uploads/${att}`} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-violet-50 text-violet-600 border-violet-100 text-[10px] font-bold rounded border hover:opacity-80 transition flex items-center gap-1">
-        <i className='bx bx-paperclip'></i> เอกสารแนบท้าย{parsed.length > 1 ? ` (${idx + 1})` : ''}
-      </a>
-    ));
-  };
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a: any, b: any) => {
+      const yearDiff = (Number(b.year?.year_value) || 0) - (Number(a.year?.year_value) || 0);
+      if (yearDiff !== 0) return yearDiff;
+      const numA = extractWNumber(a.in_num_date);
+      const numB = extractWNumber(b.in_num_date);
+      const numDiff = numB - numA;
+      if (numDiff !== 0) return numDiff;
+      return (Number(b.in_id) || 0) - (Number(a.in_id) || 0);
+    });
+  }, [filtered]);
+
+
+
+
 
   const renderWebsiteLink = (text: string) => {
     if (!text || text === '-' || text.trim() === '') return null;
@@ -116,7 +96,7 @@ export default function CircularSection({
 
   useEffect(() => {
     onBaseFilteredChange?.(baseFiltered)
-  }, [allData, search, filterYear, filterAg]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [baseFiltered, onBaseFilteredChange])
 
   const totalPages = Math.ceil(sorted.length / perPage)
   const paged = sorted.slice((page-1)*perPage, page*perPage)
@@ -318,7 +298,7 @@ export default function CircularSection({
                       {(item.references_info || []).length > 0 && (
                         <div className="mt-2 flex flex-col gap-1 max-w-[300px]">
                           {item.references_info.map((r: any, i: number) => (
-                            <span key={i} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block break-words">
+                            <span key={`ref-${r.in_id}-${i}`} className="px-2 py-1 bg-red-50 text-red-600 text-[0.65rem] font-mono rounded inline-block wrap-break-word">
                               อ้างถึง: {r.in_num_date} {r.in_doc_date ? `ลงวันที่ ${r.in_doc_date}` : ''}
                             </span>
                           ))}
@@ -330,7 +310,7 @@ export default function CircularSection({
                       {item.agency && item.agency.length > 0 && (
                         <div className="text-xs font-medium text-emerald-700 flex flex-col gap-1 mb-2">
                           {item.agency.map((a: any, idx: number) => (
-                            <span key={idx} className="flex items-center gap-1">
+                            <span key={`ag-${a.ag_id}-${idx}`} className="flex items-center gap-1">
                               <i className='bx bx-buildings'></i>
                               <span className="leading-snug">{a.ag_name}</span>
                             </span>
@@ -350,17 +330,42 @@ export default function CircularSection({
                       </span>
                     </td>
                     <td className="px-6 py-4 align-top">
-                      <span className={`px-2.5 py-1.5 text-xs font-bold rounded-xl inline-block text-center ${statusVal==='ใช้งาน'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700'}`}>
-                        {statusVal === 'รอผลการพิจารณาจากคณะทำงานฯ' ? (
-                          <>
-                            รอผลการพิจารณาจาก
-                            <br />
-                            คณะทำงานฯ
-                          </>
-                        ) : (
-                          statusVal
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <span className={`px-2.5 py-1.5 text-xs font-bold rounded-xl inline-block text-center ${statusVal==='ใช้งาน'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700'}`}>
+                          {statusVal === 'รอผลการพิจารณาจากคณะทำงานฯ' ? (
+                            <>
+                              รอผลการพิจารณาจาก
+                              <br />
+                              คณะทำงานฯ
+                            </>
+                          ) : (
+                            statusVal
+                          )}
+                        </span>
+                        
+                        {item.in_workflow_status && (
+                          <div className="flex flex-col gap-1 w-full">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100 inline-block text-center whitespace-nowrap">
+                              ขั้นตอน: {item.in_workflow_status}
+                            </span>
+                            {item.in_flow_state === 'out' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-100 flex items-center justify-center gap-0.5">
+                                <i className="bx bx-right-arrow-alt"></i> ส่งออก (out)
+                              </span>
+                            )}
+                            {item.in_flow_state === 'in' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 flex items-center justify-center gap-0.5">
+                                <i className="bx bx-left-arrow-alt"></i> รับเข้า (in)
+                              </span>
+                            )}
+                            {item.in_flow_state === 'end' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-700 border border-gray-100 flex items-center justify-center gap-0.5">
+                                <i className="bx bx-check-double"></i> จบงาน (end)
+                              </span>
+                            )}
+                          </div>
                         )}
-                      </span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 align-top text-right">
                       <div className="flex justify-end gap-2">
@@ -408,6 +413,7 @@ export default function CircularSection({
           </div>
           <nav className="flex items-center gap-1">
             <button 
+              type="button"
               className={`w-8 h-8 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 transition ${page<=1?'opacity-50 cursor-not-allowed pointer-events-none':''}`}
               onClick={()=>setPage(p=>p-1)}
             >
@@ -429,6 +435,7 @@ export default function CircularSection({
             })}
             
             <button 
+              type="button"
               className={`w-8 h-8 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 transition ${page>=totalPages?'opacity-50 cursor-not-allowed pointer-events-none':''}`}
               onClick={()=>setPage(p=>p+1)}
             >

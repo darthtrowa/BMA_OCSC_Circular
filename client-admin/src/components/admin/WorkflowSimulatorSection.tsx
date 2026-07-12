@@ -97,6 +97,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   // UI State
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [activeSimUserId, setActiveSimUserId] = useState<number | ''>('');
+  const [activeSimUserDelegationId, setActiveSimUserDelegationId] = useState<number | undefined>(undefined);
+  const [activeSimUserKey, setActiveSimUserKey] = useState<string>('');
   const [autoSwitch, setAutoSwitch] = useState<boolean>(true);
   
   // Modal states for mock bot queue
@@ -216,8 +218,14 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
           const coord = uRes.find((u: any) => u.a_role === 'COORDINATOR');
           if (coord) {
             setActiveSimUserId(coord.a_id);
+            setActiveSimUserKey(`${coord.a_id}-normal`);
+            setActiveSimUserDelegationId(undefined);
           } else {
-            setActiveSimUserId(uRes[0].a_id);
+            const first = uRes[0];
+            setActiveSimUserId(first.a_id);
+            const key = first.isActing ? `${first.a_id}-acting-${first.delegationId}` : `${first.a_id}-normal`;
+            setActiveSimUserKey(key);
+            setActiveSimUserDelegationId(first.isActing ? first.delegationId : undefined);
           }
         }
       } catch (err: any) {
@@ -237,6 +245,22 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     localStorage.setItem('bma_simulator_logs', JSON.stringify(logs));
     setSimTasks(tasks);
     setSimLogs(logs);
+  };
+
+  const setSimUserById = (userId: number) => {
+    const foundActing = users.find(u => u.a_id === userId && u.isActing);
+    if (foundActing) {
+      setActiveSimUserId(userId);
+      setActiveSimUserDelegationId(foundActing.delegationId);
+      setActiveSimUserKey(`${userId}-acting-${foundActing.delegationId}`);
+    } else {
+      const foundNormal = users.find(u => u.a_id === userId);
+      if (foundNormal) {
+        setActiveSimUserId(userId);
+        setActiveSimUserDelegationId(undefined);
+        setActiveSimUserKey(`${userId}-normal`);
+      }
+    }
   };
 
   const getActiveUser = () => {
@@ -277,6 +301,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     if (!coordinator) return Swal.fire('Error', 'ไม่พบผู้ใช้บทบาท COORDINATOR ในระบบ', 'error');
 
     const newTaskId = Date.now();
+    setSimUserById(coordinator.a_id);
+    setActiveSimUserKey(`${coordinator.a_id}-normal`);
+    setActiveSimUserDelegationId(undefined);
     const newTask: SimTask = {
       id: newTaskId,
       in_num_date: mockDocNum,
@@ -322,7 +349,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     
     saveSimulatorState(updatedTasks, updatedLogs);
     setActiveTaskId(newTaskId);
-    setActiveSimUserId(coordinator.a_id); // Set simulation user to Coordinator
+
     setShowImportModal(false);
     
     Swal.fire({
@@ -386,7 +413,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         };
 
         saveSimulatorState(updatedTasks, [resetHistory, ...cleanedLogs]);
-        setActiveSimUserId(coordinator.a_id);
+        setSimUserById(coordinator.a_id);
         setActionComments('');
         setSelectedNextOwnerId('');
         
@@ -457,7 +484,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
               setActionComments('');
 
               if (autoSwitch && updatedTask.parallel_assignments?.length > 0) {
-                setActiveSimUserId(updatedTask.parallel_assignments[0].initial_owner_id);
+                setSimUserById(updatedTask.parallel_assignments[0].initial_owner_id);
               }
 
               Swal.fire('กระจายงานแล้ว', 'มอบหมายงานคู่ขนานส่งออกไปยังส่วนราชการปลายทางเรียบร้อยแล้ว', 'success');
@@ -493,7 +520,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         setSelectedNextOwnerId('');
 
         if (autoSwitch) {
-          setActiveSimUserId(targetUserId);
+          setSimUserById(targetUserId);
         }
 
         Swal.fire({
@@ -544,7 +571,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         setSelectedNextOwnerId('');
 
         if (autoSwitch) {
-          setActiveSimUserId(targetUserId);
+          setSimUserById(targetUserId);
         }
 
         Swal.fire('ตีกลับเอกสารแล้ว', `ส่งข้อมูลกลับคืนให้คุณ ${targetUser.a_name} ตรวจสอบแล้ว`, 'success');
@@ -597,7 +624,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
             });
 
             if (autoSwitch && updatedTask.in_current_owner_id) {
-              setActiveSimUserId(updatedTask.in_current_owner_id);
+              setSimUserById(updatedTask.in_current_owner_id);
             }
 
             Swal.fire('บันทึกผลสำเร็จ', 'ส่งความคิดเห็นเข้าสู่ระบบเรียบร้อยแล้ว', 'success');
@@ -636,7 +663,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         setSelectedNextOwnerId('');
 
         if (autoSwitch) {
-          setActiveSimUserId(targetSubordinateId);
+          setSimUserById(targetSubordinateId);
         }
 
         Swal.fire('มอบหมายงานแล้ว', `ส่งงานต่อให้ ${subUser.a_name} ภายใน Track ของกองแล้ว`, 'success');
@@ -733,14 +760,29 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                 <div className="text-[10px] text-emerald-200 uppercase tracking-wider font-bold">จำลองฐานะผู้ใช้</div>
                 <select
                   className="bg-transparent border-0 font-bold focus:ring-0 text-white text-sm p-0 m-0 outline-none cursor-pointer"
-                  value={activeSimUserId}
-                  onChange={(e) => setActiveSimUserId(Number(e.target.value))}
+                  value={activeSimUserKey}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setActiveSimUserKey(val);
+                    if (val.includes('-acting-')) {
+                      const [userId, _, delegationId] = val.split('-');
+                      setActiveSimUserId(Number(userId));
+                      setActiveSimUserDelegationId(Number(delegationId));
+                    } else {
+                      const [userId] = val.split('-');
+                      setActiveSimUserId(Number(userId));
+                      setActiveSimUserDelegationId(undefined);
+                    }
+                  }}
                 >
-                  {users.map((u) => (
-                    <option key={u.a_id} value={u.a_id} className="text-slate-800">
-                      [{u.a_role}] - {u.a_name} ({u.a_position})
-                    </option>
-                  ))}
+                  {users.map((u, idx) => {
+                    const val = u.isActing ? `${u.a_id}-acting-${u.delegationId}` : `${u.a_id}-normal`;
+                    return (
+                      <option key={`${u.a_id}-${idx}`} value={val} className="text-slate-800">
+                        [{u.a_role}] - {u.a_name} ({u.a_position})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -826,13 +868,18 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                       {t.in_detail}
                     </p>
                     
-                    <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
-                      <span>{t.in_doc_date}</span>
-                      <span className={`px-2 py-0.5 rounded-full font-bold ${
-                        statusMap[t.in_workflow_status]?.color || 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {statusMap[t.in_workflow_status]?.label || t.in_workflow_status}
-                      </span>
+                    <div className="flex justify-between items-center text-[10px] font-semibold">
+                      <span className="text-slate-400">{t.in_doc_date}</span>
+                      <div className="flex gap-1.5 items-center">
+                        {t.in_flow_state === 'out' && <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-100 font-bold uppercase">out</span>}
+                        {t.in_flow_state === 'in' && <span className="px-1.5 py-0.5 rounded bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 font-bold uppercase">in</span>}
+                        {t.in_flow_state === 'end' && <span className="px-1.5 py-0.5 rounded bg-gray-50 text-gray-700 border border-gray-100 font-bold uppercase">end</span>}
+                        <span className={`px-2 py-0.5 rounded-full font-bold ${
+                          statusMap[t.in_workflow_status]?.color || 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {statusMap[t.in_workflow_status]?.label || t.in_workflow_status}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -858,6 +905,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                     }`}>
                       {statusMap[task.in_workflow_status]?.label || task.in_workflow_status}
                     </span>
+                    {task.in_flow_state === 'out' && <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-sky-50 text-sky-700 border border-sky-100 uppercase font-mono">out</span>}
+                    {task.in_flow_state === 'in' && <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100 uppercase font-mono">in</span>}
+                    {task.in_flow_state === 'end' && <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-gray-50 text-gray-700 border border-gray-100 uppercase font-mono">end</span>}
                   </div>
                   <p className="text-xs font-semibold text-slate-500 m-0">
                     ลงวันที่ {task.in_doc_date}
@@ -1041,8 +1091,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                           )
                                           .map(u => (
                                             <option key={u.a_id} value={u.a_id}>
-                                              [{u.a_role}] - {u.a_name}
-                                            </option>
+                                             {u.is_acting ? '[รักษาการ] ' : ''}[{u.delegated_role || u.a_role}] - {u.a_name}
+                                           </option>
                                           ))}
                                       </select>
                                     </div>
@@ -1109,7 +1159,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                   .filter(u => u.a_id !== (autoUpAssignee?.acting_info ? autoUpAssignee.acting_info.id : autoUpAssignee?.a_id))
                                   .map(u => (
                                     <option key={u.a_id} value={u.a_id}>
-                                      {u.is_acting ? '[รักษาการ] ' : ''}{u.a_name} ({u.a_position || u.a_role})
+                                      {u.is_acting ? '[รักษาการ] ' : ''}{u.a_name} ({u.a_position || u.delegated_role || u.a_role})
                                     </option>
                                   ))
                                 }
@@ -1188,13 +1238,16 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                     </optgroup>
                                   )}
                                   
-                                  {manualAssignees.length > 0 && (
-                                    <optgroup label="มอบหมายลงสายงาน (Forward Down)">
-                                      {manualAssignees.map(u => (
-                                        <option key={u.a_id} value={u.a_id}>
-                                          [{u.a_role}] - {u.a_name}
-                                        </option>
-                                      ))}
+                                  {manualAssignees.filter(u => u.a_id !== (autoUpAssignee?.acting_info ? autoUpAssignee.acting_info.id : autoUpAssignee?.a_id)).length > 0 && (
+                                    <optgroup label="มอบหมายงาน / ส่งข้ามสายงาน">
+                                      {manualAssignees
+                                        .filter(u => u.a_id !== (autoUpAssignee?.acting_info ? autoUpAssignee.acting_info.id : autoUpAssignee?.a_id))
+                                        .map(u => (
+                                          <option key={u.a_id} value={u.a_id}>
+                                             {u.is_acting ? '[รักษาการ] ' : ''}[{u.delegated_role || u.a_role}] - {u.a_name}
+                                           </option>
+                                        ))
+                                      }
                                     </optgroup>
                                   )}
                                 </select>
@@ -1224,8 +1277,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                   <option value="">-- เลือกผู้ที่จะส่งงานคืน --</option>
                                   {rejectAssignees.map(u => (
                                     <option key={u.a_id} value={u.a_id}>
-                                      [{u.a_role}] - {u.a_name}
-                                    </option>
+                                             {u.is_acting ? '[รักษาการ] ' : ''}[{u.delegated_role || u.a_role}] - {u.a_name}
+                                           </option>
                                   ))}
                                 </select>
                                 <button

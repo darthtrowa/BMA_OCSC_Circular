@@ -1,5 +1,52 @@
 # Project Update Log
 
+## [1.8.0] - 2026-07-12
+
+### Feature: Restrict GRP_LEADER Auto-up to own supervisor structure in 'out' state & render flow states
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Modified GRP_LEADER `autoUpAssignee` lookup block in both `getNextAssignees` and `simulateNextAssignees`.
+  - When `flowState === 'out'`, GRP_LEADER now traverses structurally up their own agency tree to resolve the closest supervisor (`SEC_DIRECTOR`, `DIV_DIRECTOR`, or `HR_DIRECTOR` under their direct division line) rather than defaulting globally to the first `HR_DIRECTOR` (Nataka).
+  - Configured `manualAssignees` for GRP_LEADER in `'out'` flow state to show cross-agency directors (`DIV_DIRECTOR`, `HR_DIRECTOR`) and their own subordinates (`STAFF`, `COORDINATOR`).
+
+#### 🎨 Client Admin Changes (client-admin)
+- **CircularSection.tsx**:
+  - Appended flow state status badges (`in` / `out` / `end`) and workflow step indicators beneath the document status badge in the main circular document list.
+- **WorkflowSimulatorSection.tsx**:
+  - Rendered flow state badges next to task items in the simulator left list and the header of the middle details panel.
+
+## [1.7.5] - 2026-07-12
+
+### Hotfix: Fix duplicate select option values in simulated identity dropdown
+
+#### ⚙️ Backend API Changes (server)
+- **admin.ts (routes)**:
+  - Included `d.delegation_id` in the user list query returned by `/api/admin/users/by-role?is_simulator=true`.
+  - Copied `delegationId` onto simulated acting user objects in `finalRows`.
+
+#### 🎨 Client Admin Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**:
+  - Implemented a unique string key (`${userId}-normal` and `${userId}-acting-${delegationId}`) for select options in the "จำลองฐานะผู้ใช้" dropdown to prevent the browser from defaulting selection to the first user sharing the same `a_id`.
+  - Added `activeSimUserDelegationId` state and sent `delegationId` to the backend simulation payload inside all simulated action triggers (`simulateWorkflowAction`), enabling fully accurate simulator routing under active delegation contexts.
+  - Successfully compiled server and client code, then restarted all PM2 services.
+
+## [1.7.3] - 2026-07-12
+
+### Hotfix: Swap GRP_LEADER Auto-Up recommendation, correct simulator dropdown display and labels
+
+#### 🎨 Client Admin Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**:
+  - Filtered out `autoUpAssignee` from the manual assignment list to prevent duplication (e.g., Nataka showing up under both Auto-up and manual).
+  - Renamed the dropdown group label from `มอบหมายลงสายงาน (Forward Down)` to `มอบหมายงาน / ส่งข้ามสายงาน` to correctly reflect cross/upward forwarding options.
+
+#### ⚙️ Backend API Changes (server)
+- **workflowService.ts**:
+  - Added `is_acting` flag to the `WorkflowUser` interface.
+  - Selected `true as is_acting` in group leader and HR director delegation active queries (`actingRes`, `actingHrRes`) inside both `getNextAssignees` and `simulateNextAssignees` methods.
+  - Skipped delegation `processActing` resolution on `autoUpAssignee` to preserve structural GRP_LEADER and HR_DIRECTOR recommend path (Saran/ศรัณย์ as Auto-Up), letting the active delegate (Wanchalerm/วันเฉลิม) list properly under the manual acting replacement dropdown section.
+  - Rebuilt the TypeScript Express backend successfully and restarted all PM2 services.
+
 ## [1.7.2] - 2026-07-12
 
 ### Hotfix: Fix TypeScript implicit any, any-casting, and static reference warnings in workflowService.ts
