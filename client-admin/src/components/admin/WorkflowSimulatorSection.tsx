@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Select from 'react-select'
 import Swal from 'sweetalert2'
-import { adminApi, workflowApi, delegationApi } from '../../api/apiService'
+
+import { adminApi, workflowApi } from '../../api/apiService'
 
 interface SimParallelAssignment {
   pa_id: number;
@@ -56,8 +57,66 @@ interface SimHistoryEntry {
   created_at: string;
 }
 
+interface SimAgency {
+  ag_id: number;
+  ag_name: string;
+}
+
+interface SimCategory {
+  cat_id: number;
+  cat_name: string;
+}
+
+interface SimResult {
+  results_id: number;
+  results_detail: string;
+}
+
+interface SimYear {
+  year_id: number;
+  year_value: string | number;
+}
+
+interface DashboardAllData {
+  agency?: SimAgency[];
+  categories?: SimCategory[];
+  results?: SimResult[];
+  year?: SimYear[];
+  [key: string]: unknown;
+}
+
+interface SimUserActingInfo {
+  id: number;
+  name: string;
+  position: string;
+}
+
+interface SimUser {
+  a_id: number;
+  a_name: string;
+  a_role: string;
+  a_position?: string | null;
+  isActing?: boolean;
+  is_acting?: boolean;
+  delegationId?: number;
+  delegated_role?: string;
+  acting_info?: SimUserActingInfo | null;
+}
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+interface SimBotQueueItem {
+  bot_id: number;
+  bot_title: string;
+  bot_url: string;
+  bot_date: string;
+}
+
 interface WorkflowSimulatorSectionProps {
-  allData: any;
+  allData: DashboardAllData | null;
   loading: boolean;
 }
 
@@ -86,9 +145,7 @@ const statusMap: Record<string, { label: string, color: string }> = {
 
 export default function WorkflowSimulatorSection({ allData, loading: allDataLoading }: WorkflowSimulatorSectionProps) {
   // Simulator Metadata
-  const [users, setUsers] = useState<any[]>([]);
-  const [delegations, setDelegations] = useState<any[]>([]);
-  const [loadingMetadata, setLoadingMetadata] = useState(true);
+  const [users, setUsers] = useState<SimUser[]>([]);
   
   // Simulator Tasks State
   const [simTasks, setSimTasks] = useState<SimTask[]>([]);
@@ -97,40 +154,45 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   // UI State
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [activeSimUserId, setActiveSimUserId] = useState<number | ''>('');
-  const [activeSimUserDelegationId, setActiveSimUserDelegationId] = useState<number | undefined>(undefined);
   const [activeSimUserKey, setActiveSimUserKey] = useState<string>('');
   const [autoSwitch, setAutoSwitch] = useState<boolean>(true);
   
   // Modal states for mock bot queue
   const [showImportModal, setShowImportModal] = useState(false);
-  const [selectedBotItem, setSelectedBotItem] = useState<any>(null);
+  const [selectedBotItem, setSelectedBotItem] = useState<SimBotQueueItem | null>(null);
   
   // Form values for importing mock circular
   const [mockDocNum, setMockDocNum] = useState('');
   const [mockTitle, setMockTitle] = useState('');
   const [mockYearId, setMockYearId] = useState<number | ''>('');
-  const [mockCategoryIds, setMockCategoryIds] = useState<any[]>([]);
-  const [mockAgencyIds, setMockAgencyIds] = useState<any[]>([]);
+  const [mockCategoryIds, setMockCategoryIds] = useState<SelectOption[]>([]);
+  const [mockAgencyIds, setMockAgencyIds] = useState<SelectOption[]>([]);
   
   // Workflow action state
   const [actionComments, setActionComments] = useState('');
   const [selectedNextOwnerId, setSelectedNextOwnerId] = useState<string>('');
-  const [selectedResultsId, setSelectedResultsId] = useState<string>('');
   const [parallelTracksInput, setParallelTracksInput] = useState<Record<number, { comments: string, resultsId: string }>>({});
 
   // Backend-driven simulation options
   const [simOptions, setSimOptions] = useState<{
-    autoUpAssignee: any;
-    manualAssignees: any[];
+    autoUpAssignee: SimUser | null;
+    manualAssignees: SimUser[];
     useParallelAssign: boolean;
-    rejectAssignees: any[];
+    rejectAssignees: SimUser[];
   }>({
     autoUpAssignee: null,
     manualAssignees: [],
     useParallelAssign: false,
     rejectAssignees: []
   });
-  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  const getActiveUser = useCallback(() => {
+    return users.find(u => u.a_id === Number(activeSimUserId)) || null;
+  }, [users, activeSimUserId]);
+
+  const getSelectedTask = useCallback((): SimTask | null => {
+    return simTasks.find(t => t.id === activeTaskId) || null;
+  }, [simTasks, activeTaskId]);
 
   // Load simulation options dynamically from the backend simulation API
   useEffect(() => {
@@ -147,7 +209,6 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         return;
       }
 
-      setLoadingOptions(true);
       try {
         const taskHistory = simLogs.filter(log => log.in_id === task.id);
         const res = await workflowApi.simulateWorkflowAction({
@@ -170,13 +231,11 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         }
       } catch (err) {
         console.error("Failed to load backend simulation options:", err);
-      } finally {
-        setLoadingOptions(false);
       }
     };
 
     fetchSimOptions();
-  }, [activeTaskId, activeSimUserId, simTasks]);
+  }, [getActiveUser, getSelectedTask, simLogs]);
 
   // Mock bot queue findings
   const mockBotQueueFindings = [
@@ -188,7 +247,6 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   // Load metadata and simulator state
   useEffect(() => {
     const fetchMetadata = async () => {
-      setLoadingMetadata(true);
       try {
         const uRes = await adminApi.getUsersByRole(
           ['COORDINATOR', 'HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF'],
@@ -197,14 +255,6 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
           true // isSimulator
         );
         setUsers(uRes || []);
-        
-        try {
-          const dRes = await delegationApi.getAll();
-          setDelegations(dRes || []);
-        } catch (delErr) {
-          console.warn('Failed to load delegations for simulator, using empty list:', delErr);
-          setDelegations([]);
-        }
         
         // Load tasks and logs from localStorage
         const cachedTasks = localStorage.getItem('bma_simulator_tasks');
@@ -215,24 +265,20 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
         
         // Default active user is the first coordinator found, or fallback
         if (uRes && uRes.length > 0) {
-          const coord = uRes.find((u: any) => u.a_role === 'COORDINATOR');
+          const coord = uRes.find((u: SimUser) => u.a_role === 'COORDINATOR');
           if (coord) {
             setActiveSimUserId(coord.a_id);
             setActiveSimUserKey(`${coord.a_id}-normal`);
-            setActiveSimUserDelegationId(undefined);
           } else {
             const first = uRes[0];
             setActiveSimUserId(first.a_id);
             const key = first.isActing ? `${first.a_id}-acting-${first.delegationId}` : `${first.a_id}-normal`;
             setActiveSimUserKey(key);
-            setActiveSimUserDelegationId(first.isActing ? first.delegationId : undefined);
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to load simulator metadata:', err);
         Swal.fire('ข้อผิดพลาด', 'ไม่สามารถโหลดรายชื่อผู้ใช้จากระบบได้ หรือคุณไม่มีสิทธิ์', 'error');
-      } finally {
-        setLoadingMetadata(false);
       }
     };
     
@@ -251,29 +297,19 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     const foundActing = users.find(u => u.a_id === userId && u.isActing);
     if (foundActing) {
       setActiveSimUserId(userId);
-      setActiveSimUserDelegationId(foundActing.delegationId);
       setActiveSimUserKey(`${userId}-acting-${foundActing.delegationId}`);
     } else {
       const foundNormal = users.find(u => u.a_id === userId);
       if (foundNormal) {
         setActiveSimUserId(userId);
-        setActiveSimUserDelegationId(undefined);
         setActiveSimUserKey(`${userId}-normal`);
       }
     }
   };
 
-  const getActiveUser = () => {
-    return users.find(u => u.a_id === Number(activeSimUserId)) || null;
-  };
-
-  const getSelectedTask = (): SimTask | null => {
-    return simTasks.find(t => t.id === activeTaskId) || null;
-  };
-
 
   // Mock bot queue item selection
-  const handleOpenImport = (botItem: any) => {
+  const handleOpenImport = (botItem: SimBotQueueItem) => {
     setSelectedBotItem(botItem);
     setMockDocNum(`ที่ กท 0503/ว ${Math.floor(Math.random() * 100) + 1}`);
     setMockTitle(botItem.bot_title);
@@ -303,7 +339,6 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     const newTaskId = Date.now();
     setSimUserById(coordinator.a_id);
     setActiveSimUserKey(`${coordinator.a_id}-normal`);
-    setActiveSimUserDelegationId(undefined);
     const newTask: SimTask = {
       id: newTaskId,
       in_num_date: mockDocNum,
@@ -311,7 +346,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
       in_detail: mockTitle,
       in_circular_detail: 'จำลองการประเมินจากบอตคิว',
       in_etc: '-',
-      in_link: selectedBotItem.bot_url,
+      in_link: selectedBotItem?.bot_url || '',
       in_year_id: Number(mockYearId),
       in_status_id: 1, // Active status
       in_results_id: null,
@@ -489,8 +524,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
               Swal.fire('กระจายงานแล้ว', 'มอบหมายงานคู่ขนานส่งออกไปยังส่วนราชการปลายทางเรียบร้อยแล้ว', 'success');
             }
-          } catch (err: any) {
-            Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถกระจายงานได้', 'error');
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : 'ไม่สามารถกระจายงานได้';
+            Swal.fire('ข้อผิดพลาด', errMsg, 'error');
           }
         }
       });
@@ -531,8 +567,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
           showConfirmButton: false
         });
       }
-    } catch (err: any) {
-      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถส่งต่อเอกสารได้', 'error');
+    } catch (err: unknown) {
+      Swal.fire('ข้อผิดพลาด', err instanceof Error ? err.message : 'ไม่สามารถส่งต่อเอกสารได้', 'error');
     }
   };
 
@@ -576,8 +612,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
         Swal.fire('ตีกลับเอกสารแล้ว', `ส่งข้อมูลกลับคืนให้คุณ ${targetUser.a_name} ตรวจสอบแล้ว`, 'success');
       }
-    } catch (err: any) {
-      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถตีกลับเอกสารได้', 'error');
+    } catch (err: unknown) {
+      Swal.fire('ข้อผิดพลาด', err instanceof Error ? err.message : 'ไม่สามารถตีกลับเอกสารได้', 'error');
     }
   };
 
@@ -629,8 +665,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
             Swal.fire('บันทึกผลสำเร็จ', 'ส่งความคิดเห็นเข้าสู่ระบบเรียบร้อยแล้ว', 'success');
           }
-        } catch (err: any) {
-          Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถบันทึกผลได้', 'error');
+        } catch (err: unknown) {
+          Swal.fire('ข้อผิดพลาด', err instanceof Error ? err.message : 'ไม่สามารถบันทึกผลได้', 'error');
         }
       }
     });
@@ -668,8 +704,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
         Swal.fire('มอบหมายงานแล้ว', `ส่งงานต่อให้ ${subUser.a_name} ภายใน Track ของกองแล้ว`, 'success');
       }
-    } catch (err: any) {
-      Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถมอบหมายงานได้', 'error');
+    } catch (err: unknown) {
+      Swal.fire('ข้อผิดพลาด', err instanceof Error ? err.message : 'ไม่สามารถมอบหมายงานได้', 'error');
     }
   };
 
@@ -704,8 +740,8 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
 
             Swal.fire('ปิดงานสำเร็จ', 'ระบบบันทึกความสมบูรณ์ของ Workflow เรียบร้อย', 'success');
           }
-        } catch (err: any) {
-          Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถปิดงานได้', 'error');
+        } catch (err: unknown) {
+          Swal.fire('ข้อผิดพลาด', err instanceof Error ? err.message : 'ไม่สามารถปิดงานได้', 'error');
         }
       }
     });
@@ -720,9 +756,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
   // Use simulation options fetched from the backend simulation endpoint
   const { autoUpAssignee, manualAssignees, useParallelAssign, rejectAssignees } = simOptions;
 
-  const handleUpdateDraftAgencies = (selectedOptions: any) => {
+  const handleUpdateDraftAgencies = (selectedOptions: readonly SelectOption[] | null) => {
     if (!task) return;
-    const agIds = selectedOptions ? selectedOptions.map((o: any) => Number(o.value)) : [];
+    const agIds = selectedOptions ? selectedOptions.map((o) => Number(o.value)) : [];
     const updatedTasks = simTasks.map(t => {
       if (t.id === task.id) {
         return {
@@ -735,15 +771,26 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
     saveSimulatorState(updatedTasks, simLogs);
   };
 
-  const agencyOptions = (allData?.agency || []).map((ag: any) => ({
+  const agencyOptions = (allData?.agency || []).map((ag: SimAgency) => ({
     value: String(ag.ag_id),
     label: ag.ag_name
   }));
 
-  const categoryOptions = (allData?.categories || []).map((cat: any) => ({
+  const categoryOptions = (allData?.categories || []).map((cat: SimCategory) => ({
     value: String(cat.cat_id),
     label: cat.cat_name
   }));
+
+  if (allDataLoading) {
+    return (
+      <div className="flex items-center justify-center p-12 bg-white rounded-3xl border border-slate-100 shadow-sm h-[650px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-slate-500 font-semibold text-sm">กำลังโหลดข้อมูลระบบ...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -764,21 +811,14 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                   onChange={(e) => {
                     const val = e.target.value;
                     setActiveSimUserKey(val);
-                    if (val.includes('-acting-')) {
-                      const [userId, _, delegationId] = val.split('-');
-                      setActiveSimUserId(Number(userId));
-                      setActiveSimUserDelegationId(Number(delegationId));
-                    } else {
-                      const [userId] = val.split('-');
-                      setActiveSimUserId(Number(userId));
-                      setActiveSimUserDelegationId(undefined);
-                    }
+                    const [userId] = val.split('-');
+                    setActiveSimUserId(Number(userId));
                   }}
                 >
-                  {users.map((u, idx) => {
+                  {users.map((u) => {
                     const val = u.isActing ? `${u.a_id}-acting-${u.delegationId}` : `${u.a_id}-normal`;
                     return (
-                      <option key={`${u.a_id}-${idx}`} value={val} className="text-slate-800">
+                      <option key={val} value={val} className="text-slate-800">
                         [{u.a_role}] - {u.a_name} ({u.a_position})
                       </option>
                     );
@@ -804,6 +844,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
           {/* Bot Queue Mock Button */}
           <div className="flex flex-wrap gap-2.5">
             <button
+              type="button"
               onClick={() => setShowImportModal(true)}
               className="px-5 py-2.5 bg-white text-emerald-800 font-bold rounded-2xl hover:bg-emerald-50 active:scale-95 transition shadow-sm flex items-center gap-2"
             >
@@ -841,13 +882,15 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                 const hasActionPending = isDirectOwner || isTrackOwner;
 
                 return (
-                  <div
+                  <button
                     key={t.id}
+                    type="button"
+                    tabIndex={0}
                     onClick={() => {
                       setActiveTaskId(t.id);
                       setSelectedNextOwnerId('');
                     }}
-                    className={`p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${
+                    className={`w-full p-4 rounded-2xl cursor-pointer transition-all duration-300 border text-left ${
                       activeTaskId === t.id
                         ? 'border-emerald-500 bg-emerald-50/40 ring-1 ring-emerald-500/20'
                         : 'border-slate-100 bg-slate-50/40 hover:bg-slate-100/50'
@@ -881,7 +924,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                         </span>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })
             )}
@@ -917,6 +960,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                 {/* Reset & Delete buttons */}
                 <div className="flex gap-2 shrink-0">
                   <button
+                    type="button"
                     onClick={() => handleResetTask(task.id)}
                     className="p-2 text-slate-500 bg-slate-100 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-colors text-sm font-semibold flex items-center gap-1"
                     title="เริ่มใหม่ทั้งหมด (Reset)"
@@ -925,6 +969,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                     <span className="hidden sm:inline">รีเซ็ต</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDeleteTask(task.id)}
                     className="p-2 text-slate-500 bg-slate-100 hover:bg-red-100 hover:text-red-700 rounded-xl transition-colors text-sm font-semibold flex items-center gap-1"
                     title="ลบงานจำลองนี้"
@@ -957,7 +1002,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {task.categories.map(catId => {
-                          const c = allData?.categories?.find((item: any) => item.cat_id === catId);
+                          const c = allData?.categories?.find((item: SimCategory) => item.cat_id === catId);
                           return (
                             <span key={catId} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded">
                               {c ? c.cat_name : `หมวดหมู่ ${catId}`}
@@ -976,7 +1021,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                           <span className="text-xs text-rose-500 font-bold">ยังไม่เลือกหน่วยงานผู้รับ</span>
                         ) : (
                           task.agencies.map(agId => {
-                            const ag = allData?.agency?.find((item: any) => item.ag_id === agId);
+                            const ag = allData?.agency?.find((item: SimAgency) => item.ag_id === agId);
                             return (
                               <span key={agId} className="px-2 py-0.5 bg-sky-50 text-sky-700 text-[10px] font-bold rounded">
                                 {ag ? ag.ag_name : `ส่วนราชการ ${agId}`}
@@ -1051,7 +1096,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                       className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-emerald-500"
                                     >
                                       <option value="">-- เลือกผลการพิจารณา --</option>
-                                      {(allData?.results || []).map((r: any) => (
+                                      {(allData?.results || []).map((r: SimResult) => (
                                         <option key={r.results_id} value={r.results_id}>
                                           {r.results_detail}
                                         </option>
@@ -1067,6 +1112,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                       className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 h-14 font-saochingcha"
                                     />
                                     <button
+                                      type="button"
                                       onClick={() => handleSubmitTrackResult(pa.pa_id)}
                                       className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
                                     >
@@ -1097,6 +1143,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                       </select>
                                     </div>
                                     <button
+                                      type="button"
                                       disabled={!selectedNextOwnerId}
                                       onClick={() => handleDelegateWithinTrack(pa.pa_id, Number(selectedNextOwnerId))}
                                       className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs"
@@ -1124,10 +1171,11 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                     {/* COORDINATOR DRAFT (Initial Step) */}
                     {task.in_workflow_status === 'DRAFT' && activeUser.a_role === 'COORDINATOR' ? (
                       <div className="space-y-3">
-                        <label className="block text-xs font-bold text-slate-600 mb-1">
+                        <label htmlFor="draft-agencies-select" className="block text-xs font-bold text-slate-600 mb-1">
                           เลือกส่วนราชการผู้รับเวียนหนังสือ (กองต่างๆ)
                         </label>
                         <Select
+                          inputId="draft-agencies-select"
                           isMulti
                           options={agencyOptions}
                           value={agencyOptions.filter(o => task.agencies.includes(Number(o.value)))}
@@ -1167,6 +1215,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                             )}
                           </select>
                           <button
+                            type="button"
                             disabled={task.agencies.length === 0 || !selectedNextOwnerId}
                             onClick={handleForward}
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white rounded-xl text-sm font-bold active:scale-95 transition font-saochingcha"
@@ -1185,6 +1234,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs h-20 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 font-saochingcha"
                         />
                         <button
+                          type="button"
                           onClick={handleCloseWorkflow}
                           className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm active:scale-95 transition shadow-sm"
                         >
@@ -1195,10 +1245,11 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                       /* ALL INTERMEDIATE ROLES (Forward, Delegate, Reject) */
                       <div className="space-y-4">
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                          <label htmlFor="action-comments-textarea" className="block text-xs font-bold text-slate-500 mb-1.5">
                             บันทึกข้อเห็นชอบ / ความเห็นการพิจารณา
                           </label>
                           <textarea
+                            id="action-comments-textarea"
                             placeholder="กรอกเหตุผลหรือบันทึกข้อความประกอบการส่งต่อ..."
                             value={actionComments}
                             onChange={(e) => setActionComments(e.target.value)}
@@ -1216,6 +1267,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                             
                             {useParallelAssign ? (
                               <button
+                                type="button"
                                 onClick={handleForward}
                                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs font-saochingcha"
                               >
@@ -1252,6 +1304,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                   )}
                                 </select>
                                 <button
+                                  type="button"
                                   disabled={!selectedNextOwnerId}
                                   onClick={handleForward}
                                   className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 text-white font-bold rounded-lg text-xs shrink-0 font-saochingcha"
@@ -1282,6 +1335,7 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                                   ))}
                                 </select>
                                 <button
+                                  type="button"
                                   disabled={!selectedNextOwnerId}
                                   onClick={handleReject}
                                   className="px-3 py-2 bg-red-500 hover:bg-red-600 disabled:bg-slate-200 text-white font-bold rounded-lg text-xs shrink-0 font-saochingcha"
@@ -1413,10 +1467,11 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
               
               {/* Select Bot Finding */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                <label htmlFor="bot-finding-select" className="block text-xs font-bold text-slate-500 mb-1.5">
                   เลือกหัวข้อข่าวที่บอตสแกนเจอ <span className="text-rose-500">*</span>
                 </label>
                 <select
+                  id="bot-finding-select"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none font-saochingcha"
                   value={selectedBotItem ? selectedBotItem.bot_id : ''}
                   onChange={(e) => {
@@ -1437,8 +1492,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">เลขที่หนังสือเวียน</label>
+                      <label htmlFor="mock-doc-num-input" className="block text-xs font-bold text-slate-500 mb-1.5">เลขที่หนังสือเวียน</label>
                       <input
+                        id="mock-doc-num-input"
                         type="text"
                         value={mockDocNum}
                         onChange={(e) => setMockDocNum(e.target.value)}
@@ -1446,14 +1502,15 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">ปี พ.ศ. <span className="text-rose-500">*</span></label>
+                      <label htmlFor="mock-year-select" className="block text-xs font-bold text-slate-500 mb-1.5">ปี พ.ศ. <span className="text-rose-500">*</span></label>
                       <select
+                        id="mock-year-select"
                         value={mockYearId}
                         onChange={(e) => setMockYearId(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-saochingcha"
                       >
                         <option value="">-- เลือกปี --</option>
-                        {(allData?.year || []).map((y: any) => (
+                        {(allData?.year || []).map((y: SimYear) => (
                           <option key={y.year_id} value={y.year_id}>
                             {y.year_value}
                           </option>
@@ -1463,8 +1520,9 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1.5">ชื่อเรื่องหนังสือเวียน</label>
+                    <label htmlFor="mock-title-textarea" className="block text-xs font-bold text-slate-500 mb-1.5">ชื่อเรื่องหนังสือเวียน</label>
                     <textarea
+                      id="mock-title-textarea"
                       value={mockTitle}
                       onChange={(e) => setMockTitle(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs h-20 font-saochingcha"
@@ -1472,28 +1530,30 @@ export default function WorkflowSimulatorSection({ allData, loading: allDataLoad
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                    <label htmlFor="mock-agency-select" className="block text-xs font-bold text-slate-500 mb-1.5">
                       ส่วนราชการต้นเรื่องผู้รับผิดชอบ <span className="text-rose-500">*</span>
                     </label>
                     <Select
+                      inputId="mock-agency-select"
                       isMulti
                       options={agencyOptions}
                       value={mockAgencyIds}
-                      onChange={(options: any) => setMockAgencyIds(options || [])}
+                      onChange={(options) => setMockAgencyIds(options ? [...options] : [])}
                       placeholder="เลือกกองหรือส่วนราชการ..."
                       className="text-xs font-saochingcha"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                    <label htmlFor="mock-category-select" className="block text-xs font-bold text-slate-500 mb-1.5">
                       หมวดหมู่หนังสือเวียน <span className="text-rose-500">*</span>
                     </label>
                     <Select
+                      inputId="mock-category-select"
                       isMulti
                       options={categoryOptions}
                       value={mockCategoryIds}
-                      onChange={(options: any) => setMockCategoryIds(options || [])}
+                      onChange={(options) => setMockCategoryIds(options ? [...options] : [])}
                       placeholder="เลือกหมวดหมู่..."
                       className="text-xs font-saochingcha"
                     />

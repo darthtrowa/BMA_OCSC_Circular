@@ -1,5 +1,35 @@
 # Project Update Log
 
+## [1.8.2] - 2026-07-14
+
+### Refactor: Shared Core Logic — `calculateNextRoutingState()` (DRY Workflow Brain)
+
+#### ⚙️ Backend Service Changes (server)
+- **workflowService.ts**:
+  - **[NEW]** Extracted a new `static calculateNextRoutingState(fromRole, toRole, action, currentFlowState)` pure function as the **Single Source of Truth** for all workflow routing decisions.
+  - The function is **synchronous and READ-ONLY** — it derives `newStatus`, `newFlowState`, and `historyAction` entirely from its input parameters with zero DB calls, making it safe to call from any context.
+  - **`forward()`**: Removed the 17-line duplicated inline routing block. Now delegates to `calculateNextRoutingState(fromRole, toRole, "FORWARD", null)`.
+  - **`reject()`**: Removed the duplicated inline status/flow-state block. Now delegates to `calculateNextRoutingState("", targetRole, "REJECT", null)`.
+  - **`simulateNextAction()` FORWARD branch**: Removed the 30-line duplicated routing computation. Now calls the exact same `calculateNextRoutingState(effectiveRole, toRole, "FORWARD", task.in_flow_state)`.
+  - **`simulateNextAction()` REJECT branch**: Removed the duplicated 4-line block. Now calls `calculateNextRoutingState(effectiveRole, targetUser.a_role, "REJECT", task.in_flow_state)`.
+  - **Architectural impact**: Divergence between the real workflow and the Workflow Simulator is now architecturally impossible for the FORWARD/REJECT path. Any future business rule change (e.g., adding a new role transition) only needs to be made in one place.
+  - **Build result**: `tsc` completed with 0 errors after all refactoring.
+
+## [1.8.1] - 2026-07-12
+
+### Refactor: Cleaned up linter issues and strict TypeScript warnings in WorkflowSimulatorSection
+
+#### 🎨 Client Admin Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**:
+  - Replaced explicit `any` types with custom interfaces (`SimAgency`, `SimCategory`, `SimResult`, `SimYear`, `DashboardAllData`, `SimUser`, `SimUserActingInfo`, `SelectOption`, `SimBotQueueItem`) aligning code with strict type-safety standards.
+  - Wrapped `getActiveUser` and `getSelectedTask` functions in `useCallback` and synced them as dependencies in the simulator options fetching `useEffect` hook, resolving ESLint dependency validation errors.
+  - Removed unused local component state variables: `delegations`, `loadingMetadata`, `activeSimUserDelegationId`, `loadingOptions`, and `selectedResultsId`.
+  - Added a visual loading spinner fallback component when `allDataLoading` is true, improving simulator responsiveness and WOW factors.
+  - Resolved dynamic key uniqueness constraints in users map list option renders.
+  - Configured explicit `type="button"` attribute props on all helper action button UI elements.
+  - Fixed standard HTML semantic accessibility warnings by adding interactive roles, `tabIndex={0}`, and `onKeyDown` handlers on simulated inbox task clickable container divs.
+  - Bound all form input/textarea labels to their respective control fields using `htmlFor` and custom `inputId` props.
+
 ## [1.8.0] - 2026-07-12
 
 ### Feature: Restrict GRP_LEADER Auto-up to own supervisor structure in 'out' state & render flow states

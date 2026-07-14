@@ -41,12 +41,14 @@ interface MatiWorkItem {
 	mw_id: number;
 	mw_name: string;
 	mw_date: string;
+	[key: string]: unknown;
 }
 
 interface MatiKkItem {
 	mkk_id: number;
 	mkk_name: string;
 	mkk_date: string;
+	[key: string]: unknown;
 }
 
 interface FiltersData {

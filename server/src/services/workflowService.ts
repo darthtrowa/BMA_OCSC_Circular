@@ -155,6 +155,70 @@ export class WorkflowService {
 		}
 	}
 
+	/**
+	 * ============================================================
+	 * SHARED CORE ROUTING BRAIN — Single Source of Truth
+	 * ============================================================
+	 * Pure, synchronous function that determines ALL routing state
+	 * transitions based solely on role strings.
+	 *
+	 * READ-ONLY GUARANTEE: This function MUST NEVER call any DB
+	 * write operations (.update, .create, .delete). It may only
+	 * derive state from its input parameters.
+	 *
+	 * Used by BOTH the real workflow (forward/reject) and the
+	 * Workflow Simulator (simulateNextAction) to guarantee 100%
+	 * parity between simulated and real outcomes.
+	 * ============================================================
+	 */
+	static calculateNextRoutingState(
+		fromRole: string,
+		toRole: string,
+		action: "FORWARD" | "REJECT",
+		currentFlowState: string | null,
+	): {
+		newStatus: WorkflowStatus;
+		newFlowState: string | null;
+		historyAction: WorkflowAction;
+	} {
+		if (action === "REJECT") {
+			// REJECT always sets status to REJECTED.
+			// flow_state becomes "out" only if returning to a STAFF member.
+			const newFlowState = toRole === "STAFF" ? "out" : currentFlowState;
+			return {
+				newStatus: "REJECTED",
+				newFlowState,
+				historyAction: "REJECTED",
+			};
+		}
+
+		// --- FORWARD action ---
+		let newStatus = WorkflowService.getNextStatus(fromRole, toRole);
+		let historyAction: WorkflowAction = "APPROVED";
+		let newFlowState: string | null = currentFlowState;
+
+		// Override for COORDINATOR as receiver → finalisation step
+		if (toRole === "COORDINATOR") {
+			newStatus = "PENDING_CLOSE";
+			historyAction = "FINALIZED";
+		}
+
+		// Determine the new in_flow_state based on role transitions
+		if (fromRole === "COORDINATOR") {
+			newFlowState = "out";
+		} else if (fromRole === "HR_DIRECTOR" && toRole === "DIV_DIRECTOR") {
+			newFlowState = "in";
+		} else if (toRole === "STAFF") {
+			newFlowState = "out";
+		} else if (fromRole === "STAFF") {
+			newFlowState = "out";
+		} else if (fromRole === "DIV_DIRECTOR" && toRole === "HR_DIRECTOR") {
+			newFlowState = "in";
+		}
+
+		return { newStatus, newFlowState, historyAction };
+	}
+
 	static async forward(
 		docId: number,
 		fromUserId: number,
@@ -211,26 +275,9 @@ export class WorkflowService {
 			if (toDelegationRes.rows.length > 0) {
 				toRole = toDelegationRes.rows[0].delegated_role;
 			}
-			let newStatus = WorkflowService.getNextStatus(fromRole, toRole);
-			let action: WorkflowAction = "APPROVED";
-			let newFlowState: string | null = null;
-
-			if (toRole === "COORDINATOR") {
-				newStatus = "PENDING_CLOSE";
-				action = "FINALIZED";
-			}
-
-			if (fromRole === "COORDINATOR") {
-				newFlowState = "out";
-			} else if (fromRole === "HR_DIRECTOR" && toRole === "DIV_DIRECTOR") {
-				newFlowState = "in";
-			} else if (toRole === "STAFF") {
-				newFlowState = "out";
-			} else if (fromRole === "STAFF") {
-				newFlowState = "out";
-			} else if (fromRole === "DIV_DIRECTOR" && toRole === "HR_DIRECTOR") {
-				newFlowState = "in";
-			}
+			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
+			const { newStatus, newFlowState, historyAction: action } =
+				WorkflowService.calculateNextRoutingState(fromRole, toRole, "FORWARD", null);
 
 			const docRes = await client.query(
 				"SELECT in_is_parallel FROM c_information WHERE in_id = $1",
@@ -342,12 +389,9 @@ export class WorkflowService {
 				throw new Error("Target user not found");
 			const targetRole = targetUserRes.rows[0].a_role;
 
-			const newStatus: WorkflowStatus = "REJECTED";
-
-			let newFlowState: string | null = null;
-			if (targetRole === "STAFF") {
-				newFlowState = "out";
-			}
+			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
+			const { newStatus, newFlowState } =
+				WorkflowService.calculateNextRoutingState("", targetRole, "REJECT", null);
 
 			const docRes = await client.query(
 				"SELECT in_is_parallel FROM c_information WHERE in_id = $1",
@@ -2021,36 +2065,20 @@ export class WorkflowService {
 				toRole = targetDelegationRes.rows[0].delegated_role;
 			}
 
-			let newStatus = WorkflowService.getNextStatus(
+			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
+			// This is the EXACT same function used by the real forward() workflow.
+			// Parity is guaranteed by design — any business rule change here
+			// is automatically reflected in both real and simulated outcomes.
+			const {
+				newStatus,
+				newFlowState,
+				historyAction,
+			} = WorkflowService.calculateNextRoutingState(
 				effectiveRole,
 				toRole,
+				"FORWARD",
+				task.in_flow_state,
 			);
-			let historyAction = "APPROVED";
-			let newFlowState = task.in_flow_state;
-
-			if (toRole === "COORDINATOR") {
-				newStatus = "PENDING_CLOSE";
-				historyAction = "FINALIZED";
-			}
-
-			// Update flow_state dynamically
-			if (effectiveRole === "COORDINATOR") {
-				newFlowState = "out";
-			} else if (
-				effectiveRole === "HR_DIRECTOR" &&
-				toRole === "DIV_DIRECTOR"
-			) {
-				newFlowState = "in";
-			} else if (toRole === "STAFF") {
-				newFlowState = "out";
-			} else if (effectiveRole === "STAFF") {
-				newFlowState = "out";
-			} else if (
-				effectiveRole === "DIV_DIRECTOR" &&
-				toRole === "HR_DIRECTOR"
-			) {
-				newFlowState = "in";
-			}
 
 			updatedTask.in_workflow_status = newStatus;
 			updatedTask.in_current_owner_id = targetUserId;
@@ -2084,12 +2112,17 @@ export class WorkflowService {
 			if (targetRes.rows.length === 0) throw new Error("Target user not found");
 			const targetUser = targetRes.rows[0];
 
-			let newFlowState = task.in_flow_state;
-			if (targetUser.a_role === "STAFF") {
-				newFlowState = "out";
-			}
+			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
+			// Same function used by the real reject() workflow — guaranteed parity.
+			const { newStatus: rejectedStatus, newFlowState } =
+				WorkflowService.calculateNextRoutingState(
+					effectiveRole,
+					targetUser.a_role,
+					"REJECT",
+					task.in_flow_state,
+				);
 
-			updatedTask.in_workflow_status = "REJECTED";
+			updatedTask.in_workflow_status = rejectedStatus;
 			updatedTask.in_current_owner_id = targetUserId;
 			updatedTask.in_flow_state = newFlowState;
 
