@@ -351,6 +351,18 @@ export const testWorkflowApi = {
   /** Hard-delete all test records (safety-guarded to [E2E-TEST] docs only) */
   cleanup: (docId: number): Promise<any> =>
     http.delete('/api/admin/test-workflow/cleanup', { data: { docId } }).then(r => r.data),
+
+  /** Get active agencies list */
+  getAgencies: (): Promise<any[]> =>
+    http.get('/api/admin/test-workflow/agencies').then(r => r.data.data),
+
+  /** Link agencies to test document */
+  assignAgencies: (docId: number, agencyIds: number[]): Promise<any> =>
+    http.post('/api/admin/test-workflow/assign-agencies', { docId, agencyIds }).then(r => r.data),
+
+  /** Execute parallel assignment */
+  parallelAssign: (docId: number, fromUserId: number, tracks: any[]): Promise<any> =>
+    http.post('/api/admin/test-workflow/parallel-assign', { docId, fromUserId, tracks }).then(r => r.data),
 };
 
 export const agencyApi = {

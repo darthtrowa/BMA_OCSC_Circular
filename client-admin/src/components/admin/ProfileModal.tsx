@@ -126,6 +126,8 @@ const ProfileModal = forwardRef<ProfileModalRef, ProfileModalProps>(({ onUpdated
                   onChange={e => setRole(e.target.value)}
                 >
                   <option value="HR_DIRECTOR">ผอ. ควบคุมการพิจารณาหนังสือเวียน (HR_DIRECTOR)</option>
+                  <option value="HR_SEC_DIRECTOR">ผอ. ส่วน (สายงาน HR) (HR_SEC_DIRECTOR)</option>
+                  <option value="HR_GRP_LEADER">หัวหน้าฝ่าย/กลุ่มงาน (สายงาน HR) (HR_GRP_LEADER)</option>
                   <option value="DIV_DIRECTOR">ผอ. กองที่พิจารณาหนังสือเวียน (DIV_DIRECTOR)</option>
                   <option value="SEC_DIRECTOR">ผอ. ส่วนภายใต้กอง (SEC_DIRECTOR)</option>
                   <option value="GRP_LEADER">หัวหน้าฝ่าย/กลุ่มงาน (GRP_LEADER)</option>

@@ -2,6 +2,7 @@
 import type { PoolClient } from "pg";
 import db from "../config/database.js";
 import type { WorkflowAction, WorkflowStatus } from "../types/workflow.js";
+import { WorkflowEngine } from "./workflow/workflowEngine.js";
 
 export interface WorkflowUser {
 	a_id: number;
@@ -135,11 +136,13 @@ export class WorkflowService {
 
 		const roleRank: Record<string, number> = {
 			STAFF: 1,
+			COORDINATOR: 0,
+			HR_GRP_LEADER: 2,
 			GRP_LEADER: 2,
+			HR_SEC_DIRECTOR: 3,
 			SEC_DIRECTOR: 3,
 			DIV_DIRECTOR: 4,
 			HR_DIRECTOR: 4,
-			COORDINATOR: 0,
 		};
 
 		const fromRank = roleRank[fromRole] || 0;
@@ -149,7 +152,9 @@ export class WorkflowService {
 			return "PENDING_DELEGATION";
 		} else {
 			if (toRole === "GRP_LEADER") return "PENDING_GRP_REVIEW";
+			if (toRole === "HR_GRP_LEADER") return "PENDING_HR_GRP_REVIEW";
 			if (toRole === "SEC_DIRECTOR") return "PENDING_SEC_APPROVAL";
+			if (toRole === "HR_SEC_DIRECTOR") return "PENDING_HR_SEC_APPROVAL";
 			if (toRole === "HR_DIRECTOR") return "PENDING_HR_APPROVAL";
 			if (toRole === "DIV_DIRECTOR") return "PENDING_DIRECTOR_APPROVAL";
 			return "PENDING_GRP_REVIEW";
@@ -215,6 +220,9 @@ export class WorkflowService {
 			newFlowState = "out";
 		} else if (fromRole === "DIV_DIRECTOR" && toRole === "HR_DIRECTOR") {
 			newFlowState = "in";
+		} else if (fromRole === "HR_GRP_LEADER" || fromRole === "HR_SEC_DIRECTOR") {
+			// HR sub-roles are always in the upward (out) flow direction
+			newFlowState = "out";
 		}
 
 		return { newStatus, newFlowState, historyAction };
@@ -727,7 +735,9 @@ export class WorkflowService {
 		const roleRank: Record<string, number> = {
 			STAFF: 1,
 			COORDINATOR: 1,
+			HR_GRP_LEADER: 2,
 			GRP_LEADER: 2,
+			HR_SEC_DIRECTOR: 3,
 			SEC_DIRECTOR: 3,
 			DIV_DIRECTOR: 4,
 			HR_DIRECTOR: 4,
@@ -741,7 +751,7 @@ export class WorkflowService {
              a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
       FROM admin a
       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-      WHERE COALESCE(ag.ag_role, a.a_role) IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
+      WHERE COALESCE(ag.ag_role, a.a_role) IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'HR_GRP_LEADER', 'HR_SEC_DIRECTOR', 'STAFF', 'COORDINATOR')
         AND a.a_id != $1
     `,
 			[effectiveUserId],
@@ -749,8 +759,29 @@ export class WorkflowService {
 
 		const allUsers = allUsersRes.rows;
 
-		let autoUpAssignee = null;
+		let autoUpAssignee: WorkflowUser | null = null;
 		let manualAssignees: WorkflowUser[] = [];
+
+		// Calculate autoUpAssignee using modular WorkflowEngine
+		if (flowState !== "in") {
+			try {
+				const engineResult = await WorkflowEngine.processAction("FORWARD_OUT", user, String(docId));
+				if (engineResult.success && engineResult.predictedNextAssignee) {
+					const { nextRole, nextAgId } = engineResult.predictedNextAssignee;
+					const candidates = allUsers.filter(
+						(u) =>
+							u.a_role === nextRole &&
+							(Number(u.a_agency_id) === Number(nextAgId) ||
+								(Number(u.parent_ag_id) === Number(nextAgId) && u.ag_type === "POSITION"))
+					);
+					if (candidates.length > 0) {
+						autoUpAssignee = candidates[0];
+					}
+				}
+			} catch (err) {
+				console.error("[Workflow Engine] Error predicting next assignee:", err);
+			}
+		}
 
 		if (user.a_role === "COORDINATOR") {
 			const groupAgencyId =
@@ -770,9 +801,6 @@ export class WorkflowService {
 				);
 
 				const grpLeaders = grpRes.rows as WorkflowUser[];
-				if (grpLeaders.length > 0) {
-					autoUpAssignee = grpLeaders[0];
-				}
 
 				// Query active GRP_LEADER delegations in this group
 				const actingRes = await db.query(
@@ -811,39 +839,6 @@ export class WorkflowService {
 			}
 		} else if (user.a_role === "GRP_LEADER") {
 			if (flowState !== "in") {
-				// 1. Resolve Auto-Up structural supervisor (own SEC_DIRECTOR, DIV_DIRECTOR, or HR_DIRECTOR)
-				let currentLookupAgency = user.a_agency_id;
-				let foundSupervisor = null;
-				while (currentLookupAgency) {
-					const higherRankUsers = allUsers.filter(
-						(u) =>
-							(u.a_agency_id === currentLookupAgency ||
-								(u.parent_ag_id === currentLookupAgency &&
-									u.ag_type === "POSITION")) &&
-							(u.a_role === "SEC_DIRECTOR" ||
-								u.a_role === "DIV_DIRECTOR" ||
-								u.a_role === "HR_DIRECTOR"),
-					);
-
-					if (higherRankUsers.length > 0) {
-						higherRankUsers.sort(
-							(a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0),
-						);
-						foundSupervisor = higherRankUsers[0];
-						break;
-					}
-
-					const parentRes = await db.query(
-						"SELECT parent_ag_id FROM c_agency WHERE ag_id = $1",
-						[currentLookupAgency],
-					);
-					if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
-						break;
-					}
-					currentLookupAgency = parentRes.rows[0].parent_ag_id;
-				}
-				autoUpAssignee = foundSupervisor;
-
 				// 2. Resolve manualAssignees:
 				// (a) All DIV_DIRECTORs and HR_DIRECTORs (for cross-agency/upward)
 				const directorsRes = await db.query(`
@@ -872,11 +867,12 @@ export class WorkflowService {
 				// Filter list to only show their own direct division head (and acting heads)
 				let finalDirectors = directors;
 				let finalActingDirectors = actingDirectors;
-				if (foundSupervisor) {
-					finalDirectors = directors.filter((d) => d.a_id === foundSupervisor.a_id);
+				if (autoUpAssignee) {
+					const supervisor = autoUpAssignee;
+					finalDirectors = directors.filter((d) => d.a_id === supervisor.a_id);
 					finalActingDirectors = actingDirectors.filter((d: any) => 
-						d.assigner_id === foundSupervisor.a_id ||
-						(foundSupervisor.a_agency_id && d.assigner_ag_id === foundSupervisor.a_agency_id)
+						d.assigner_id === supervisor.a_id ||
+						(supervisor.a_agency_id && d.assigner_ag_id === supervisor.a_agency_id)
 					);
 				}
 
@@ -956,37 +952,6 @@ export class WorkflowService {
 				manualAssignees = finalManual;
 			}
 		} else {
-			// Auto UP Logic: Traverse up the tree starting from the user's CURRENT agency
-			if (flowState !== "in") {
-				let currentLookupAgency = user.a_agency_id;
-				while (currentLookupAgency) {
-					const higherRankUsers = allUsers.filter(
-						(u) =>
-							(u.a_agency_id === currentLookupAgency ||
-								(u.parent_ag_id === currentLookupAgency &&
-									u.ag_type === "POSITION")) &&
-							(roleRank[u.a_role] ?? 0) > currentRank,
-					);
-
-					if (higherRankUsers.length > 0) {
-						higherRankUsers.sort(
-							(a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0),
-						);
-						autoUpAssignee = higherRankUsers[0];
-						break;
-					}
-
-					const parentRes = await db.query(
-						"SELECT parent_ag_id FROM c_agency WHERE ag_id = $1",
-						[currentLookupAgency],
-					);
-					if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
-						break;
-					}
-					currentLookupAgency = parentRes.rows[0].parent_ag_id;
-				}
-			}
-
 			// Manual Logic (Cross or Down)
 			// Fetch descendant agencies for Forward Down
 			const startAgencyId =
@@ -1299,7 +1264,9 @@ export class WorkflowService {
 
 		const targetRoles = [
 			"GRP_LEADER",
+			"HR_GRP_LEADER",
 			"SEC_DIRECTOR",
+			"HR_SEC_DIRECTOR",
 			"DIV_DIRECTOR",
 			"HR_DIRECTOR",
 		];

@@ -13,6 +13,8 @@ export type AdminRole =
   | 'SUPERADMIN'
   | 'COORDINATOR'
   | 'HR_DIRECTOR'
+  | 'HR_SEC_DIRECTOR'
+  | 'HR_GRP_LEADER'
   | 'DIV_DIRECTOR'
   | 'SEC_DIRECTOR'
   | 'GRP_LEADER'
