@@ -6,13 +6,13 @@ import BotQueueSection from '../components/admin/BotQueueSection'
 import CircularSection from '../components/admin/CircularSection'
 import DashboardStats from '../components/admin/DashboardStats'
 import ExecutiveDashboard from '../components/admin/ExecutiveDashboard'
+import InteractiveWorkflowTester from '../components/admin/InteractiveWorkflowTester'
 import MasterDataSection from '../components/admin/MasterDataSection'
 import PasswordModal from '../components/admin/PasswordModal'
 import ProfileModal from '../components/admin/ProfileModal'
 import Sidebar from '../components/admin/Sidebar'
 import UserSection from '../components/admin/UserSection'
 import WorkflowInboxSection from '../components/admin/WorkflowInboxSection'
-import WorkflowSimulatorSection from '../components/admin/WorkflowSimulatorSection'
 import { useAuth } from '../contexts/AuthContext'
 import Swal from 'sweetalert2'
 
@@ -234,7 +234,7 @@ export default function DashboardPage() {
                 loading={loading} 
               />
             )}
-            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && activeSection !== 'sec-workflow-inbox' && activeSection !== 'sec-agency-structure' && activeSection !== 'sec-simulator' && (
+            {activeSection !== 'sec-users' && activeSection !== 'sec-overview' && activeSection !== 'sec-bot-queue' && activeSection !== 'sec-workflow-inbox' && activeSection !== 'sec-agency-structure' && activeSection !== 'sec-simulator' && activeSection !== 'sec-workflow-tester' && (
               <div className="mt-4">
                 <DashboardStats
                   allData={allData}
@@ -279,11 +279,8 @@ export default function DashboardPage() {
             {activeSection === 'sec-agency-structure' && (
               <AgencyTreeSection />
             )}
-            {activeSection === 'sec-simulator' && (
-              <WorkflowSimulatorSection
-                allData={allData}
-                loading={loading}
-              />
+            {activeSection === 'sec-workflow-tester' && (
+              <InteractiveWorkflowTester />
             )}
           </div>
         </main>

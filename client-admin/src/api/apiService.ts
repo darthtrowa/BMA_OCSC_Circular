@@ -207,11 +207,6 @@ export const adminApi = {
 }
 
 export const workflowApi = {
-  simulateWorkflowAction: async (payload: any): Promise<any> => {
-    const { data } = await http.post('/api/admin/workflow/simulate', payload);
-    return data;
-  },
-
   startWorkflow: async (docId: number): Promise<any> => {
     const { data } = await http.post('/api/admin/workflow/start', { docId });
     return data;
@@ -315,6 +310,47 @@ export const workflowApi = {
     const { data } = await http.get(`/api/admin/workflow/${docId}/parallel-tracks`);
     return data;
   },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactive E2E Real Workflow Tester API
+// ─────────────────────────────────────────────────────────────────────────────
+export const testWorkflowApi = {
+  /** Fetch all admin users grouped for the user-selector */
+  getUsers: (): Promise<any[]> =>
+    http.get<ApiResponse<any[]>>('/api/admin/test-workflow/users').then(r => r.data.data),
+
+  /** Create a real DRAFT document and return its state */
+  init: (coordinatorId: number): Promise<any> =>
+    http.post('/api/admin/test-workflow/init', { coordinatorId }).then(r => r.data),
+
+  /** Get next assignees from the REAL routing engine, impersonating asUserId */
+  getNextAssignees: (docId: number, asUserId: number): Promise<any> =>
+    http.get(`/api/admin/test-workflow/${docId}/next-assignees?asUserId=${asUserId}`).then(r => r.data),
+
+  /** Get reject assignees from the REAL routing engine */
+  getRejectAssignees: (docId: number, asUserId: number, asUserRole: string): Promise<any> =>
+    http.get(`/api/admin/test-workflow/${docId}/reject-assignees?asUserId=${asUserId}&asUserRole=${asUserRole}`).then(r => r.data),
+
+  /** Get live document status + history */
+  getStatus: (docId: number): Promise<any> =>
+    http.get(`/api/admin/test-workflow/${docId}/status`).then(r => r.data),
+
+  /** Forward document via REAL WorkflowService.forward() */
+  forward: (docId: number, fromUserId: number, toUserId: number, comments?: string): Promise<any> =>
+    http.post('/api/admin/test-workflow/forward', { docId, fromUserId, toUserId, comments }).then(r => r.data),
+
+  /** Reject document via REAL WorkflowService.reject() */
+  reject: (docId: number, fromUserId: number, rejectToUserId: number, comments?: string): Promise<any> =>
+    http.post('/api/admin/test-workflow/reject', { docId, fromUserId, rejectToUserId, comments }).then(r => r.data),
+
+  /** Close workflow via REAL WorkflowService.closeWorkflow() */
+  close: (docId: number, coordinatorId: number, comments?: string): Promise<any> =>
+    http.post('/api/admin/test-workflow/close', { docId, coordinatorId, comments }).then(r => r.data),
+
+  /** Hard-delete all test records (safety-guarded to [E2E-TEST] docs only) */
+  cleanup: (docId: number): Promise<any> =>
+    http.delete('/api/admin/test-workflow/cleanup', { data: { docId } }).then(r => r.data),
 };
 
 export const agencyApi = {

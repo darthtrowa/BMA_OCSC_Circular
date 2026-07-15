@@ -155,9 +155,8 @@ const ProfileModal = forwardRef<{ open: () => void }, ProfileModalProps>(({ onUp
               <label htmlFor="profile_permiss" className="block text-sm font-semibold text-slate-700 mb-1.5">ระดับสิทธิ์ (Permission Level)</label>
               <div id="profile_permiss" className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
                 <i className='bx bx-shield-alt-2 mr-2'></i>
-                {profile?.a_permiss === 'superadmin' ? 'ผู้ดูแลระบบสูงสุด (SuperAdmin)' : 
-                 profile?.a_permiss === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 
-                 'เจ้าหน้าที่ทั่วไป (Staff User)'}
+                {profile?.a_permiss === 'superadmin' ? 'ผู้ดูแลระบบสูงสุด (SuperAdmin)' :                  profile?.a_permiss === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 
+                  'ผู้ใช้งานทั่วไป (User)'}
               </div>
             </div>
 

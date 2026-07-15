@@ -1,5 +1,84 @@
 # Project Update Log
 
+## [1.9.0] - 2026-07-14
+
+### Feature: Interactive E2E Real Workflow Tester UI
+
+#### ⚙️ Backend Changes (server)
+- **[NEW] testWorkflowRoutes.ts**: Created new orchestration API router at `/api/admin/test-workflow` (superadmin-only). Endpoints include:
+  - `POST /init` — Creates a real DRAFT document in `c_information` and returns initial state + routing options.
+  - `GET /:docId/next-assignees` — Calls `WorkflowService.getNextAssignees()` while impersonating any user (via `asUserId`).
+  - `GET /:docId/reject-assignees` — Calls `WorkflowService.getRejectAssignees()` while impersonating any user.
+  - `GET /:docId/status` — Returns live document state + full workflow history from DB.
+  - `GET /users` — Returns all admin users grouped by role for the actor selector.
+  - `POST /forward` — Calls the REAL `WorkflowService.forward()` method.
+  - `POST /reject` — Calls the REAL `WorkflowService.reject()` method.
+  - `POST /close` — Calls the REAL `WorkflowService.closeWorkflow()` method.
+  - `DELETE /cleanup` — Hard-deletes test records, safety-guarded to `[E2E-TEST]` subject prefix only.
+- **index.ts**: Registered new router at `app.use('/api/admin/test-workflow', testWorkflowRoutes)`.
+- Built with `npm run build` (0 errors) and restarted PM2.
+
+#### 🎨 Client Admin Changes (client-admin)
+- **apiService.ts**: Added `testWorkflowApi` object with 9 methods corresponding to the new backend endpoints.
+- **[NEW] InteractiveWorkflowTester.tsx**: Created a full interactive thin-client testing UI with 3 states:
+  - **IDLE**: Select a Coordinator and start the test (creates a real DB document).
+  - **ACTIVE**: Drive each workflow step — select the acting user, choose between Forward/Reject tabs (populated from real routing engine results), add optional comments, and execute. Close button appears automatically when `PENDING_CLOSE` status is reached.
+  - **DONE**: Workflow completed banner + cleanup button.
+  - Live workflow history panel (auto-scrolls) shows real DB history entries after every action.
+  - Safety-guarded cleanup button that hard-deletes all test records from the DB.
+- **DashboardPage.tsx**: Added `InteractiveWorkflowTester` import and render block for `sec-workflow-tester` section. Also added `sec-workflow-tester` to the stats exclusion list.
+- **Sidebar.tsx**: Added `E2E Workflow Tester` (`bx-test-tube` icon) nav item under the `จัดการระบบ` section (superadmin-only).
+
+## [1.8.6] - 2026-07-14
+
+### Refactor: Deep Clean of unused Simulation methods and code paths
+
+#### 🎨 Client Admin Changes (client-admin)
+- **apiService.ts**: Removed the unused `simulateWorkflowAction` api client helper.
+- Recompiled client-admin frontend with `npm run build` (built with 0 errors).
+
+#### ⚙️ Backend Changes (server)
+- **admin.ts**: Removed the unused `isSimulator` query parameter check and conditional bypass from the `GET /users/by-role` endpoint.
+- **workflowService.ts**: Completely deleted the unused stateless simulator helpers `simulateNextAssignees()`, `simulateNextAction()`, and `getSimulatedEffectiveUser()`, reducing file size by ~1,100 lines of dead code.
+- Recompiled server with `npm run build` and performed a final restart of all PM2 services.
+
+## [1.8.5] - 2026-07-14
+
+### Deletion: Complete removal of Workflow Simulator
+
+#### 🎨 Client Admin Changes (client-admin)
+- **WorkflowSimulatorSection.tsx**: **[DELETE]** Completely removed this file from the filesystem.
+- **Sidebar.tsx**: Removed the `"sec-simulator"` navigation menu item ("เครื่องมือจำลอง Workflow") from the administrator panel sidebar.
+- **DashboardPage.tsx**: Removed the import statement and the routing render conditional block for the `<WorkflowSimulatorSection />` component.
+- Recompiled the client-admin frontend with `npm run build` and verified successful build.
+
+#### ⚙️ Backend API Changes (server)
+- **workflowRoutes.ts**: Completely removed the `POST /api/admin/workflow/simulate` route endpoint.
+- Recompiled the server package with `npm run build` and restarted all services on PM2.
+
+## [1.8.4] - 2026-07-14
+
+### Bugfix: Restrict GRP_LEADER supervisors list to own structural division head only
+
+#### ⚙️ Backend Service Changes (server)
+- **workflowService.ts**:
+  - Modified both `getNextAssignees` and `simulateNextAssignees` GRP_LEADER lookup logic (when `flowState === 'out'`).
+  - Restricted the available `DIV_DIRECTOR`s and `HR_DIRECTOR`s in `manualAssignees` list to **only** include the resolved structural supervisor (closest division director) and their active acting delegates.
+  - Previously, a GRP_LEADER under `HR_DIRECTOR` (such as `นายศรัณย์`) would see all other division directors (`DIV_DIRECTOR`s) in their manual list, allowing incorrect cross-division assignments.
+  - Now, `นายศรัณย์` only sees the `HR_DIRECTOR` and any acting `HR_DIRECTOR`s, and `นายชัยพร` only sees his direct `SEC_DIRECTOR` and subordinates, preventing cross-division leak.
+  - Verified server compilation and successfully restarted PM2.
+
+## [1.8.3] - 2026-07-14
+
+### Bugfix: Restore real GRP_LEADER action buttons when active delegation is present
+
+#### 🎨 Client Changes (client)
+- **WorkflowInboxSection.tsx**:
+  - Removed `!isDelegating` condition from `canAct` calculation inside `renderTaskRow`.
+  - Previously, if a user (e.g., GRP_LEADER) had active delegations, the interface would hide their action buttons ("เสนอเรื่อง / ส่งต่อ" and "ตีกลับ") under the assumption that only the acting user should execute them.
+  - Now, both the actual GRP_LEADER (via their main Inbox) and the acting GRP_LEADER (via their Acting Inbox) can access, review, and forward/reject the document.
+  - Verified client builds with 0 errors.
+
 ## [1.8.2] - 2026-07-14
 
 ### Refactor: Shared Core Logic — `calculateNextRoutingState()` (DRY Workflow Brain)
@@ -1927,7 +2006,7 @@
 
 ### Bug Fix: Profile Modal Permission Display
 
-- **Role Display Mapping**: Fixed a hardcoded ternary operator in `ProfileModal.tsx` that assumed any user who isn't a `superadmin` must be an `Admin`. It now correctly maps all three system permission levels (`superadmin` -> ผู้ดูแลระบบสูงสุด, `admin` -> ผู้ดูแลระบบ, `user` -> เจ้าหน้าที่ทั่วไป) to ensure the user's self-viewed profile matches the system's underlying reality shown in the User Management page.
+- **Role Display Mapping**: Fixed a hardcoded ternary operator in `ProfileModal.tsx` that assumed any user who isn't a `superadmin` must be an `Admin`. It now correctly maps all three system permission levels (`superadmin` -> ผู้ดูแลระบบสูงสุด, `admin` -> ผู้ดูแลระบบ, `user` -> ผู้ใช้งานทั่วไป (User)) to ensure the user's self-viewed profile matches the system's underlying reality shown in the User Management page.
 
 ## [1.1.55] - 2026-05-26
 

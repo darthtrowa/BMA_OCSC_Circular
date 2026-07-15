@@ -424,7 +424,7 @@ export default function UserSection({ permiss }: { permiss?: string }) {
                       value={formData.a_permiss}
                       onChange={e => setFormData({ ...formData, a_permiss: e.target.value })}
                     >
-                      <option value="user">เจ้าหน้าที่ทั่วไป (Staff User)</option>
+                      <option value="user">ผู้ใช้งานทั่วไป (User)</option>
                       <option value="admin">ผู้ดูแลระบบ (Admin)</option>
                       {permiss === 'superadmin' && (
                         <option value="superadmin">ผู้ดูแลระบบสูงสุด (Superadmin)</option>

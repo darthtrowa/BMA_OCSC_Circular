@@ -9,6 +9,7 @@ import { rateLimit } from 'express-rate-limit';
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
 import workflowRoutes from './routes/workflowRoutes.js';
+import testWorkflowRoutes from './routes/testWorkflowRoutes.js';
 
 import delegationRoutes from './routes/delegationRoutes.js';
 import pool from './config/database.js';
@@ -106,6 +107,7 @@ import { auditMiddleware } from './middleware/auditMiddleware.js';
 app.use('/api', publicRoutes);
 app.use('/api/admin', auditMiddleware, adminRoutes);
 app.use('/api/admin/workflow', auditMiddleware, workflowRoutes);
+app.use('/api/admin/test-workflow', testWorkflowRoutes);
 
 app.use('/api/admin/delegations', auditMiddleware, delegationRoutes);
 

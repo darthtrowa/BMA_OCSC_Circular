@@ -439,7 +439,6 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
     const delegationId = req.query.delegation_id ? parseInt(req.query.delegation_id as string, 10) : undefined;
     const roles = req.query.roles as string; // comma-separated e.g. "HR_DIRECTOR,GRP_LEADER"
     const sameAgencyOnly = req.query.same_agency === 'true'; // filter to same agency only (for coordinator assignment dropdown)
-    const isSimulator = req.query.is_simulator === 'true';
 
     // --- Determine effective user (could be the assigner if acting) ---
     let effectiveUserId: number = req.admin!.id;
@@ -518,7 +517,7 @@ router.get('/users/by-role', requireAdmin, async (req: AdminRequest, res: Respon
     rows = rows.filter((r: any) => r.a_role !== 'SYSTEM_ADMIN' && r.a_role !== 'SUPERADMIN');
 
     // --- Apply hierarchy filter based on agency structure ---
-    if (!isSimulator && effectiveUserRole !== 'SUPERADMIN' && effectiveUserRole !== 'SYSTEM_ADMIN') {
+    if (effectiveUserRole !== 'SUPERADMIN' && effectiveUserRole !== 'SYSTEM_ADMIN') {
       if (effectiveUserRole === 'DIV_DIRECTOR' || effectiveUserRole === 'HR_DIRECTOR') {
         // Directors can see: other directors, coordinator, and their subordinate agencies
         rows = rows.filter((r: any) =>

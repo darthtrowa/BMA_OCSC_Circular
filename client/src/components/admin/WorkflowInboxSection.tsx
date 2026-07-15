@@ -183,8 +183,7 @@ export default function WorkflowInboxSection({ allData, loading, onReload, activ
   };
 
   const renderTaskRow = (item: any, isOwner: boolean) => {
-    const isDelegating = myDelegated.length > 0;
-    const canAct = isOwner && !isDelegating;
+    const canAct = isOwner;
 
     return (
     <tr key={item.in_id} className="hover:bg-slate-50 border-b border-slate-100 transition last:border-0">

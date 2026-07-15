@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: complex database rows and dynamically constructed query results require type flexibility */
 import type { PoolClient } from "pg";
 import db from "../config/database.js";
 import type { WorkflowAction, WorkflowStatus } from "../types/workflow.js";
@@ -197,7 +198,7 @@ export class WorkflowService {
 		let historyAction: WorkflowAction = "APPROVED";
 		let newFlowState: string | null = currentFlowState;
 
-		// Override for COORDINATOR as receiver → finalisation step
+		// Override for COORDINATOR as receiver → finalization step
 		if (toRole === "COORDINATOR") {
 			newStatus = "PENDING_CLOSE";
 			historyAction = "FINALIZED";
@@ -250,17 +251,23 @@ export class WorkflowService {
 			let fromRole = delegatedRole;
 			if (currentOwnerId !== null) {
 				const fromRes = await client.query(
-					"SELECT a_role FROM admin WHERE a_id = $1",
+					`SELECT a.a_role, ag.ag_role 
+           FROM admin a 
+           LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+           WHERE a.a_id = $1`,
 					[currentOwnerId],
 				);
 				if (fromRes.rows.length === 0) throw new Error("User not found");
-				fromRole = fromRes.rows[0].a_role;
+				fromRole = fromRes.rows[0].ag_role || fromRes.rows[0].a_role;
 			}
 			if (!fromRole)
 				throw new Error("Could not determine role for forward action");
 
 			const toRes = await client.query(
-				"SELECT a_role FROM admin WHERE a_id = $1",
+				`SELECT a.a_role, ag.ag_role 
+         FROM admin a 
+         LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+         WHERE a.a_id = $1`,
 				[toUserId],
 			);
 			if (toRes.rows.length === 0) throw new Error("User not found");
@@ -271,7 +278,7 @@ export class WorkflowService {
          WHERE assignee_id = $1 AND is_active = true LIMIT 1`,
 				[toUserId],
 			);
-			let toRole = toRes.rows[0].a_role;
+			let toRole = toRes.rows[0].ag_role || toRes.rows[0].a_role;
 			if (toDelegationRes.rows.length > 0) {
 				toRole = toDelegationRes.rows[0].delegated_role;
 			}
@@ -382,12 +389,15 @@ export class WorkflowService {
 			}
 
 			const targetUserRes = await client.query(
-				"SELECT a_role FROM admin WHERE a_id = $1",
+				`SELECT a.a_role, ag.ag_role 
+         FROM admin a 
+         LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id 
+         WHERE a.a_id = $1`,
 				[rejectToUserId],
 			);
 			if (targetUserRes.rows.length === 0)
 				throw new Error("Target user not found");
-			const targetRole = targetUserRes.rows[0].a_role;
+			const targetRole = targetUserRes.rows[0].ag_role || targetUserRes.rows[0].a_role;
 
 			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
 			const { newStatus, newFlowState } =
@@ -700,7 +710,7 @@ export class WorkflowService {
 		} else {
 			const userRes = await db.query(
 				`
-        SELECT a.a_id, a.a_name, a.a_role, 
+        SELECT a.a_id, a.a_name, COALESCE(ag.ag_role, a.a_role) AS a_role, 
                COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
                a.a_agency_id, ag.parent_ag_id, ag.ag_type
         FROM admin a
@@ -726,12 +736,12 @@ export class WorkflowService {
 
 		const allUsersRes = await db.query(
 			`
-      SELECT a.a_id, a.a_name, a.a_role, 
+      SELECT a.a_id, a.a_name, COALESCE(ag.ag_role, a.a_role) AS a_role, 
              COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
              a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
       FROM admin a
       LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-      WHERE a.a_role IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
+      WHERE COALESCE(ag.ag_role, a.a_role) IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
         AND a.a_id != $1
     `,
 			[effectiveUserId],
@@ -800,7 +810,7 @@ export class WorkflowService {
 				manualAssignees = finalManual;
 			}
 		} else if (user.a_role === "GRP_LEADER") {
-			if (flowState === "out") {
+			if (flowState !== "in") {
 				// 1. Resolve Auto-Up structural supervisor (own SEC_DIRECTOR, DIV_DIRECTOR, or HR_DIRECTOR)
 				let currentLookupAgency = user.a_agency_id;
 				let foundSupervisor = null;
@@ -850,7 +860,7 @@ export class WorkflowService {
 				const actingRes = await db.query(`
           SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
                  a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type,
-                 true as is_acting, d.delegated_role
+                 true as is_acting, d.delegated_role, d.assigner_id, d.assigner_ag_id
           FROM c_workflow_delegations d
           JOIN admin a ON a.a_id = d.assignee_id
           LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
@@ -859,7 +869,34 @@ export class WorkflowService {
         `);
 				const actingDirectors = actingRes.rows as WorkflowUser[];
 
-				// (c) Subordinates in child/descendant agencies (for forward down)
+				// Filter list to only show their own direct division head (and acting heads)
+				let finalDirectors = directors;
+				let finalActingDirectors = actingDirectors;
+				if (foundSupervisor) {
+					finalDirectors = directors.filter((d) => d.a_id === foundSupervisor.a_id);
+					finalActingDirectors = actingDirectors.filter((d: any) => 
+						d.assigner_id === foundSupervisor.a_id ||
+						(foundSupervisor.a_agency_id && d.assigner_ag_id === foundSupervisor.a_agency_id)
+					);
+				}
+
+				const seenIds = new Set<number>();
+				const finalManual: WorkflowUser[] = [];
+				for (const u of finalDirectors) {
+					if (!seenIds.has(u.a_id)) {
+						seenIds.add(u.a_id);
+						finalManual.push(u);
+					}
+				}
+				for (const u of finalActingDirectors) {
+					if (!seenIds.has(u.a_id)) {
+						seenIds.add(u.a_id);
+						finalManual.push(u);
+					}
+				}
+				manualAssignees = finalManual;
+			} else {
+				// flowState === "in": GRP_LEADER sends to STAFF/COORDINATOR subordinates
 				const groupAgencyId =
 					user.ag_type === "POSITION" ? user.parent_ag_id : user.a_agency_id;
 				let subordinates: WorkflowUser[] = [];
@@ -884,64 +921,33 @@ export class WorkflowService {
 					) as WorkflowUser[];
 				}
 
-				const seenIds = new Set<number>();
-				const finalManual: WorkflowUser[] = [];
-				for (const u of directors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of actingDirectors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of subordinates) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				manualAssignees = finalManual;
-			} else {
-				// Find HR_DIRECTOR
-				const hrRes = await db.query(`
-          SELECT a.a_id, a.a_name, a.a_role, 
-                 COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-                 a.a_agency_id, ag.parent_ag_id, ag.ag_type
-          FROM admin a
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE a.a_role = 'HR_DIRECTOR'
-        `);
-				const hrDirectors = hrRes.rows as WorkflowUser[];
-				if (hrDirectors.length > 0) {
-					autoUpAssignee = hrDirectors[0];
+				if (subordinates.length > 0) {
+					const coords = subordinates.filter(u => u.a_role === "COORDINATOR");
+					autoUpAssignee = coords.length > 0 ? coords[0] : subordinates[0];
 				}
 
-				// Query active delegations for HR_DIRECTOR
-				const actingHrRes = await db.query(`
+				// Query active delegations for COORDINATOR/STAFF
+				const actingRes = await db.query(`
           SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
                  a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type,
                  true as is_acting, d.delegated_role
           FROM c_workflow_delegations d
           JOIN admin a ON a.a_id = d.assignee_id
           LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE d.delegated_role = 'HR_DIRECTOR' 
+          WHERE d.delegated_role IN ('STAFF', 'COORDINATOR') 
             AND d.is_active = true
         `);
-				const actingHrDirectors = actingHrRes.rows as WorkflowUser[];
+				const actingSubordinates = actingRes.rows as WorkflowUser[];
 
 				const seenIds = new Set<number>();
 				const finalManual: WorkflowUser[] = [];
-				for (const u of hrDirectors) {
+				for (const u of subordinates) {
 					if (!seenIds.has(u.a_id)) {
 						seenIds.add(u.a_id);
 						finalManual.push(u);
 					}
 				}
-				for (const u of actingHrDirectors) {
+				for (const u of actingSubordinates) {
 					if (!seenIds.has(u.a_id)) {
 						seenIds.add(u.a_id);
 						finalManual.push(u);
@@ -1082,7 +1088,13 @@ export class WorkflowService {
 						u.a_role !== "SEC_DIRECTOR" &&
 						path.some((agId) => secDirectorAgencies.has(agId));
 					if (isUnderSecDirector) {
-						if (u.a_role === "GRP_LEADER" && level === 2) {
+						// Only allow GRP_LEADER if the current user is the SEC_DIRECTOR directly supervising them
+						const parentAgId = parentMap.get(Number(uActualAgId));
+						if (
+							u.a_role === "GRP_LEADER" &&
+							user.a_role === "SEC_DIRECTOR" &&
+							parentAgId === startAgencyId
+						) {
 							return true;
 						}
 						return false;
@@ -1360,1087 +1372,5 @@ export class WorkflowService {
 			}
 			return assignees;
 		}
-	}
-
-	/**
-	 * Simulator-specific Next Assignees calculation (Stateless)
-	 */
-	static async simulateNextAssignees(
-		taskState: {
-			in_workflow_status: string;
-			in_flow_state: string | null;
-			agencies: number[];
-		},
-		currentUserId: number,
-		delegationId?: number,
-	) {
-		const db = await import("../config/database.js").then((m) => m.default);
-		const flowState = taskState.in_flow_state;
-
-		// 1. Get effective user ID
-		let effectiveUserId = currentUserId;
-		let delegatedUser: WorkflowUser | null = null;
-
-		const baseUserRes = await db.query(
-			`SELECT a_id, a_role, a_agency_id FROM admin WHERE a_id = $1`,
-			[currentUserId],
-		);
-		if (baseUserRes.rows.length === 0) throw new Error("User not found");
-		const baseUser = baseUserRes.rows[0];
-
-		const requiredRoleMap: Record<string, string> = {
-			DRAFT: "COORDINATOR",
-			PENDING_GRP_REVIEW: "GRP_LEADER",
-			PENDING_SEC_APPROVAL: "SEC_DIRECTOR",
-			PENDING_DIRECTOR_APPROVAL: "DIV_DIRECTOR",
-			PENDING_HR_APPROVAL: "HR_DIRECTOR",
-			PENDING_EXECUTION: "STAFF",
-			PENDING_CLOSE: "COORDINATOR",
-		};
-		const requiredRole = requiredRoleMap[taskState.in_workflow_status];
-
-		let resolvedDelegationId = delegationId;
-		if (
-			!resolvedDelegationId &&
-			requiredRole &&
-			baseUser.a_role !== requiredRole
-		) {
-			const activeDelRes = await db.query(
-				`SELECT delegation_id FROM c_workflow_delegations 
-         WHERE assignee_id = $1 AND delegated_role = $2 AND is_active = true LIMIT 1`,
-				[currentUserId, requiredRole],
-			);
-			if (activeDelRes.rows.length > 0) {
-				resolvedDelegationId = activeDelRes.rows[0].delegation_id;
-			}
-		}
-
-		if (resolvedDelegationId) {
-			const delRes = await db.query(
-				"SELECT assigner_id, delegated_role, assigner_ag_id FROM c_workflow_delegations WHERE delegation_id = $1",
-				[resolvedDelegationId],
-			);
-			if (delRes.rows.length > 0) {
-				const delRow = delRes.rows[0];
-				if (delRow.assigner_id) {
-					effectiveUserId = delRow.assigner_id;
-				} else if (delRow.delegated_role && delRow.assigner_ag_id) {
-					const agRes = await db.query(
-						"SELECT parent_ag_id, ag_type FROM c_agency WHERE ag_id = $1",
-						[delRow.assigner_ag_id],
-					);
-					if (agRes.rows.length > 0) {
-						delegatedUser = {
-							a_id: -1,
-							a_name: "รักษาการตำแหน่งว่าง",
-							a_role: delRow.delegated_role,
-							a_position: "รักษาการ",
-							a_agency_id: delRow.assigner_ag_id,
-							parent_ag_id: agRes.rows[0].parent_ag_id,
-							ag_type: agRes.rows[0].ag_type,
-						};
-					}
-				}
-			}
-		}
-
-		let user: WorkflowUser;
-		if (delegatedUser) {
-			user = delegatedUser;
-		} else {
-			const userRes = await db.query(
-				`
-        SELECT a.a_id, a.a_name, a.a_role, 
-               COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-               a.a_agency_id, ag.parent_ag_id, ag.ag_type
-        FROM admin a
-        LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-        WHERE a.a_id = $1
-      `,
-				[effectiveUserId],
-			);
-
-			if (userRes.rows.length === 0) throw new Error("User not found");
-			user = userRes.rows[0] as WorkflowUser;
-		}
-
-		const roleRank: Record<string, number> = {
-			STAFF: 1,
-			COORDINATOR: 0,
-			GRP_LEADER: 2,
-			SEC_DIRECTOR: 3,
-			DIV_DIRECTOR: 4,
-			HR_DIRECTOR: 4,
-		};
-		const currentRank = roleRank[user.a_role] ?? 0;
-
-		const allUsersRes = await db.query(
-			`
-      SELECT a.a_id, a.a_name, a.a_role, 
-             COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-             a.a_agency_id, ag.parent_ag_id, ag.ag_name, ag.ag_type
-      FROM admin a
-      LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-      WHERE a.a_role IN ('HR_DIRECTOR', 'DIV_DIRECTOR', 'SEC_DIRECTOR', 'GRP_LEADER', 'STAFF', 'COORDINATOR')
-        AND a.a_id != $1
-    `,
-			[effectiveUserId],
-		);
-
-		const allUsers = allUsersRes.rows as WorkflowUser[];
-
-		let autoUpAssignee = null;
-		let manualAssignees: WorkflowUser[] = [];
-
-		const processActing = async (
-			targetUser: WorkflowUser | null,
-		): Promise<SimulatedUser | null> => {
-			if (!targetUser) return null;
-			const actingRes = await db.query(
-				`
-        SELECT d.delegation_id, d.assignee_id, a.a_name as acting_name, a.a_position as acting_position, a.a_role as acting_role
-        FROM c_workflow_delegations d
-        JOIN admin a ON a.a_id = d.assignee_id
-        WHERE (d.assigner_id = $1 OR (d.assigner_id IS NULL AND d.assigner_ag_id = $2)) AND d.is_active = true
-      `,
-				[targetUser.a_id, targetUser.a_agency_id],
-			);
-
-			if (actingRes.rows.length > 0) {
-				const acting = actingRes.rows[0];
-				return {
-					...targetUser,
-					acting_info: {
-						id: acting.assignee_id,
-						name: acting.acting_name,
-						position: acting.acting_position,
-					},
-				};
-			}
-			return targetUser;
-		};
-
-		if (user.a_role === "COORDINATOR") {
-			const groupAgencyId =
-				user.ag_type === "POSITION" ? user.parent_ag_id : user.a_agency_id;
-			if (groupAgencyId) {
-				const grpRes = await db.query(
-					`
-          SELECT a.a_id, a.a_name, a.a_role, 
-                 COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-                 a.a_agency_id, ag.parent_ag_id, ag.ag_type
-          FROM admin a
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE a.a_role = 'GRP_LEADER' AND (a.a_agency_id = $1 OR ag.parent_ag_id = $1)
-        `,
-					[groupAgencyId],
-				);
-
-				const grpLeaders = grpRes.rows as WorkflowUser[];
-				if (grpLeaders.length > 0) {
-					autoUpAssignee = grpLeaders[0];
-				}
-
-				const actingRes = await db.query(
-					`
-          SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
-                 a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type,
-                 true as is_acting, d.delegated_role
-          FROM c_workflow_delegations d
-          JOIN admin a ON a.a_id = d.assignee_id
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE d.delegated_role = 'GRP_LEADER' 
-            AND d.is_active = true
-            AND (d.assigner_id IN (SELECT a_id FROM admin WHERE a_agency_id = $1 OR (SELECT parent_ag_id FROM c_agency WHERE ag_id = a.a_agency_id) = $1)
-                 OR d.assigner_ag_id IN (SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1))
-        `,
-					[groupAgencyId],
-				);
-
-				const actingGrpLeaders = actingRes.rows as WorkflowUser[];
-
-				const seenIds = new Set<number>();
-				const finalManual: WorkflowUser[] = [];
-				for (const u of grpLeaders) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of actingGrpLeaders) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				manualAssignees = finalManual;
-			}
-		} else if (user.a_role === "GRP_LEADER") {
-			if (flowState === "out") {
-				// 1. Resolve Auto-Up structural supervisor (own SEC_DIRECTOR, DIV_DIRECTOR, or HR_DIRECTOR)
-				let currentLookupAgency = user.a_agency_id;
-				let foundSupervisor = null;
-				while (currentLookupAgency) {
-					const higherRankUsers = allUsers.filter(
-						(u) =>
-							(u.a_agency_id === currentLookupAgency ||
-								(u.parent_ag_id === currentLookupAgency &&
-									u.ag_type === "POSITION")) &&
-							(u.a_role === "SEC_DIRECTOR" ||
-								u.a_role === "DIV_DIRECTOR" ||
-								u.a_role === "HR_DIRECTOR"),
-					);
-
-					if (higherRankUsers.length > 0) {
-						higherRankUsers.sort(
-							(a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0),
-						);
-						foundSupervisor = higherRankUsers[0];
-						break;
-					}
-
-					const parentRes = await db.query(
-						"SELECT parent_ag_id FROM c_agency WHERE ag_id = $1",
-						[currentLookupAgency],
-					);
-					if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
-						break;
-					}
-					currentLookupAgency = parentRes.rows[0].parent_ag_id;
-				}
-				autoUpAssignee = foundSupervisor;
-
-				// 2. Resolve manualAssignees:
-				// (a) All DIV_DIRECTORs and HR_DIRECTORs (for cross-agency/upward)
-				const directorsRes = await db.query(`
-          SELECT a.a_id, a.a_name, a.a_role, 
-                 COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-                 a.a_agency_id, ag.parent_ag_id, ag.ag_type
-          FROM admin a
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE a.a_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR')
-        `);
-				const directors = directorsRes.rows as WorkflowUser[];
-
-				// (b) Active delegations for HR_DIRECTOR and DIV_DIRECTOR
-				const actingRes = await db.query(`
-          SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
-                 a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type,
-                 true as is_acting, d.delegated_role
-          FROM c_workflow_delegations d
-          JOIN admin a ON a.a_id = d.assignee_id
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE d.delegated_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR') 
-            AND d.is_active = true
-        `);
-				const actingDirectors = actingRes.rows as WorkflowUser[];
-
-				// (c) Subordinates in child/descendant agencies (for forward down)
-				const groupAgencyId =
-					user.ag_type === "POSITION" ? user.parent_ag_id : user.a_agency_id;
-				let subordinates: WorkflowUser[] = [];
-				if (groupAgencyId) {
-					const descRes = await db.query(
-						`
-            WITH RECURSIVE agency_tree AS (
-              SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1
-              UNION ALL
-              SELECT a.ag_id FROM c_agency a
-              INNER JOIN agency_tree t ON a.parent_ag_id = t.ag_id
-            )
-            SELECT ag_id FROM agency_tree
-          `,
-						[groupAgencyId],
-					);
-					const childAgencyIds = descRes.rows.map((r) => Number(r.ag_id));
-					subordinates = allUsers.filter(
-						(u) =>
-							childAgencyIds.includes(Number(u.a_agency_id)) &&
-							(u.a_role === "STAFF" || u.a_role === "COORDINATOR"),
-					) as WorkflowUser[];
-				}
-
-				const seenIds = new Set<number>();
-				const finalManual: WorkflowUser[] = [];
-				for (const u of directors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of actingDirectors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of subordinates) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				manualAssignees = finalManual;
-			} else {
-				const hrRes = await db.query(`
-          SELECT a.a_id, a.a_name, a.a_role, 
-                 COALESCE(CASE WHEN ag.ag_type = 'POSITION' THEN ag.ag_name ELSE NULL END, a.a_position) AS a_position,
-                 a.a_agency_id, ag.parent_ag_id, ag.ag_type
-          FROM admin a
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE a.a_role = 'HR_DIRECTOR'
-        `);
-				const hrDirectors = hrRes.rows as WorkflowUser[];
-				if (hrDirectors.length > 0) {
-					autoUpAssignee = hrDirectors[0];
-				}
-
-				const actingHrRes = await db.query(`
-          SELECT d.delegation_id, d.assignee_id as a_id, a.a_name, a.a_role, 
-                 a.a_position, a.a_agency_id, ag.parent_ag_id, ag.ag_type,
-                 true as is_acting, d.delegated_role
-          FROM c_workflow_delegations d
-          JOIN admin a ON a.a_id = d.assignee_id
-          LEFT JOIN c_agency ag ON a.a_agency_id = ag.ag_id
-          WHERE d.delegated_role = 'HR_DIRECTOR' 
-            AND d.is_active = true
-        `);
-				const actingHrDirectors = actingHrRes.rows as WorkflowUser[];
-
-				const seenIds = new Set<number>();
-				const finalManual: WorkflowUser[] = [];
-				for (const u of hrDirectors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				for (const u of actingHrDirectors) {
-					if (!seenIds.has(u.a_id)) {
-						seenIds.add(u.a_id);
-						finalManual.push(u);
-					}
-				}
-				manualAssignees = finalManual;
-			}
-		} else {
-			if (flowState !== "in") {
-				let currentLookupAgency = user.a_agency_id;
-				while (currentLookupAgency) {
-					const higherRankUsers = allUsers.filter(
-						(u) =>
-							(u.a_agency_id === currentLookupAgency ||
-								(u.parent_ag_id === currentLookupAgency &&
-									u.ag_type === "POSITION")) &&
-							(roleRank[u.a_role] ?? 0) > currentRank,
-					);
-
-					if (higherRankUsers.length > 0) {
-						higherRankUsers.sort(
-							(a, b) => (roleRank[a.a_role] ?? 0) - (roleRank[b.a_role] ?? 0),
-						);
-						autoUpAssignee = higherRankUsers[0];
-						break;
-					}
-
-					const parentRes = await db.query(
-						"SELECT parent_ag_id FROM c_agency WHERE ag_id = $1",
-						[currentLookupAgency],
-					);
-					if (parentRes.rows.length === 0 || !parentRes.rows[0].parent_ag_id) {
-						break;
-					}
-					currentLookupAgency = parentRes.rows[0].parent_ag_id;
-				}
-			}
-
-			const startAgencyId =
-				user.ag_type === "POSITION" && user.parent_ag_id
-					? user.parent_ag_id
-					: user.a_agency_id;
-
-			const descRes = await db.query(
-				`
-        WITH RECURSIVE agency_tree AS (
-          SELECT ag_id FROM c_agency WHERE parent_ag_id = $1 OR ag_id = $1
-          UNION ALL
-          SELECT a.ag_id FROM c_agency a
-          INNER JOIN agency_tree t ON a.parent_ag_id = t.ag_id
-        )
-        SELECT ag_id FROM agency_tree
-      `,
-				[startAgencyId],
-			);
-			const childAgencyIds = descRes.rows.map((r) =>
-				Number((r as { ag_id: number }).ag_id),
-			);
-
-			const agencyParentsRes = await db.query(
-				"SELECT ag_id, parent_ag_id, ag_type FROM c_agency",
-			);
-			const parentMap = new Map<number, number | null>();
-			const typeMap = new Map<number, string>();
-			for (const row of agencyParentsRes.rows) {
-				parentMap.set(
-					Number(row.ag_id),
-					row.parent_ag_id ? Number(row.parent_ag_id) : null,
-				);
-				typeMap.set(Number(row.ag_id), row.ag_type);
-			}
-
-			const secDirectorAgencies = new Set<number>();
-			for (const u of allUsers) {
-				if (u.a_role === "SEC_DIRECTOR") {
-					const actualAgId =
-						u.ag_type === "POSITION" ? u.parent_ag_id : u.a_agency_id;
-					if (actualAgId) secDirectorAgencies.add(Number(actualAgId));
-				}
-			}
-			if (user.a_role === "SEC_DIRECTOR") {
-				const actualAgId =
-					user.ag_type === "POSITION" ? user.parent_ag_id : user.a_agency_id;
-				if (actualAgId) secDirectorAgencies.add(Number(actualAgId));
-			}
-
-			manualAssignees = allUsers.filter((u) => {
-				const uRank = roleRank[u.a_role] ?? 0;
-
-				if (flowState === "out") {
-					if (user.a_role === "DIV_DIRECTOR") {
-						return u.a_role === "HR_DIRECTOR";
-					} else if (user.a_role === "HR_DIRECTOR") {
-						if (uRank < currentRank) return false;
-					} else {
-						if (uRank <= currentRank) return false;
-					}
-				} else if (flowState === "in") {
-					if (uRank >= currentRank) return false;
-				}
-
-				let isMatch = false;
-				if (currentRank === 4 && uRank === 4) {
-					isMatch = true;
-				}
-
-				if (childAgencyIds.includes(Number(u.a_agency_id))) {
-					if (uRank < currentRank) {
-						isMatch = true;
-					}
-				}
-
-				if (!isMatch) return false;
-
-				const uActualAgId =
-					u.ag_type === "POSITION" ? u.parent_ag_id : u.a_agency_id;
-				if (uActualAgId) {
-					let level = 1;
-					let curr = Number(uActualAgId);
-					const path: number[] = [];
-					while (curr) {
-						path.push(curr);
-						const parent = parentMap.get(curr);
-						if (!parent) break;
-						level++;
-						curr = parent;
-					}
-
-					const isUnderSecDirector =
-						u.a_role !== "SEC_DIRECTOR" &&
-						path.some((agId) => secDirectorAgencies.has(agId));
-					if (isUnderSecDirector) {
-						if (u.a_role === "GRP_LEADER" && level === 2) {
-							return true;
-						}
-						return false;
-					}
-				}
-
-				return true;
-			});
-		}
-
-		// Do not process acting on autoUpAssignee, keeping actual GRP_LEADER/HR_DIRECTOR as Auto-Up recommended
-		const finalManualAssignees: SimulatedUser[] = [];
-		for (const u of manualAssignees) {
-			const acted = await processActing(u);
-			if (acted) finalManualAssignees.push(acted);
-		}
-
-		finalManualAssignees.sort((a, b) => {
-			return (roleRank[b.a_role] ?? 0) - (roleRank[a.a_role] ?? 0);
-		});
-
-		let assignedAgencies: AssignedAgency[] = [];
-		if (taskState.agencies && taskState.agencies.length > 0) {
-			const assignedAgenciesRes = await db.query(
-				`SELECT ag_id, ag_name FROM c_agency WHERE ag_id = ANY($1)`,
-				[taskState.agencies],
-			);
-			assignedAgencies = assignedAgenciesRes.rows as AssignedAgency[];
-		}
-
-		for (const ag of assignedAgencies) {
-			const fallbackRes = await db.query(
-				`SELECT a.a_id, a.a_name, a.a_position, a.a_role 
-         FROM admin a
-         LEFT JOIN c_agency ca ON a.a_agency_id = ca.ag_id
-         WHERE a.a_status IN ('1', 'true', 'active') 
-           AND (a.a_agency_id = $1 OR ca.parent_ag_id = $1) 
-           AND a.a_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR') 
-         ORDER BY a.a_role ASC 
-         LIMIT 1`,
-				[ag.ag_id],
-			);
-
-			if (fallbackRes.rows.length > 0) {
-				ag.div_director_name = fallbackRes.rows[0].a_name;
-				ag.div_director_position =
-					fallbackRes.rows[0].a_position || fallbackRes.rows[0].a_role;
-			} else {
-				const actingFallbackRes = await db.query(
-					`SELECT d.assignee_id, a.a_name, a.a_position, a.a_role 
-           FROM c_workflow_delegations d
-           JOIN admin a ON d.assignee_id = a.a_id
-           LEFT JOIN c_agency ca ON d.assigner_ag_id = ca.ag_id
-           WHERE (d.assigner_ag_id = $1 OR ca.parent_ag_id = $1)
-             AND d.delegated_role = 'DIV_DIRECTOR' 
-             AND d.is_active = TRUE 
-           ORDER BY d.delegation_order ASC 
-           LIMIT 1`,
-					[ag.ag_id],
-				);
-				if (actingFallbackRes.rows.length > 0) {
-					ag.div_director_name = `${actingFallbackRes.rows[0].a_name} (รักษาการแทน)`;
-					ag.div_director_position =
-						actingFallbackRes.rows[0].a_position ||
-						actingFallbackRes.rows[0].a_role;
-				}
-			}
-		}
-		let useParallelAssign = false;
-		if (user.a_role === "HR_DIRECTOR" && flowState === "out") {
-			if (assignedAgencies.length > 1) {
-				useParallelAssign = true;
-			} else if (assignedAgencies.length === 1) {
-				const ag = assignedAgencies[0];
-				const fallbackRes = await db.query(
-					`SELECT a.a_id, a.a_name, a.a_position, a.a_role, a.a_agency_id, ca.parent_ag_id, ca.ag_name, ca.ag_type
-           FROM admin a
-           LEFT JOIN c_agency ca ON a.a_agency_id = ca.ag_id
-           WHERE a.a_status IN ('1', 'true', 'active') 
-             AND (a.a_agency_id = $1 OR ca.parent_ag_id = $1) 
-             AND a.a_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR') 
-           ORDER BY a.a_role ASC 
-           LIMIT 1`,
-					[ag.ag_id],
-				);
-
-				let targetUser = null;
-				if (fallbackRes.rows.length > 0) {
-					targetUser = fallbackRes.rows[0];
-				} else {
-					const actingFallbackRes = await db.query(
-						`SELECT d.assignee_id, a.a_name, a.a_position, a.a_role, a.a_agency_id, ca.parent_ag_id, ca.ag_name, ca.ag_type
-             FROM c_workflow_delegations d
-             JOIN admin a ON d.assignee_id = a.a_id
-             LEFT JOIN c_agency ca ON d.assigner_ag_id = ca.ag_id
-             WHERE (d.assigner_ag_id = $1 OR ca.parent_ag_id = $1)
-               AND d.delegated_role = 'DIV_DIRECTOR' 
-               AND d.is_active = TRUE 
-             ORDER BY d.delegation_order ASC 
-             LIMIT 1`,
-						[ag.ag_id],
-					);
-					if (actingFallbackRes.rows.length > 0) {
-						targetUser = actingFallbackRes.rows[0];
-					}
-				}
-
-				if (targetUser) {
-					autoUpAssignee = await processActing(targetUser as WorkflowUser);
-				}
-			}
-		}
-
-		return {
-			autoUpAssignee,
-			manualAssignees: finalManualAssignees,
-			assignedAgencies,
-			useParallelAssign,
-		};
-	}
-
-	/**
-	 * Statelessly simulate a workflow action and return updated state and history logs.
-	 */
-	static async simulateNextAction(
-		task: SimulatedTask,
-		activeUserId: number,
-		action:
-			| "FORWARD"
-			| "REJECT"
-			| "CLOSE"
-			| "PARALLEL_ASSIGN"
-			| "PARALLEL_DELEGATE"
-			| "PARALLEL_SUBMIT",
-		payload: {
-			targetUserId?: number;
-			comments?: string;
-			delegationId?: number;
-			tracks?: SimulatedParallelTrack[];
-			paId?: number;
-			resultsId?: number | null;
-		},
-	) {
-		const db = await import("../config/database.js").then((m) => m.default);
-
-		// 1. Get active user from DB
-		const activeRes = await db.query(
-			`SELECT a_id, a_name, a_position, a_role, a_agency_id 
-       FROM admin WHERE a_id = $1`,
-			[activeUserId],
-		);
-		if (activeRes.rows.length === 0) throw new Error("Active user not found");
-		const activeUser = activeRes.rows[0];
-
-		// 2. Resolve simulated effective user role and agency using delegation if applicable
-		const requiredRoleMap: Record<string, string> = {
-			DRAFT: "COORDINATOR",
-			PENDING_GRP_REVIEW: "GRP_LEADER",
-			PENDING_SEC_APPROVAL: "SEC_DIRECTOR",
-			PENDING_DIRECTOR_APPROVAL: "DIV_DIRECTOR",
-			PENDING_HR_APPROVAL: "HR_DIRECTOR",
-			PENDING_EXECUTION: "STAFF",
-			PENDING_CLOSE: "COORDINATOR",
-		};
-		const requiredRole = requiredRoleMap[task.in_workflow_status];
-
-		let resolvedDelegationId = payload.delegationId;
-		if (
-			!resolvedDelegationId &&
-			requiredRole &&
-			activeUser.a_role !== requiredRole
-		) {
-			const activeDelRes = await db.query(
-				`SELECT delegation_id FROM c_workflow_delegations 
-         WHERE assignee_id = $1 AND delegated_role = $2 AND is_active = true LIMIT 1`,
-				[activeUser.a_id, requiredRole],
-			);
-			if (activeDelRes.rows.length > 0) {
-				resolvedDelegationId = activeDelRes.rows[0].delegation_id;
-			}
-		}
-
-		const { role: effectiveRole } =
-			await WorkflowService.getSimulatedEffectiveUser(
-				task,
-				activeUser,
-				resolvedDelegationId,
-			);
-
-		const updatedTask = { ...task };
-		const newHistoryEntries: SimulatedHistoryEntry[] = [];
-		const nowStr = new Date().toISOString();
-
-		if (action === "FORWARD") {
-			const targetUserId = payload.targetUserId;
-			if (!targetUserId)
-				throw new Error("Target user ID is required for forward");
-
-			const targetRes = await db.query(
-				`SELECT a_id, a_name, a_position, a_role, a_agency_id FROM admin WHERE a_id = $1`,
-				[targetUserId],
-			);
-			if (targetRes.rows.length === 0) throw new Error("Target user not found");
-			const targetUser = targetRes.rows[0];
-
-			// Resolve delegated role if target is acting under a delegation
-			const targetDelegationRes = await db.query(
-				`SELECT delegated_role FROM c_workflow_delegations 
-         WHERE assignee_id = $1 AND is_active = true LIMIT 1`,
-				[targetUserId],
-			);
-			let toRole = targetUser.a_role;
-			if (targetDelegationRes.rows.length > 0) {
-				toRole = targetDelegationRes.rows[0].delegated_role;
-			}
-
-			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
-			// This is the EXACT same function used by the real forward() workflow.
-			// Parity is guaranteed by design — any business rule change here
-			// is automatically reflected in both real and simulated outcomes.
-			const {
-				newStatus,
-				newFlowState,
-				historyAction,
-			} = WorkflowService.calculateNextRoutingState(
-				effectiveRole,
-				toRole,
-				"FORWARD",
-				task.in_flow_state,
-			);
-
-			updatedTask.in_workflow_status = newStatus;
-			updatedTask.in_current_owner_id = targetUserId;
-			updatedTask.in_flow_state = newFlowState;
-
-			newHistoryEntries.push({
-				id: Date.now(),
-				in_id: task.id,
-				pa_id: null,
-				from_user_id: activeUser.a_id,
-				from_user_name: activeUser.a_name,
-				from_user_position: activeUser.a_position || activeUser.a_role,
-				from_user_role: effectiveRole,
-				to_user_id: targetUserId,
-				to_user_name: targetUser.a_name,
-				to_user_position: targetUser.a_position || targetUser.a_role,
-				to_user_role: toRole,
-				action: historyAction,
-				comments: payload.comments || "เห็นชอบและส่งดำเนินการขั้นถัดไป",
-				created_at: nowStr,
-			});
-		} else if (action === "REJECT") {
-			const targetUserId = payload.targetUserId;
-			if (!targetUserId)
-				throw new Error("Target user ID is required for reject");
-
-			const targetRes = await db.query(
-				`SELECT a_id, a_name, a_position, a_role, a_agency_id FROM admin WHERE a_id = $1`,
-				[targetUserId],
-			);
-			if (targetRes.rows.length === 0) throw new Error("Target user not found");
-			const targetUser = targetRes.rows[0];
-
-			// --- SHARED CORE: Delegate routing decision to calculateNextRoutingState() ---
-			// Same function used by the real reject() workflow — guaranteed parity.
-			const { newStatus: rejectedStatus, newFlowState } =
-				WorkflowService.calculateNextRoutingState(
-					effectiveRole,
-					targetUser.a_role,
-					"REJECT",
-					task.in_flow_state,
-				);
-
-			updatedTask.in_workflow_status = rejectedStatus;
-			updatedTask.in_current_owner_id = targetUserId;
-			updatedTask.in_flow_state = newFlowState;
-
-			newHistoryEntries.push({
-				id: Date.now(),
-				in_id: task.id,
-				pa_id: null,
-				from_user_id: activeUser.a_id,
-				from_user_name: activeUser.a_name,
-				from_user_position: activeUser.a_position || activeUser.a_role,
-				from_user_role: activeUser.a_role,
-				to_user_id: targetUserId,
-				to_user_name: targetUser.a_name,
-				to_user_position: targetUser.a_position || targetUser.a_role,
-				to_user_role: targetUser.a_role,
-				action: "REJECTED",
-				comments: payload.comments || "ส่งงานกลับพิจารณาแก้ไข",
-				created_at: nowStr,
-			});
-		} else if (action === "CLOSE") {
-			updatedTask.in_workflow_status = "COMPLETED";
-			updatedTask.in_current_owner_id = null;
-			updatedTask.in_flow_state = "end";
-
-			newHistoryEntries.push({
-				id: Date.now(),
-				in_id: task.id,
-				pa_id: null,
-				from_user_id: activeUser.a_id,
-				from_user_name: activeUser.a_name,
-				from_user_position: activeUser.a_position || activeUser.a_role,
-				from_user_role: activeUser.a_role,
-				to_user_id: null,
-				to_user_name: null,
-				to_user_position: null,
-				to_user_role: null,
-				action: "FINALIZED",
-				comments: payload.comments || "ปิดงานพิจารณาหนังสือเวียนและเก็บประวัติประมวลผล",
-				created_at: nowStr,
-			});
-		} else if (action === "PARALLEL_ASSIGN") {
-			const taskAgencies = task.agencies || [];
-			if (taskAgencies.length === 0)
-				throw new Error("No agencies selected for parallel distribution");
-
-			const parallelTracks: SimulatedParallelTrack[] = [];
-			for (let idx = 0; idx < taskAgencies.length; idx++) {
-				const agId = taskAgencies[idx];
-
-				const agRes = await db.query(
-					"SELECT ag_name FROM c_agency WHERE ag_id = $1",
-					[agId],
-				);
-				const agName =
-					agRes.rows.length > 0 ? agRes.rows[0].ag_name : `หน่วยงาน ${agId}`;
-
-				const directorRes = await db.query(
-					`SELECT a.a_id, a.a_name, a.a_position, a.a_role 
-           FROM admin a
-           LEFT JOIN c_agency ca ON a.a_agency_id = ca.ag_id
-           WHERE a.a_status IN ('1', 'true', 'active') 
-             AND (a.a_agency_id = $1 OR ca.parent_ag_id = $1) 
-             AND a.a_role IN ('DIV_DIRECTOR', 'HR_DIRECTOR') 
-           ORDER BY a.a_role ASC 
-           LIMIT 1`,
-					[agId],
-				);
-
-				let director = null;
-				if (directorRes.rows.length > 0) {
-					director = directorRes.rows[0];
-				} else {
-					const actingFallbackRes = await db.query(
-						`SELECT d.assignee_id, a.a_name, a.a_position, a.a_role 
-             FROM c_workflow_delegations d
-             JOIN admin a ON d.assignee_id = a.a_id
-             LEFT JOIN c_agency ca ON d.assigner_ag_id = ca.ag_id
-             WHERE (d.assigner_ag_id = $1 OR ca.parent_ag_id = $1)
-               AND d.delegated_role = 'DIV_DIRECTOR' 
-               AND d.is_active = TRUE 
-             ORDER BY d.delegation_order ASC 
-             LIMIT 1`,
-						[agId],
-					);
-					if (actingFallbackRes.rows.length > 0) {
-						director = actingFallbackRes.rows[0];
-					}
-				}
-
-				const initialOwnerId = director ? director.a_id : activeUser.a_id;
-				const ownerName = director ? director.a_name : activeUser.a_name;
-				const ownerPosition = director
-					? director.a_position || director.a_role
-					: activeUser.a_position;
-				const ownerRole = director ? director.a_role : activeUser.a_role;
-
-				parallelTracks.push({
-					pa_id: Date.now() + idx,
-					ag_id: agId,
-					ag_name: agName,
-					initial_owner_id: initialOwnerId,
-					current_owner_id: initialOwnerId,
-					pa_status: "PENDING",
-					result_comments: "",
-					results_id: null,
-					updated_at: nowStr,
-				});
-
-				newHistoryEntries.push({
-					id: Date.now() + idx,
-					in_id: task.id,
-					pa_id: Date.now() + idx,
-					from_user_id: activeUser.a_id,
-					from_user_name: activeUser.a_name,
-					from_user_position: activeUser.a_position || activeUser.a_role,
-					from_user_role: effectiveRole,
-					to_user_id: initialOwnerId,
-					to_user_name: ownerName,
-					to_user_position: ownerPosition,
-					to_user_role: ownerRole,
-					action: "PARALLEL_ASSIGNED",
-					comments: `เสนอพิจารณาคู่ขนาน (หน่วยงาน: ${agName}): ${payload.comments || "โปรดพิจารณาดำเนินการ"}`,
-					created_at: nowStr,
-				});
-			}
-
-			updatedTask.in_workflow_status = "PENDING_PARALLEL";
-			updatedTask.in_is_parallel = true;
-			updatedTask.in_current_owner_id = null;
-			updatedTask.in_flow_state = "in";
-			updatedTask.parallel_assignments = parallelTracks;
-		} else if (action === "PARALLEL_DELEGATE") {
-			const paId = payload.paId;
-			const targetUserId = payload.targetUserId;
-			if (!paId || !targetUserId)
-				throw new Error(
-					"paId and targetUserId are required for parallel delegation",
-				);
-
-			const subRes = await db.query(
-				`SELECT a_id, a_name, a_position, a_role FROM admin WHERE a_id = $1`,
-				[targetUserId],
-			);
-			if (subRes.rows.length === 0)
-				throw new Error("Subordinate user not found");
-			const subUser = subRes.rows[0];
-
-			const updatedTracks = (task.parallel_assignments || []).map(
-				(pa: SimulatedParallelTrack) => {
-					if (pa.pa_id === paId) {
-						return {
-							...pa,
-							current_owner_id: targetUserId,
-							pa_status: "IN_PROGRESS",
-							updated_at: nowStr,
-						};
-					}
-					return pa;
-				},
-			);
-
-			updatedTask.parallel_assignments = updatedTracks;
-
-			newHistoryEntries.push({
-				id: Date.now(),
-				in_id: task.id,
-				pa_id: paId,
-				from_user_id: activeUser.a_id,
-				from_user_name: activeUser.a_name,
-				from_user_position: activeUser.a_position || activeUser.a_role,
-				from_user_role: effectiveRole,
-				to_user_id: targetUserId,
-				to_user_name: subUser.a_name,
-				to_user_position: subUser.a_position || subUser.a_role,
-				to_user_role: subUser.a_role,
-				action: "PARALLEL_DELEGATED",
-				comments: payload.comments || "มอบหมายตรวจสอบในสายงานของกอง",
-				created_at: nowStr,
-			});
-		} else if (action === "PARALLEL_SUBMIT") {
-			const paId = payload.paId;
-			const resultsId = payload.resultsId;
-			if (!paId || !resultsId)
-				throw new Error("paId and resultsId are required for parallel submit");
-
-			const resTextRes = await db.query(
-				"SELECT results_detail FROM c_results WHERE results_id = $1",
-				[resultsId],
-			);
-			const resultsText =
-				resTextRes.rows.length > 0
-					? resTextRes.rows[0].results_detail
-					: "พิจารณาแล้ว";
-
-			const track = (task.parallel_assignments || []).find(
-				(pa: SimulatedParallelTrack) => pa.pa_id === paId,
-			);
-			if (!track) throw new Error("Track not found");
-
-			const updatedTracks = (task.parallel_assignments || []).map(
-				(pa: SimulatedParallelTrack) => {
-					if (pa.pa_id === paId) {
-						return {
-							...pa,
-							pa_status: "SUBMITTED",
-							result_comments: payload.comments || "",
-							results_id: Number(resultsId),
-							updated_at: nowStr,
-						};
-					}
-					return pa;
-				},
-			);
-
-			newHistoryEntries.push({
-				id: Date.now(),
-				in_id: task.id,
-				pa_id: paId,
-				from_user_id: activeUser.a_id,
-				from_user_name: activeUser.a_name,
-				from_user_position: activeUser.a_position || activeUser.a_role,
-				from_user_role: effectiveRole,
-				to_user_id: null,
-				to_user_name: null,
-				to_user_position: null,
-				to_user_role: null,
-				action: "PARALLEL_SUBMITTED",
-				comments: `รายงานผลของกอง (${track.ag_name}): [ผล: ${resultsText}] - ${payload.comments || "เรียบร้อย"}`,
-				created_at: nowStr,
-			});
-
-			const totalTracks = updatedTracks.length;
-			const terminalTracks = updatedTracks.filter(
-				(pa: SimulatedParallelTrack) =>
-					["SUBMITTED", "REJECTED"].includes(pa.pa_status),
-			).length;
-
-			let newStatus = "PENDING_PARALLEL";
-			let newCurrentOwnerId = task.in_current_owner_id;
-
-			if (totalTracks === terminalTracks) {
-				const hrRes = await db.query(
-					"SELECT a_id, a_name, a_position, a_role FROM admin WHERE a_role = 'HR_DIRECTOR' LIMIT 1",
-				);
-				const hrDir = hrRes.rows.length > 0 ? hrRes.rows[0] : null;
-				newStatus = "PENDING_HR_APPROVAL";
-				newCurrentOwnerId = hrDir ? hrDir.a_id : null;
-
-				newHistoryEntries.push({
-					id: Date.now() + 1,
-					in_id: task.id,
-					pa_id: null,
-					from_user_id: null,
-					from_user_name: "ระบบรวมผลอัตโนมัติ",
-					from_user_position: "SYSTEM PROCESSOR",
-					from_user_role: "SYSTEM",
-					to_user_id: hrDir ? hrDir.a_id : null,
-					to_user_name: hrDir ? hrDir.a_name : "ผอ.ศูนย์ฯ",
-					to_user_position: hrDir
-						? hrDir.a_position || hrDir.a_role
-						: "HR_DIRECTOR",
-					to_user_role: hrDir ? hrDir.a_role : "HR_DIRECTOR",
-					action: "SUBMITTED",
-					comments:
-						"ทุกส่วนราชการพิจารณาตรวจสอบข้อมูลครบถ้วนแล้ว - ระบบส่งคืนให้ ผอ.ศูนย์ฯ (HR_DIRECTOR) พิจารณาลงนามจบเรื่อง",
-					created_at: nowStr,
-				});
-			}
-
-			updatedTask.in_workflow_status = newStatus;
-			updatedTask.in_current_owner_id = newCurrentOwnerId;
-			updatedTask.parallel_assignments = updatedTracks;
-		}
-
-		return {
-			updatedTask,
-			newHistoryEntries,
-		};
-	}
-
-	/**
-	 * Helper for simulated effective user role (Stateless helper for simulator)
-	 */
-	private static async getSimulatedEffectiveUser(
-		task: SimulatedTask,
-		user: { a_role: string; a_id: number; a_agency_id: number },
-		delegationId?: number,
-	) {
-		if (!task || !user) return { role: "", agencyId: null };
-
-		const requiredRoleMap: Record<string, string> = {
-			DRAFT: "COORDINATOR",
-			PENDING_GRP_REVIEW: "GRP_LEADER",
-			PENDING_SEC_APPROVAL: "SEC_DIRECTOR",
-			PENDING_DIRECTOR_APPROVAL: "DIV_DIRECTOR",
-			PENDING_HR_APPROVAL: "HR_DIRECTOR",
-			PENDING_EXECUTION: "STAFF",
-			PENDING_CLOSE: "COORDINATOR",
-		};
-		const requiredRole = requiredRoleMap[task.in_workflow_status];
-
-		let role = user.a_role;
-		let agencyId = user.a_agency_id;
-
-		if (requiredRole && user.a_role !== requiredRole && delegationId) {
-			const db = await import("../config/database.js").then((m) => m.default);
-			const delRes = await db.query(
-				`SELECT delegation_id, delegated_role, assigner_ag_id, assigner_id 
-         FROM c_workflow_delegations 
-         WHERE delegation_id = $1 AND assignee_id = $2 AND delegated_role = $3 AND is_active = true`,
-				[delegationId, user.a_id, requiredRole],
-			);
-			if (delRes.rows.length > 0) {
-				role = requiredRole;
-				agencyId = delRes.rows[0].assigner_ag_id || delRes.rows[0].assigner_id;
-			}
-		}
-
-		return { role, agencyId };
 	}
 }

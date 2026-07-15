@@ -1,6 +1,6 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 // vite.config.ts — standalone React app (ไม่ต้องพึ่ง backend localhost:3000)
 export default defineConfig({

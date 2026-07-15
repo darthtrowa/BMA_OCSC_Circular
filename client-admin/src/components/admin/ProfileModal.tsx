@@ -1,20 +1,33 @@
-import { useState, useImperativeHandle, forwardRef } from 'react'
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import Swal from 'sweetalert2'
 import { adminApi } from '../../api/apiService'
-import { useAuth } from '../../contexts/AuthContext'
+
+export interface ProfileModalRef {
+  open: () => void;
+}
 
 interface ProfileModalProps {
   onUpdated?: (newName: string) => void;
 }
 
-const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => {
-  const { admin } = useAuth()
+interface AdminProfile {
+  a_id: number;
+  a_name: string;
+  a_username: string;
+  a_email: string;
+  a_role: string;
+  a_position: string;
+  a_permiss: string;
+  a_2fa_enabled: boolean;
+}
+
+const ProfileModal = forwardRef<ProfileModalRef, ProfileModalProps>(({ onUpdated }, ref) => {
   const [show, setShow]       = useState(false)
   const [name, setName]       = useState('')
   const [email, setEmail]     = useState('')
   const [role, setRole]       = useState('STAFF')
   const [position, setPosition] = useState('')
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<AdminProfile | null>(null)
   const [saving, setSaving]   = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -45,12 +58,13 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
       if (data.status) {
         setShow(false)
         Swal.fire({ icon: 'success', text: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false })
-        onUpdated && onUpdated(name.trim())
+        onUpdated?.(name.trim())
       } else {
         Swal.fire('ผิดพลาด', data.message, 'error')
       }
-    } catch (err: any) {
-      Swal.fire('ผิดพลาด', err.response?.data?.message || 'เกิดข้อผิดพลาด', 'error')
+    } catch (err: unknown) {
+      const errMsg = (err as { response?: { data?: { message?: string } } }).response?.data?.message || 'เกิดข้อผิดพลาด'
+      Swal.fire('ผิดพลาด', errMsg, 'error')
     } finally {
       setSaving(false)
     }
@@ -59,7 +73,7 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
   if (!show) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col animate__animated animate__zoomIn animate__faster">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <h5 className="m-0 font-bold text-lg text-slate-800 flex items-center font-saochingcha">
@@ -81,8 +95,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
             {/* Row 1 */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล <span className="text-rose-500">*</span></label>
+              <label htmlFor="profile_name" className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อ-นามสกุล <span className="text-rose-500">*</span></label>
               <input 
+                id="profile_name"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={name} 
                 onChange={e=>setName(e.target.value)} 
@@ -90,8 +105,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (Email)</label>
+              <label htmlFor="profile_email" className="block text-sm font-semibold text-slate-700 mb-1.5">อีเมล (Email)</label>
               <input 
+                id="profile_email"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={email} 
                 onChange={e=>setEmail(e.target.value)} 
@@ -101,9 +117,10 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
             {/* Row 2 */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">บทบาทในสายงาน (Workflow Role)</label>
+              <label htmlFor="profile_role" className="block text-sm font-semibold text-slate-700 mb-1.5">บทบาทในสายงาน (Workflow Role)</label>
               <div className="relative">
                 <select
+                  id="profile_role"
                   className="w-full px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none font-bold text-blue-800 transition"
                   value={role}
                   onChange={e => setRole(e.target.value)}
@@ -123,8 +140,9 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่งทางการ (Official Position)</label>
+              <label htmlFor="profile_position" className="block text-sm font-semibold text-slate-700 mb-1.5">ตำแหน่งทางการ (Official Position)</label>
               <input 
+                id="profile_position"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition" 
                 value={position} 
                 onChange={e=>setPosition(e.target.value)} 
@@ -134,19 +152,19 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
             {/* Row 3 - Read Only Info */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
+              <span className="block text-sm font-semibold text-slate-700 mb-1.5">ชื่อผู้ใช้งาน (Username)</span>
               <div className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
                 <i className='bx bx-lock-alt mr-2'></i>
                 {profile?.a_username || '-'}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">ระดับสิทธิ์ (Permission Level)</label>
+              <span className="block text-sm font-semibold text-slate-700 mb-1.5">ระดับสิทธิ์ (Permission Level)</span>
               <div className="flex items-center px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500">
                 <i className='bx bx-shield-alt-2 mr-2'></i>
                 {profile?.a_permiss === 'superadmin' ? 'ผู้ดูแลระบบสูงสุด (SuperAdmin)' : 
                  profile?.a_permiss === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 
-                 'เจ้าหน้าที่ทั่วไป (Staff User)'}
+                 'ผู้ใช้งานทั่วไป (User)'}
               </div>
             </div>
 
@@ -167,17 +185,20 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
                     className="form-check-input h-6 w-11 cursor-pointer" 
                     type="checkbox" 
                     role="switch" 
+                    aria-label="เปิดใช้งานการยืนยันตัวตน 2 ชั้น (2FA)"
+                    aria-checked={profile?.a_2fa_enabled || false}
                     checked={profile?.a_2fa_enabled || false}
                     onChange={async (e) => {
                       const newVal = e.target.checked
                       try {
                         const res = await adminApi.toggle2fa(newVal)
-                        if (res.status) {
+                        if (res.status && profile) {
                           setProfile({ ...profile, a_2fa_enabled: newVal })
                           Swal.fire({ icon: 'success', text: res.message, timer: 1500, showConfirmButton: false })
                         }
-                      } catch (err: any) {
-                        Swal.fire('Error', err.response?.data?.message || 'ไม่สามารถเปลี่ยนสถานะได้', 'error')
+                      } catch (err: unknown) {
+                        const errMsg = (err as { response?: { data?: { message?: string } } }).response?.data?.message || 'ไม่สามารถเปลี่ยนสถานะได้'
+                        Swal.fire('Error', errMsg, 'error')
                       }
                     }}
                   />
@@ -189,12 +210,14 @@ const ProfileModal = forwardRef<any, ProfileModalProps>(({ onUpdated }, ref) => 
 
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
           <button 
+            type="button"
             className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-800 transition" 
             onClick={() => setShow(false)}
           >
             ยกเลิก
           </button>
           <button 
+            type="button"
             className="px-6 py-2.5 rounded-xl font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-200 transition flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed" 
             onClick={handleSave} 
             disabled={saving}
