@@ -50,15 +50,28 @@ export const syncOCSC = async () => {
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		);
 
-		console.log("[BOT] Navigating to OCSC...");
-		// waitUntil networkidle2 ensures page is fully loaded, including CF challenges
-		await page.goto(OCSC_CIRCULAR_URL, {
+		// Hide webdriver to bypass automated browser detection
+		await page.evaluateOnNewDocument(() => {
+			Object.defineProperty(navigator, "webdriver", {
+				get: () => undefined,
+			});
+		});
+
+		console.log("[BOT] Navigating to OCSC with cache-buster...");
+		const cacheBusterUrl = `${OCSC_CIRCULAR_URL}?t=${Date.now()}`;
+		await page.goto(cacheBusterUrl, {
 			waitUntil: "networkidle2",
 			timeout: 45000,
 		});
 
-		// Wait an additional 3 seconds just to let any slow-rendering JS complete
-		await new Promise((r) => setTimeout(r, 3000));
+		console.log("[BOT] Waiting for initial page load...");
+		await new Promise((r) => setTimeout(r, 5000));
+
+		console.log("[BOT] Reloading page to trigger AJAX...");
+		await page.reload({ waitUntil: "networkidle2" });
+
+		console.log("[BOT] Waiting for AJAX result cards to render...");
+		await new Promise((r) => setTimeout(r, 10000));
 
 		console.log("[BOT] Extracting links...");
 		const links = (await page.evaluate(() => {
@@ -72,61 +85,41 @@ export const syncOCSC = async () => {
 			}
 			const results: { title: string; href: string; payload: BotPayload }[] =
 				[];
-			document.querySelectorAll("a").forEach((el) => {
-				const title = el.textContent?.trim() || "";
-				let href = el.getAttribute("href") || "";
-				const cleanTitle = title.replace(/\s+/g, " ");
+			document.querySelectorAll("a.search-result-card.laws").forEach((el) => {
+				const href = el.getAttribute("href") || "";
+				const codeText = el.querySelector("div > p")?.textContent?.trim() || ""; // "ว 9/2569"
+				const titleText = el.querySelector("div > div > p")?.textContent?.trim() || ""; // Title
+				const docNumText = el.querySelector("div > div > div > span")?.textContent?.trim() || ""; // "เลขที่หนังสือ: นร 1008/ว 9"
 
-				// Requirement: Skip if does not contain "/ว"
-				if (!cleanTitle.includes("/ว")) return;
-
-				if (href.startsWith("/")) {
-					href = `https://www.ocsc.go.th${href}`;
+				let docNum = docNumText.replace("เลขที่หนังสือ:", "").trim();
+				if (!docNum) {
+					const docNumMatch = titleText.match(/(นร\s*\d+(?:\.\d+)?\s*\/\s*ว\s*\d+)/);
+					if (docNumMatch) docNum = docNumMatch[1].replace(/\s+/g, " ");
 				}
-				if (!href.startsWith("http")) return;
 
-				// Try to extract Date (ลงวันที่)
+				let year = "";
+				const yearMatch = codeText.match(/ว\s*\d+\/(\d{4})/);
+				if (yearMatch) {
+					year = yearMatch[1];
+				} else {
+					const fallbackYear = titleText.match(/ว\s*\d+\/(\d{4})/);
+					if (fallbackYear) year = fallbackYear[1];
+				}
+
 				let extractedDate = "";
-				const dateMatch = cleanTitle.match(
-					/ลงวันที่\s+([0-9]+\s+[ก-ฮa-zA-Z]+\s+[0-9]{4})/,
-				);
+				const dateMatch = titleText.match(/ลงวันที่\s+([0-9]+\s+[ก-ฮa-zA-Z]+\s+[0-9]{4})/);
 				if (dateMatch) extractedDate = dateMatch[1];
 
-				// Try to extract Document Number (เลขที่หนังสือ)
-				let docNum = "";
-				const docNumMatch = cleanTitle.match(
-					/(นร\s*\d+(?:\.\d+)?\s*\/\s*ว\s*\d+)/,
-				);
-				if (docNumMatch)
-					docNum = docNumMatch[1].replace(/\s+/g, " "); // Clean up internal spaces
-				else {
-					// Fallback in case "นร" is not there but "ว" is there, e.g. "ว 5/2569"
-					const fallbackDoc = cleanTitle.match(/(ว\s*\d+\/\d{4})/);
-					if (fallbackDoc) docNum = fallbackDoc[1];
-				}
-
-				// Try to extract Year (ปี)
-				let year = "";
-				const yearMatch = cleanTitle.match(/ว\s*\d+\/(\d{4})/);
-				if (yearMatch) year = yearMatch[1];
-
-				// Clean up the main title to not be 500 chars long
-				let shortTitle = cleanTitle;
-				const titleMatch = cleanTitle.match(
-					/ว\s*\d+\/\d{4}\s+(.*?)\s+เลขที่หนังสือ:/,
-				);
-				if (titleMatch) shortTitle = titleMatch[1];
-
 				results.push({
-					title: shortTitle.substring(0, 250),
+					title: titleText.substring(0, 250),
 					href,
 					payload: {
 						doc_num: docNum,
 						year: year,
-						title: shortTitle,
+						title: titleText,
 						extracted_date: extractedDate,
 						original_pdf: href,
-						full_text: cleanTitle,
+						full_text: `${codeText} ${titleText} ${docNumText}`,
 					},
 				});
 			});

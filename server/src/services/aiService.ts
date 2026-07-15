@@ -1,10 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { PDFParse } from 'pdf-parse';
-import fs from 'fs';
-import { promises as fsp } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { GoogleGenerativeAI, type Part } from '@google/generative-ai';
 import axios from 'axios';
+import { PDFParse } from 'pdf-parse';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,11 +39,13 @@ async function extractTextFromPdf(pdfPath: string): Promise<string> {
       // BP-04: Add timeout to external requests
       const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0, timeout: 15000 });
       dataBuffer = Buffer.from(response.data);
-    } catch (err: any) {
-      if (err.response && err.response.status >= 300 && err.response.status < 400) {
+    } catch (err) {
+      const error = err as Error & { response?: { status?: number } };
+      const status = error.response?.status;
+      if (status !== undefined && status >= 300 && status < 400) {
         throw new Error('ไม่อนุญาตให้ Redirect ไปยังแหล่งข้อมูลภายนอก');
       }
-      throw err;
+      throw error;
     }
   } else {
     const absoluteUploads = path.resolve(__dirname, '../../../uploads');
@@ -54,9 +56,10 @@ async function extractTextFromPdf(pdfPath: string): Promise<string> {
     // STAB-07: Use async file read to avoid blocking event loop
     try {
       dataBuffer = await fsp.readFile(fullPath);
-    } catch (e: any) {
-      if (e.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
-      throw e;
+    } catch (e) {
+      const error = e as Error & { code?: string };
+      if (error.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+      throw error;
     }
   }
 
@@ -76,11 +79,13 @@ async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
       // BP-04: Add timeout to external requests
       const response = await axios.get(pdfPath, { responseType: 'arraybuffer', maxRedirects: 0, timeout: 15000 });
       return Buffer.from(response.data);
-    } catch (err: any) {
-      if (err.response && err.response.status >= 300 && err.response.status < 400) {
+    } catch (err) {
+      const error = err as Error & { response?: { status?: number } };
+      const status = error.response?.status;
+      if (status !== undefined && status >= 300 && status < 400) {
         throw new Error('ไม่อนุญาตให้ Redirect ไปยังแหล่งข้อมูลภายนอก');
       }
-      throw err;
+      throw error;
     }
   } else {
     const absoluteUploads = path.resolve(__dirname, '../../../uploads');
@@ -91,17 +96,23 @@ async function getPdfBuffer(pdfPath: string): Promise<Buffer> {
     // STAB-07: Use async file read to avoid blocking event loop
     try {
       return await fsp.readFile(fullPath);
-    } catch (e: any) {
-      if (e.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
-      throw e;
+    } catch (e) {
+      const error = e as Error & { code?: string };
+      if (error.code === 'ENOENT') throw new Error(`ไม่พบไฟล์ PDF ในระบบ: ${pdfPath}`);
+      throw error;
     }
   }
 }
 
-export async function summarizePdf(payload: { mainPdf?: string, attachments?: string[] }): Promise<{ summary: string, docDate: string, references: any[], qrLink: string }> {
+export interface AiReference {
+  number: string;
+  date: string;
+}
+
+export async function summarizePdf(payload: { mainPdf?: string, attachments?: string[] }): Promise<{ summary: string, docDate: string, references: AiReference[], qrLink: string }> {
   try {
-    let pdfPart: any = null;
-    let promptParts = [];
+    let pdfPart: Part | null = null;
+    const promptParts: string[] = [];
 
     // 1. อ่านไฟล์หลัก
     if (payload.mainPdf) {
@@ -132,7 +143,7 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
           if (text.trim().length >= 10) {
             attachmentText += `\n[สิ่งที่ส่งมาด้วยไฟล์ที่ ${i + 1}: ${payload.attachments[i]}]\n${text.substring(0, 15000)}\n`;
           }
-        } catch (err) {
+        } catch {
           console.warn(`ข้ามไฟล์สิ่งที่ส่งมาด้วย ${payload.attachments[i]} เนื่องจากอ่านข้อความไม่ได้`);
         }
       }
@@ -158,14 +169,14 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
       กรุณาวิเคราะห์เอกสาร PDF และข้อความด้านล่างนี้ และให้ผลลัพธ์เป็น JSON Object ตามโครงสร้างนี้เท่านั้น:
       {
         "summary": "สรุปเนื้อหาสำคัญของหนังสือหลัก โดยเน้นวัตถุประสงค์หลัก ข้อกำหนดที่สำคัญ ผู้ที่ต้องถือปฏิบัติ และผลกระทบกับการบริหารงานบุคคลของกรุงเทพมหานคร และหากมีข้อมูลใน 'ส่วนที่ 2: สิ่งที่ส่งมาด้วย' ให้เพิ่มหัวข้อ 'สิ่งที่ส่งมาด้วย' แยกต่างหากด้านล่างพร้อมสรุปใจความสำคัญของสิ่งส่งมาด้วยเหล่านั้นเป็นภาษาไทยที่เป็นทางการและอ่านง่าย (ข้อสำคัญ: 1. ให้ใช้เลขอารบิคเท่านั้น 2. ห้ามใส่เครื่องหมายดอกจัน * หรือ ** ในเนื้อหานี้สำหรับการเน้นคำ การจัดวรรคตอน หรือหัวข้อย่อยเด็ดขาด ให้ใช้ข้อความธรรมดา การเว้นวรรค และการขึ้นบรรทัดใหม่แทน)",
-        "docDate": "วันที่ของหนังสือเวียน/ลงวันที่ เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ให้กรอกเฉพาะข้อความวันที่ที่ระบุในเอกสารจริงๆ เท่านั้น หรือหากไม่พบให้ใส่เป็นค่าว่าง \"\")",
+        "docDate": "วันที่ของหนังสือเวียน/ลงวันที่ เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ให้กรอกเฉพาะข้อความวันที่ที่ระบุในเอกสารจริงๆ เท่านั้น หรือหากไม่พบให้ใส่เป็นค่าว่าง "")",
         "references": [
           {
             "number": "เลขที่หนังสือเวียน/เลขที่หนังสืออ้างอิงทั้งหมดที่เกี่ยวข้องที่พบในเอกสาร เช่น 'ว 36', 'นร 1008/ว 14' (หากไม่มีให้ใส่เป็นอาเรย์ว่าง [])",
-            "date": "วันที่ของหนังสือเวียนอ้างอิงนั้น เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ระบุเฉพาะกรณีที่มีการระบุวันที่ในเอกสารอ้างอิงนั้นจริงๆ เท่านั้น หากไม่มีการระบุให้ใส่ค่าว่าง \"\")"
+            "date": "วันที่ของหนังสือเวียนอ้างอิงนั้น เช่น '10 ตุลาคม 2568' หรือ '2 มกราคม 2567' (ระบุเฉพาะกรณีที่มีการระบุวันที่ในเอกสารอ้างอิงนั้นจริงๆ เท่านั้น หากไม่มีการระบุให้ใส่ค่าว่าง "")"
           }
         ],
-        "qrLink": "ลิงก์ URL ที่ถอดรหัสได้จากรูปภาพ QR Code ที่ปรากฏในหน้าเอกสาร PDF (เช่น ลิงก์ไปยังหน้าเว็บรายละเอียดของสำนักงาน ก.พ. มักขึ้นต้นด้วย http หรือ https) หากหาไม่พบ หรือไม่มี QR Code หรือสแกนลิงก์ไม่ได้ ให้ตอบเป็นค่าว่าง \"\" เท่านั้น"
+        "qrLink": "ลิงก์ URL ที่ถอดรหัสได้จากรูปภาพ QR Code ที่ปรากฏในหน้าเอกสาร PDF (เช่น ลิงก์ไปยังหน้าเว็บรายละเอียดของสำนักงาน ก.พ. มักขึ้นต้นด้วย http หรือ https) หากหาไม่พบ หรือไม่มี QR Code หรือสแกนลิงก์ไม่ได้ ให้ตอบเป็นค่าว่าง "" เท่านั้น"
       }
 
       ข้อมูลประกอบ/ส่วนที่ส่งมาด้วย:
@@ -175,7 +186,7 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
     let attempt = 0;
     const maxRetries = 4;
     let delayMs = 1500;
-    let lastError: any = null;
+    let lastError: Error | null = null;
 
     while (attempt <= maxRetries) {
       try {
@@ -185,7 +196,7 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
           delayMs *= 2; // Exponential backoff: 1.5s -> 3s -> 6s -> 12s
         }
 
-        const contentParams: any[] = [prompt];
+        const contentParams: (string | Part)[] = [prompt];
         if (pdfPart) {
           contentParams.push(pdfPart);
         }
@@ -219,12 +230,13 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
             qrLink: ''
           };
         }
-      } catch (error: any) {
-        lastError = error;
+      } catch (error) {
+        const err = error as Error & { status?: number; statusCode?: number; response?: { status?: number } };
+        lastError = err;
         attempt++;
 
-        const status = error?.status || error?.statusCode || error?.response?.status;
-        const msg = (error?.message || '').toLowerCase();
+        const status = err?.status || err?.statusCode || err?.response?.status;
+        const msg = (err?.message || '').toLowerCase();
         const isTransient = (status === 503 || status === 429 || status === 408 || status === 500 || status === 502 || status === 504) ||
           msg.includes('503') ||
           msg.includes('429') ||
@@ -240,14 +252,15 @@ export async function summarizePdf(payload: { mainPdf?: string, attachments?: st
         if (!isTransient || attempt > maxRetries) {
           break;
         }
-        console.warn(`[AI Service] Attempt ${attempt} failed with transient error: "${error.message}".`);
+        console.warn(`[AI Service] Attempt ${attempt} failed with transient error: "${err.message}".`);
       }
     }
 
     throw lastError || new Error('ไม่สามารถเชื่อมต่อบริการ AI ได้');
 
-  } catch (error: any) {
-    console.error('AI Summarization Error:', error.message);
+  } catch (error) {
+    const err = error as Error;
+    console.error('AI Summarization Error:', err.message);
     throw new Error('เกิดข้อผิดพลาดในการสรุปผลด้วย AI');
   }
 }

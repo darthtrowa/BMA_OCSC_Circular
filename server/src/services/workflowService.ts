@@ -1073,14 +1073,12 @@ export class WorkflowService {
 				const uActualAgId =
 					u.ag_type === "POSITION" ? u.parent_ag_id : u.a_agency_id;
 				if (uActualAgId) {
-					let level = 1;
 					let curr = Number(uActualAgId);
 					const path: number[] = [];
 					while (curr) {
 						path.push(curr);
 						const parent = parentMap.get(curr);
 						if (!parent) break;
-						level++;
 						curr = parent;
 					}
 
